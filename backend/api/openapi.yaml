@@ -1,0 +1,176 @@
+openapi: 3.0.3
+info:
+  title: BookDan API
+  version: 0.1.0
+  description: |
+    Contract between the Go backend and the mobile apps. This file is the single source of truth:
+    the mobile API client is generated from it, and a change here must fail the mobile build if the app no longer matches.
+
+    Conventions
+    - Base path /v1 over HTTPS.
+    - Request headers: Authorization (Bearer), Accept-Language (en, am, om, ti), X-Device-Id, X-App-Version.
+      Mutating requests also send Idempotency-Key.
+    - Every response body includes server_time (apps use it for countdowns, never the phone clock).
+    - Money fields end in _santim and are integers, with a currency field beside them.
+    - Errors use one shape: code, message, request_id, details.
+    - Lists use cursor pagination: items and next_cursor.
+servers:
+  - url: http://localhost:8080/v1
+paths:
+  /healthz:
+    get:
+      summary: Liveness check
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /auth/otp/request:
+    post:
+      summary: Send a one-time code by SMS (phone) or email
+      description: |
+        Body: exactly one of `{ "phone": "+2519..." }` or `{ "email": "name@example.com" }`.
+        Phone numbers are Ethiopian in the demo; email is for visitors without an Ethiopian number.
+        The server normalises both (email lower-cased) and rate-limits per identifier and per IP.
+        Response: sent_at, retry_after.
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /auth/otp/verify:
+    post:
+      summary: Exchange phone or email plus code for access and refresh tokens
+      description: |
+        Body: the same `phone` or `email` as the request, plus the 6-digit `code`.
+        Response: access_token, refresh_token, user (including which identifier signed in).
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /search:
+    get:
+      summary: Search properties by landmark, city, name or coordinates
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /properties/{id}:
+    get:
+      summary: Property detail with room types, prices and reviews
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /quotes:
+    post:
+      summary: Full price breakdown (base, service, VAT, total, deposit, balance due at the hotel)
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /bookings:
+    get:
+      summary: The signed-in guest's bookings
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+    post:
+      summary: Create a time-limited hold (returns hold_expires_at). Requires Idempotency-Key.
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /bookings/{id}:
+    get:
+      summary: Booking status and amounts
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /bookings/{id}/pay:
+    post:
+      summary: Start payment; returns a payment_url (mock gateway in the demo)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /bookings/{id}/voucher:
+    get:
+      summary: Signed voucher token and PIN (PIN shown once)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/devices/push-token:
+    put:
+      summary: Register this phone for new-booking alerts
+      description: |
+        Body: token (the phone's FCM token), token_type "fcm", device_id (the X-Device-Id), platform, app_version.
+        Replaces any earlier token for the same device. When a guest pays, the server pushes
+        { "type": "new_booking", "booking_id": "..." } to the hotel's registered phones on the Android channel
+        "booking_alerts" (highest importance, its own sound). The countdown and the escalation chain
+        (Telegram, SMS, automated call) run on the server; the app only shows the countdown.
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/bookings:
+    get:
+      summary: Partner inbox, with hotel_deadline_at per booking
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/bookings/{id}/accept:
+    post:
+      summary: Accept a booking
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/bookings/{id}/decline:
+    post:
+      summary: Decline a booking (reason required)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/rooms:
+    get:
+      summary: Rooms and per-night states for the tape chart
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/sync/push:
+    post:
+      summary: Apply queued offline actions; idempotent per action_id
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/sync/pull:
+    get:
+      summary: Changes since a cursor (bookings, rooms, cancelled codes)
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/checkin:
+    post:
+      summary: Check a guest in by QR token, or booking code plus PIN
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/statements:
+    get:
+      summary: Deposit, commission, VAT and net payout from the ledger
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    NotImplemented:
+      description: Endpoint exists in the contract but is not built yet
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Health:
+      type: object
+      required: [server_time, status]
+      properties:
+        server_time: { type: string, format: date-time }
+        status: { type: string, example: ok }
+        env: { type: string }
+    Error:
+      type: object
+      required: [server_time, error]
+      properties:
+        server_time: { type: string, format: date-time }
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+              description: Stable code, e.g. HOLD_CONFLICT, HOLD_EXPIRED, PAYMENT_FAILED, VOUCHER_NOT_READY, SYNC_COLLISION, NOT_IMPLEMENTED
+            message: { type: string }
+            request_id: { type: string }
+            details: {}
+    Currency:
+      type: string
+      enum: [ETB, USD, EUR]
+    BookingStatus:
+      type: string
+      enum:
+        - HELD
+        - PAID_AWAITING_HOTEL
+        - CONFIRMED
+        - CHECKED_IN
+        - COMPLETED
+        - EXPIRED
+        - DECLINED_REFUNDED
+        - CANCELLED_REFUNDED
+        - NO_SHOW
+        - NEEDS_RELOCATION
+        - DISPUTED

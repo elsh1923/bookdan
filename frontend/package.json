@@ -1,0 +1,15 @@
+{
+  "name": "bookdan-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "guest": "npm run start -w guest",
+    "partner": "npm run start -w partner",
+    "typecheck": "npm run typecheck -w guest && npm run typecheck -w partner",
+    "test": "node --test packages/domain/src/domain.test.ts"
+  }
+}

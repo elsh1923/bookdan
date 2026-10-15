@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "guest-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--clear", "--port", "8081"],
+      "cwd": "frontend/apps/guest",
+      "port": 8081
+    },
+    {
+      "name": "partner-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--clear", "--port", "8083"],
+      "cwd": "frontend/apps/partner",
+      "port": 8083
+    }
+  ]
+}

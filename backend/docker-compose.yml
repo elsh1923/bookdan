@@ -1,0 +1,14 @@
+# Local PostgreSQL with PostGIS (the spec's database). Run: docker compose up -d
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: bookdan
+      POSTGRES_PASSWORD: bookdan
+      POSTGRES_DB: bookdan
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+volumes:
+  dbdata:

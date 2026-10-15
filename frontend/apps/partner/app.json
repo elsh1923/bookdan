@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "BookDan Partner",
+    "slug": "bookdan-partner",
+    "scheme": "hotelpartner",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "et.bookdan.partner"
+    },
+    "android": {
+      "package": "et.bookdan.partner",
+      "adaptiveIcon": {
+        "backgroundColor": "#18223A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-localization",
+      "expo-font",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#2563EB",
+          "sounds": [
+            "./assets/booking_alert.wav"
+          ]
+        }
+      ]
+    ],
+    "extra": {
+      "apiMode": "mock",
+      "router": {},
+      "eas": {
+        "projectId": "53c25f2f-7f5a-4ca8-b076-fc5b5e52ad3d"
+      }
+    },
+    "owner": "elshuworkdan",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/53c25f2f-7f5a-4ca8-b076-fc5b5e52ad3d",
+      "checkAutomatically": "ON_LOAD"
+    }
+  }
+}
