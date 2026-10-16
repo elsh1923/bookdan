@@ -81,7 +81,7 @@ type Server struct {
 // New builds the API. It checks once whether PostGIS is installed.
 func New(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, keys *Keys, p Providers) (*Server, error) {
 	s := &Server{cfg: cfg, pool: pool, keys: keys, p: p, now: time.Now}
-	if err := pool.QueryRow(ctx, `SELECT to_regproc('st_astext') IS NOT NULL`).Scan(&s.postgis); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis')`).Scan(&s.postgis); err != nil {
 		return nil, err
 	}
 	return s, nil
