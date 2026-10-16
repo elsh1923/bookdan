@@ -1,20 +1,27 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient } from '@tanstack/react-query';
+import { getDeviceId } from './device';
 import Constants from 'expo-constants';
-import { createMockPartnerApi, createSessionManager, type PartnerApi, type SessionHooks } from '@bookdan/api-client';
+import { Platform } from 'react-native';
+import { createHttpPartnerApi, createMockPartnerApi, createSessionManager, type PartnerApi, type SessionHooks } from '@bookdan/api-client';
 
-// Until the Go backend exists, a mock that honours the same contract stands in.
-// Flip extra.apiMode to "http" later.
-const mode = (Constants.expoConfig?.extra?.apiMode as string | undefined) ?? 'mock';
-export const isMockApi = mode === 'mock';
+// With EXPO_PUBLIC_API_MODE=http (and EXPO_PUBLIC_API_URL) the app talks to the Go backend; otherwise a mock that honours
+// the same contract stands in. EXPO_PUBLIC_* values are read when the app is bundled (set them in eas.json for builds and updates).
+const extra = Constants.expoConfig?.extra as { apiMode?: string; apiUrl?: string } | undefined;
+const mode = process.env.EXPO_PUBLIC_API_MODE ?? extra?.apiMode ?? 'mock';
+const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? extra?.apiUrl ?? (Platform.OS === 'web' ? 'http://localhost:8080' : '');
+export const isMockApi = mode !== 'http';
+if (!isMockApi && !apiUrl) console.warn('EXPO_PUBLIC_API_MODE=http but EXPO_PUBLIC_API_URL is not set: every request will fail.');
 
 // The mock keeps its demo bookings on the phone so a demo survives the app being killed.
-const raw: PartnerApi = createMockPartnerApi({
-  store: {
-    load: () => AsyncStorage.getItem('mock-partner-state'),
-    save: (json) => AsyncStorage.setItem('mock-partner-state', json),
-  },
-});
+const raw: PartnerApi = isMockApi
+  ? createMockPartnerApi({
+      store: {
+        load: () => AsyncStorage.getItem('mock-partner-state'),
+        save: (json) => AsyncStorage.setItem('mock-partner-state', json),
+      },
+    })
+  : createHttpPartnerApi({ baseUrl: apiUrl, app: 'partner', deviceId: getDeviceId, platform: Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web' });
 
 // Silent session refresh is shared with the guest app.
 const session = createSessionManager(raw);

@@ -20,42 +20,36 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-func New(cfg config.Config, db Pinger) http.Handler {
+// New builds the router. mount registers the real endpoints (see internal/api); with nil, every contract route answers 501.
+func New(cfg config.Config, db Pinger, mount func(chi.Router)) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, requestLog, middleware.Recoverer)
+	r.Use(middleware.RequestID, middleware.RealIP, requestLog, middleware.Recoverer, cors(cfg))
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/healthz", health(cfg))
 		r.Get("/readyz", ready(db))
 
-		// Guest app
-		r.Post("/auth/otp/request", notImplemented)
-		r.Post("/auth/otp/verify", notImplemented)
-		r.Get("/search", notImplemented)
-		r.Get("/properties/{id}", notImplemented)
-		r.Post("/quotes", notImplemented)
-		r.Post("/bookings", notImplemented)
-		r.Get("/bookings", notImplemented)
-		r.Get("/bookings/{id}", notImplemented)
-		r.Post("/bookings/{id}/pay", notImplemented)
-		r.Get("/bookings/{id}/voucher", notImplemented)
-		r.Get("/me/profile", notImplemented)
-		r.Put("/me/profile", notImplemented)
-		r.Delete("/me/profile", notImplemented)
+		if mount != nil {
+			mount(r)
+		} else {
+			for _, route := range []struct{ method, path string }{
+				{"POST", "/auth/otp/request"}, {"POST", "/auth/otp/verify"}, {"POST", "/auth/refresh"},
+				{"GET", "/search"}, {"GET", "/properties/{id}"}, {"POST", "/quotes"}, {"POST", "/bookings"}, {"GET", "/bookings"},
+				{"GET", "/bookings/{id}"}, {"POST", "/bookings/{id}/pay"}, {"GET", "/bookings/{id}/voucher"},
+				{"GET", "/me/profile"}, {"PUT", "/me/profile"}, {"DELETE", "/me/profile"},
+				{"PUT", "/partner/devices/push-token"}, {"POST", "/partner/bookings/{id}/guest/reveal"}, {"GET", "/partner/bookings"},
+				{"POST", "/partner/bookings/{id}/accept"}, {"POST", "/partner/bookings/{id}/decline"},
+			} {
+				r.MethodFunc(route.method, route.path, notImplemented)
+			}
+		}
 
-		// Partner app
-		r.Route("/partner", func(r chi.Router) {
-			r.Put("/devices/push-token", notImplemented)
-			r.Post("/bookings/{id}/guest/reveal", notImplemented)
-			r.Get("/bookings", notImplemented)
-			r.Post("/bookings/{id}/accept", notImplemented)
-			r.Post("/bookings/{id}/decline", notImplemented)
-			r.Get("/rooms", notImplemented)
-			r.Post("/sync/push", notImplemented)
-			r.Get("/sync/pull", notImplemented)
-			r.Post("/checkin", notImplemented)
-			r.Get("/statements", notImplemented)
-		})
+		// Not built yet: the hotel's offline tools (rooms chart, sync, QR check-in, statements).
+		r.Get("/partner/rooms", notImplemented)
+		r.Post("/partner/sync/push", notImplemented)
+		r.Get("/partner/sync/pull", notImplemented)
+		r.Post("/partner/checkin", notImplemented)
+		r.Get("/partner/statements", notImplemented)
 	})
 	return r
 }
@@ -111,4 +105,22 @@ func ready(db Pinger) http.HandlerFunc {
 
 func notImplemented(w http.ResponseWriter, r *http.Request) {
 	httpx.Error(w, r, http.StatusNotImplemented, httpx.CodeNotImplemented, "This endpoint is not built yet", nil)
+}
+
+// cors lets the apps' browser preview call the API. Native apps do not use CORS, so it is off in production.
+func cors(cfg config.Config) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !cfg.IsProduction() {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Device-Id, X-App, X-Platform")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				if r.Method == http.MethodOptions {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

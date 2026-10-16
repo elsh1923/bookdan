@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -25,6 +26,9 @@ import (
 
 	"github.com/bookdan/backend/db"
 )
+
+// URL is the connection string of the test database, for tests that need their own pool.
+var URL string
 
 // HasPostGIS is false when tests run on the embedded database, which has no PostGIS.
 var HasPostGIS bool
@@ -54,6 +58,7 @@ func Start() (*sql.DB, func(), error) {
 		if _, err := conn.Exec(`DROP SCHEMA IF EXISTS app CASCADE; DROP TABLE IF EXISTS goose_db_version`); err != nil {
 			return nil, nil, err
 		}
+		URL = url
 		HasPostGIS = true
 		if err := migrate(conn, false); err != nil {
 			return nil, nil, err
@@ -83,15 +88,20 @@ func Start() (*sql.DB, func(), error) {
 		BinariesPath(filepath.Join(base, "bin")).
 		RuntimePath(filepath.Join(dataDir, "run")).
 		DataPath(filepath.Join(dataDir, "data")))
-	if err := pg.Start(); err != nil {
-		return nil, nil, fmt.Errorf("start embedded postgres: %w", err)
+	// Test packages run in parallel and each starts a database; unpacking the shared binaries must not overlap.
+	unlock := lockDir(base)
+	startErr := pg.Start()
+	unlock()
+	if startErr != nil {
+		return nil, nil, fmt.Errorf("start embedded postgres: %w", startErr)
 	}
 	stop := func() {
 		_ = pg.Stop()
 		_ = os.RemoveAll(dataDir)
 	}
 
-	conn, err := sql.Open("pgx", fmt.Sprintf("postgres://postgres:postgres@localhost:%d/bookdan_test?sslmode=disable", port))
+	URL = fmt.Sprintf("postgres://postgres:postgres@localhost:%d/bookdan_test?sslmode=disable", port)
+	conn, err := sql.Open("pgx", URL)
 	if err != nil {
 		stop()
 		return nil, nil, err
@@ -174,4 +184,78 @@ func MustFail(t *testing.T, err error, want string) {
 	if !strings.Contains(err.Error(), want) {
 		t.Fatalf("expected an error containing %q, got: %v", want, err)
 	}
+}
+
+// lockDir takes a simple cross-process lock (a file that exists while held). A lock older than three minutes is stale.
+func lockDir(base string) (unlock func()) {
+	path := filepath.Join(base, "start.lock")
+	deadline := time.Now().Add(3 * time.Minute)
+	for time.Now().Before(deadline) {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			f.Close()
+			return func() { os.Remove(path) }
+		}
+		if st, err := os.Stat(path); err == nil && time.Since(st.ModTime()) > 3*time.Minute {
+			os.Remove(path)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	return func() {}
+}
+
+// StartDev runs an embedded PostgreSQL that keeps its data in dir between runs, migrates it and loads the demo data.
+// It is for `go run ./cmd/devserver`: a local backend with no Docker and no account. It has no PostGIS, so the
+// "near a landmark" search is off there; everything else is the real thing.
+func StartDev(dir string, port uint32) (url string, stop func(), err error) {
+	base := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return "", nil, err
+	}
+	pg := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
+		Logger(io.Discard).
+		Version(embeddedpostgres.V16).
+		Port(port).
+		Username("postgres").Password("postgres").Database("bookdan_dev").
+		BinariesPath(base).
+		RuntimePath(filepath.Join(dir, "run")).
+		DataPath(filepath.Join(dir, "data")))
+	url = fmt.Sprintf("postgres://postgres:postgres@localhost:%d/bookdan_dev?sslmode=disable", port)
+	stop = func() {}
+	// A database left running by an earlier run (for example one that was killed) is reused.
+	if probe, err := sql.Open("pgx", url); err == nil {
+		running := probe.Ping() == nil
+		probe.Close()
+		if running {
+			goto ready
+		}
+	}
+	{
+		unlock := lockDir(base)
+		startErr := pg.Start()
+		unlock()
+		if startErr != nil {
+			return "", nil, fmt.Errorf("start embedded postgres: %w", startErr)
+		}
+		stop = func() { _ = pg.Stop() }
+	}
+ready:
+	conn, err := sql.Open("pgx", url)
+	if err != nil {
+		stop()
+		return "", nil, err
+	}
+	defer conn.Close()
+	var hasPostGIS bool
+	_ = conn.QueryRow(`SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'postgis')`).Scan(&hasPostGIS)
+	HasPostGIS = hasPostGIS
+	if err := migrate(conn, !hasPostGIS); err != nil {
+		stop()
+		return "", nil, err
+	}
+	if _, err := conn.Exec(`SET search_path = app, extensions, public; ` + SeedSQL()); err != nil {
+		stop()
+		return "", nil, fmt.Errorf("demo data: %w", err)
+	}
+	return url, stop, nil
 }

@@ -10,6 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/bookdan/backend/internal/api"
 	"github.com/bookdan/backend/internal/config"
 	"github.com/bookdan/backend/internal/db"
 	"github.com/bookdan/backend/internal/server"
@@ -24,9 +27,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.DemoMode {
+		slog.Warn("DEMO_MODE is on: every sign-in code is 123456")
+	}
+
 	// The database is optional in development so the API can start before it is set up;
-	// /v1/readyz reports 503 until it is reachable. Production requires it (see Validate).
+	// /v1/readyz reports 503 until it is reachable, and the endpoints answer 501 until then. Production requires it.
 	var pinger server.Pinger
+	var mount func(chi.Router)
+	workers := func(context.Context) {}
 	if cfg.DatabaseURL != "" {
 		pool, err := db.Open(context.Background(), cfg.DatabaseURL)
 		if err != nil {
@@ -35,13 +44,37 @@ func main() {
 		}
 		defer pool.Close()
 		pinger = pool
+
+		keys, err := api.NewKeys(cfg)
+		if err != nil {
+			slog.Error("keys", "err", err)
+			os.Exit(1)
+		}
+		providers, err := api.ProvidersFor(cfg)
+		if err != nil {
+			slog.Error("integrations", "err", err)
+			os.Exit(1)
+		}
+		a, err := api.New(context.Background(), cfg, pool, keys, providers)
+		if err != nil {
+			slog.Error("api", "err", err)
+			os.Exit(1)
+		}
+		mount, workers = a.Routes, a.RunWorkers
+		if cfg.PaymentProvider == "dev" {
+			slog.Warn("PAYMENT_PROVIDER=dev: payments use a fake test page; no real money moves")
+		}
 	} else {
 		slog.Warn("DATABASE_URL is not set; running without a database")
 	}
 
+	background, stopWorkers := context.WithCancel(context.Background())
+	defer stopWorkers()
+	go workers(background)
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.New(cfg, pinger),
+		Handler:           server.New(cfg, pinger, mount),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

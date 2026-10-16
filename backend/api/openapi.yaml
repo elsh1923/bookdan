@@ -8,8 +8,9 @@ info:
 
     Conventions
     - Base path /v1 over HTTPS.
-    - Request headers: Authorization (Bearer), Accept-Language (en, am, om, ti), X-Device-Id, X-App-Version.
-      Mutating requests also send Idempotency-Key.
+    - Request headers: Authorization (Bearer), Accept-Language (en, am, om, ti), X-App (guest or partner), X-Device-Id (the install's id, 8+ characters),
+      X-Platform (android, ios), X-App-Version. Creating a hold also sends Idempotency-Key.
+    - Endpoints marked 200 are built (internal/api); 501 NOT_IMPLEMENTED means not built yet.
     - Every response body includes server_time (apps use it for countdowns, never the phone clock).
     - Money fields end in _santim and are integers, with a currency field beside them.
     - Errors use one shape: code, message, request_id, details.
@@ -30,53 +31,72 @@ paths:
     post:
       summary: Send a one-time code by SMS (phone) or email
       description: |
-        Body: exactly one of `{ "phone": "+2519..." }` or `{ "email": "name@example.com" }`.
-        Phone numbers are Ethiopian in the demo; email is for visitors without an Ethiopian number.
-        The server normalises both (email lower-cased) and rate-limits per identifier and per IP.
-        Response: sent_at, retry_after.
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+        Body: { "type": "phone" | "email", "value": "+2519..." | "name@example.com" }. Phones are Ethiopian (+2519 or +2517);
+        email is for visitors without an Ethiopian number and is lower-cased. At most 5 codes per identifier per 10 minutes (429 TOO_MANY_REQUESTS).
+        Codes last 5 minutes. Errors: INVALID_PHONE, INVALID_EMAIL.
+      responses: { "200": { description: Code sent } }
   /auth/otp/verify:
     post:
-      summary: Exchange phone or email plus code for access and refresh tokens
+      summary: Exchange the identity plus code for access and refresh tokens
       description: |
-        Body: the same `phone` or `email` as the request, plus the 6-digit `code`.
-        Response: access_token, refresh_token, user (including which identifier signed in).
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+        Body: { "type", "value", "code" }. Headers X-App and X-Device-Id are required. Five wrong codes spend the challenge.
+        Response: { token, refresh_token }. The access token lasts 15 minutes. The partner app admits only hotel staff (403 NOT_STAFF).
+        Errors: INVALID_OTP.
+      responses: { "200": { description: Signed in } }
+  /auth/refresh:
+    post:
+      summary: Trade a refresh token for a new pair (rotation)
+      description: |
+        Body: { "refresh_token" }. A refresh token works once. Presenting a used one means a copy leaked: the whole session family is revoked
+        and every token in it fails with 401 UNAUTHENTICATED.
+      responses: { "200": { description: New tokens } }
+  /keys/voucher:
+    get:
+      summary: The public key that verifies voucher QR codes offline (Ed25519)
+      responses: { "200": { description: "kid, alg and public_key (base64url)" } }
   /search:
     get:
       summary: Search properties by landmark, city, name or coordinates
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /properties/{id}:
     get:
       summary: Property detail with room types, prices and reviews
       parameters: [{ $ref: "#/components/parameters/Id" }]
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /quotes:
     post:
-      summary: Full price breakdown (base, service, VAT, total, deposit, balance due at the hotel)
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      summary: Price a stay (valid 10 minutes)
+      description: |
+        Body: { property_id, room_type_id, check_in, check_out, guests, rooms? } (1 to 9 rooms of one type; guests >= rooms).
+        Amounts cover all rooms: nightly_santim is one room for one night; subtotal_santim, vat_santim and total_santim are for the stay.
+        Errors: SOLD_OUT (not enough rooms for every night), INVALID_STATE (too many guests, no price for those dates), PRICING_NOT_CONFIRMED.
+      responses: { "200": { description: Quote } }
   /bookings:
     get:
       summary: The signed-in guest's bookings
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
     post:
-      summary: Create a time-limited hold (returns hold_expires_at). Requires Idempotency-Key.
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      summary: Hold the rooms for 15 minutes. Requires Idempotency-Key.
+      description: |
+        Body: { quote_id, guest_name }. Takes every room on every night, or none. Freezes a copy of the guest's profile for the hotel.
+        The same key and request returns the same booking; the same key with another request is IDEMPOTENCY_MISMATCH.
+        Errors: QUOTE_EXPIRED, SOLD_OUT, PROFILE_INCOMPLETE.
+      responses: { "200": { description: Booking (HELD) } }
   /bookings/{id}:
     get:
       summary: Booking status and amounts
       parameters: [{ $ref: "#/components/parameters/Id" }]
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /bookings/{id}/pay:
     post:
       summary: Start payment; returns a payment_url (mock gateway in the demo)
       parameters: [{ $ref: "#/components/parameters/Id" }]
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /bookings/{id}/voucher:
     get:
       summary: Signed voucher token and PIN (PIN shown once)
       parameters: [{ $ref: "#/components/parameters/Id" }]
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /partner/devices/push-token:
     put:
       summary: Register this phone for new-booking alerts
@@ -86,24 +106,24 @@ paths:
         { "type": "new_booking", "booking_id": "..." } to the hotel's registered phones on the Android channel
         "booking_alerts" (highest importance, its own sound). The countdown and the escalation chain
         (Telegram, SMS, automated call) run on the server; the app only shows the countdown.
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /me/profile:
     get:
       summary: The signed-in guest's own profile (masked), or 404 if they have not filled it in
       description: |
         Returns full_name, id_type, id_last4, nationality. Never the full ID number.
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
     put:
       summary: Save the guest's name, ID and nationality
       description: |
         Body: full_name, id_type (national_id, passport, driving_licence, residence_permit, other), id_number,
         nationality. The server normalises the number (INVALID_ID if it cannot be an ID), encrypts it (AES-GCM, key
         kept outside the database), and stores a keyed hash and the last four characters. Requires Idempotency-Key.
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
     delete:
       summary: Remove the guest's ID details
       description: Deletes the profile. Copies already given to hotels for requested stays stay until the retention job erases them.
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /partner/bookings/{id}/guest/reveal:
     post:
       summary: Show the full ID number of the guest on one booking
@@ -112,21 +132,21 @@ paths:
         audit_log entry (who, which booking, when) before answering, and is rate-limited. Returns id_number.
         Fails with 410 GONE once the number was erased after the retention period.
       parameters: [{ $ref: "#/components/parameters/Id" }]
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /partner/bookings:
     get:
       summary: Partner inbox, with hotel_deadline_at per booking
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /partner/bookings/{id}/accept:
     post:
       summary: Accept a booking
       parameters: [{ $ref: "#/components/parameters/Id" }]
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /partner/bookings/{id}/decline:
     post:
       summary: Decline a booking (reason required)
       parameters: [{ $ref: "#/components/parameters/Id" }]
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      responses: { "200": { description: OK } }
   /partner/rooms:
     get:
       summary: Rooms and per-night states for the tape chart
@@ -147,6 +167,13 @@ paths:
     get:
       summary: Deposit, commission, VAT and net payout from the ledger
       responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /webhooks/payments/{provider}:
+    post:
+      summary: A payment gateway reports a result (signed)
+      description: |
+        Body: { event_id, payment_ref, status: succeeded | failed }. The header X-Signature is the hex HMAC-SHA256 of the raw body with
+        PAYMENT_WEBHOOK_SECRET; anything else is 401. An event id is handled once, so retries by the gateway are safe.
+      responses: { "200": { description: Recorded } }
 components:
   parameters:
     Id:

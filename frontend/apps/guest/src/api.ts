@@ -1,21 +1,29 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { QueryClient } from '@tanstack/react-query';
+import { getDeviceId } from './device';
 import Constants from 'expo-constants';
-import { createMockApi, createSessionManager, type Api, type SessionHooks } from '@bookdan/api-client';
+import { Platform } from 'react-native';
+import { createHttpApi, createMockApi, createSessionManager, type Api, type SessionHooks } from '@bookdan/api-client';
 
-// Rule 1: the Go backend is the source of truth. Until it exists, a mock that
-// honours the same contract stands in. Flip extra.apiMode to "http" later.
-const mode = (Constants.expoConfig?.extra?.apiMode as string | undefined) ?? 'mock';
-export const isMockApi = mode === 'mock';
+// Rule 1: the Go backend is the source of truth. With EXPO_PUBLIC_API_MODE=http (and EXPO_PUBLIC_API_URL) the app talks to it;
+// otherwise a mock that honours the same contract stands in, so the app still runs with no server.
+// EXPO_PUBLIC_* values are read when the app is bundled (set them in eas.json for builds and updates).
+const extra = Constants.expoConfig?.extra as { apiMode?: string; apiUrl?: string } | undefined;
+const mode = process.env.EXPO_PUBLIC_API_MODE ?? extra?.apiMode ?? 'mock';
+const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? extra?.apiUrl ?? (Platform.OS === 'web' ? 'http://localhost:8080' : '');
+export const isMockApi = mode !== 'http';
+if (!isMockApi && !apiUrl) console.warn('EXPO_PUBLIC_API_MODE=http but EXPO_PUBLIC_API_URL is not set: every request will fail.');
 
 // The mock keeps its bookings on the phone so a demo survives the app being killed (acceptance test M3).
-const raw: Api = createMockApi({
-  store: {
-    load: () => AsyncStorage.getItem('mock-server-state'),
-    save: (json) => AsyncStorage.setItem('mock-server-state', json),
-  },
-});
+const raw: Api = isMockApi
+  ? createMockApi({
+      store: {
+        load: () => AsyncStorage.getItem('mock-server-state'),
+        save: (json) => AsyncStorage.setItem('mock-server-state', json),
+      },
+    })
+  : createHttpApi({ baseUrl: apiUrl, app: 'guest', deviceId: getDeviceId, platform: Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web' });
 
 // Silent session refresh is shared with the partner app.
 const session = createSessionManager(raw);

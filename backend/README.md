@@ -7,15 +7,20 @@ Stack (from the mobile and backend spec): Go, chi, pgx, sqlc, goose, River, Post
 
 ## Status
 
-- **Database: built and tested.** Seven migrations create identity, catalogue, bookings, payments, the money ledger,
-  vouchers, sync and audit tables. The rules that protect money and rooms (no overselling, the booking status machine,
-  a balanced append-only ledger, safe retries) are enforced by the database and covered by tests.
-- **API:** `GET /v1/healthz` (liveness) and `GET /v1/readyz` (database reachable). Every other route in the contract
-  still answers `501 NOT_IMPLEMENTED` with the standard error body. The endpoints come next, starting with sign-in.
-- Production refuses to start with `DEMO_MODE=true` or without `DATABASE_URL`. Request logs contain no headers,
-  query strings or bodies.
+- **The booking journey is real.** Sign-in, search, quotes (1 to 9 rooms), holds, payment sessions and callbacks, hotel
+  accept and decline, expiry and refunds, signed vouchers, encrypted ID storage with audited reveal: all built on PostgreSQL and
+  covered by end-to-end tests (`internal/api`). The apps use it with `EXPO_PUBLIC_API_MODE=http`.
+- **Three outside services are stand-ins** (sign-in codes, Telebirr/Chapa payments, push alerts). They sit behind interfaces in
+  `internal/api/providers.go`, and production refuses to start while any stand-in is selected.
+- **Not built yet:** the hotel's offline tools (rooms chart, walk-ins, QR check-in, statements), reviews, guest cancellation.
+- Full checklist to production: [`docs/going-live.md`](docs/going-live.md).
+- Production refuses to start with demo mode, without secrets, over http, or without `DATABASE_URL`. Request logs contain no
+  headers, query strings or bodies.
 
 ## Run
+
+Nothing to install: `go run ./cmd/devserver` starts a private database with demo hotels and the API (see [`docs/going-live.md`](docs/going-live.md)).
+With your own database:
 
 ```bash
 cp .env.example .env                 # then put your Supabase connection string in .env (see docs/database.md)
@@ -38,11 +43,13 @@ go test ./... -race        # includes database tests on an embedded PostgreSQL (
 ```
 cmd/api/            API entrypoint
 cmd/migrate/        migrations: up, down (dev only), status, seed (dev only)
+cmd/devserver/      whole backend on your computer: private database, demo data, API (development only)
 internal/config/    settings, .env loading, startup validation
 internal/db/        PostgreSQL connection pool
 internal/dbtest/    test database (embedded PostgreSQL) and tests for the database rules
 internal/httpx/     response conventions (server_time, one error shape, stable error codes)
 internal/server/    router and middleware
+internal/api/       the endpoints (auth, catalogue, bookings, payments, partner), integrations, background sweeper
 db/migrations/      goose migrations, embedded in the migrate binary
 db/seed/            demo data
 db/queries/         sqlc queries (generates internal/store)

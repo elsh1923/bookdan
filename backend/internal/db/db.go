@@ -16,6 +16,8 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
 	}
 	cfg.MaxConns = 10
+	// Every table lives in the app schema (PostGIS in extensions).
+	cfg.ConnConfig.RuntimeParams["search_path"] = "app, extensions, public"
 	cfg.MaxConnLifetime = time.Hour
 	cfg.HealthCheckPeriod = time.Minute
 

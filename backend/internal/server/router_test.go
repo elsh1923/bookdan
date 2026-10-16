@@ -27,7 +27,7 @@ func get(t *testing.T, h http.Handler, path string) (*httptest.ResponseRecorder,
 }
 
 func TestHealthz_IsLivenessOnly(t *testing.T) {
-	h := New(config.Config{Env: "test"}, nil) // no database at all
+	h := New(config.Config{Env: "test"}, nil, nil) // no database at all
 	rec, body := get(t, h, "/v1/healthz")
 	if rec.Code != http.StatusOK || body["status"] != "ok" {
 		t.Fatalf("got %d %v", rec.Code, body)
@@ -49,7 +49,7 @@ func TestReadyz(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			rec, _ := get(t, New(config.Config{}, c.db), "/v1/readyz")
+			rec, _ := get(t, New(config.Config{}, c.db, nil), "/v1/readyz")
 			if rec.Code != c.want {
 				t.Fatalf("got %d, want %d", rec.Code, c.want)
 			}
@@ -58,7 +58,7 @@ func TestReadyz(t *testing.T) {
 }
 
 func TestUnbuiltRoutes_UseTheStandardErrorShape(t *testing.T) {
-	h := New(config.Config{}, nil)
+	h := New(config.Config{}, nil, nil)
 	for _, path := range []string{"/v1/search", "/v1/bookings", "/v1/partner/rooms"} {
 		rec, body := get(t, h, path)
 		if rec.Code != http.StatusNotImplemented {
