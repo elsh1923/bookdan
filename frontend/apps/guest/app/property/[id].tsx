@@ -5,7 +5,8 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, View, useWindowDimensi
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { nightsBetween, type Amenity, type RoomType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, EmptyState, T, colors, radius, spacing } from '@bookdan/ui';
+import { Animated, Badge, Button, EmptyState, Reveal, T, colors, radius, spacing, useBounce } from '@bookdan/ui';
+import { useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Photo } from '../../src/Photo';
 import { callPhone } from '../../src/links';
 import { FOOTER_CLEARANCE, StickyFooter } from '../../src/StickyFooter';
@@ -21,7 +22,7 @@ const AMENITY_ICON: Record<Amenity, keyof typeof Ionicons.glyphMap> = {
   pay_at_hotel: 'cash-outline',
 };
 
-function RoomCard({ room, nights, onSelect }: { room: RoomType; nights: number; onSelect: () => void }) {
+function RoomCard({ room, nights, rooms, onSelect }: { room: RoomType; nights: number; rooms: number; onSelect: () => void }) {
   const { t } = useTranslation();
   const total = room.price_santim * nights;
   return (
@@ -45,8 +46,8 @@ function RoomCard({ room, nights, onSelect }: { room: RoomType; nights: number; 
         </T>
       ) : null}
       <Button
-        title={room.rooms_left > 0 ? t('property.select_room') : t('results.sold_out')}
-        disabled={room.rooms_left === 0}
+        title={room.rooms_left >= rooms ? t('property.select_room') : room.rooms_left > 0 ? t('property.only_left', { count: room.rooms_left }) : t('results.sold_out')}
+        disabled={room.rooms_left < rooms}
         onPress={onSelect}
         style={{ marginTop: spacing.md }}
       />
@@ -59,7 +60,7 @@ export default function PropertyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const p = useLocalSearchParams<{ id: string; in: string; out: string; guests?: string }>();
+  const p = useLocalSearchParams<{ id: string; in: string; out: string; guests?: string; rooms?: string }>();
   const query = useProperty(p.id, p.in, p.out);
   const [showVerified, setShowVerified] = useState(false);
   const scroller = useRef<ScrollView>(null);
@@ -68,6 +69,19 @@ export default function PropertyScreen() {
   const toggleSaved = usePrefs((s) => s.toggleSaved);
   const nights = nightsBetween(p.in, p.out);
   const heroHeight = Math.min(Math.round(Math.min(width, 640) * 0.95), 460);
+  const heart = useBounce();
+  // The photo moves at half speed while scrolling and stretches when pulled down.
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => { scrollY.value = e.contentOffset.y; });
+  const heroStyle = useAnimatedStyle(() => {
+    const y = scrollY.value;
+    return {
+      transform: [
+        { translateY: y * 0.5 },
+        { scale: y < 0 ? 1 + Math.min(-y, 200) / heroHeight : 1 },
+      ],
+    };
+  });
 
   const circle = { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center', zIndex: 2 } as const;
   const back = (
@@ -95,18 +109,20 @@ export default function PropertyScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <ScrollView ref={scroller} contentContainerStyle={{ paddingBottom: FOOTER_CLEARANCE }} showsVerticalScrollIndicator={false}>
-        <View>
-          <Photo uri={prop.photos[0] ?? prop.photo_url} accent={prop.accent} name={prop.name} style={{ width: '100%', height: heroHeight }} />
+      <Animated.ScrollView ref={scroller as any} onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: FOOTER_CLEARANCE }} showsVerticalScrollIndicator={false}>
+        <View style={{ overflow: 'hidden' }}>
+          <Animated.View style={heroStyle}>
+            <Photo uri={prop.photos[0] ?? prop.photo_url} accent={prop.accent} name={prop.name} style={{ width: '100%', height: heroHeight }} />
+          </Animated.View>
           {back}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('wishlist.save')}
             accessibilityState={{ selected: saved }}
-            onPress={() => toggleSaved(prop.id)}
+            onPress={() => { if (!saved) heart.bounce(); toggleSaved(prop.id); }}
             style={[circle, { position: 'absolute', top: insets.top + 8, right: spacing.lg }]}
           >
-            <Ionicons name={saved ? 'heart' : 'heart-outline'} size={22} color={saved ? colors.favorite : colors.ink} />
+            <Animated.View style={heart.style}><Ionicons name={saved ? 'heart' : 'heart-outline'} size={22} color={saved ? colors.favorite : colors.ink} /></Animated.View>
           </Pressable>
         </View>
 
@@ -165,13 +181,15 @@ export default function PropertyScreen() {
 
           <View onLayout={(e) => setRoomsY(e.nativeEvent.layout.y)}>
             <T variant="displaySm" style={{ marginTop: spacing.xl }}>{t('property.rooms')}</T>
-            {room_types.map((r) => (
+            {room_types.map((r, i) => (
+              <Reveal key={r.id} index={i}>
               <RoomCard
-                key={r.id}
                 room={r}
                 nights={nights}
-                onSelect={() => router.push({ pathname: '/checkout', params: { id: prop.id, room: r.id, in: p.in, out: p.out, guests: p.guests ?? '1' } })}
+                rooms={Number(p.rooms) || 1}
+                onSelect={() => router.push({ pathname: '/checkout', params: { id: prop.id, room: r.id, in: p.in, out: p.out, guests: p.guests ?? '1', rooms: p.rooms ?? '1' } })}
               />
+              </Reveal>
             ))}
           </View>
 
@@ -186,7 +204,7 @@ export default function PropertyScreen() {
             </View>
           ))}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       <StickyFooter>
         {cheapest !== null && cheapestRoom ? (
@@ -195,7 +213,7 @@ export default function PropertyScreen() {
             onPress={() => {
               // One room type: go straight to checkout. Several: show them so the guest chooses.
               if (room_types.length === 1) {
-                router.push({ pathname: '/checkout', params: { id: prop.id, room: cheapestRoom.id, in: p.in, out: p.out, guests: p.guests ?? '1' } });
+                router.push({ pathname: '/checkout', params: { id: prop.id, room: cheapestRoom.id, in: p.in, out: p.out, guests: p.guests ?? '1', rooms: p.rooms ?? '1' } });
               } else {
                 scroller.current?.scrollTo({ y: Math.max(heroHeight - 28 + roomsY - 8, 0), animated: true }); // roomsY is relative to the sheet
               }

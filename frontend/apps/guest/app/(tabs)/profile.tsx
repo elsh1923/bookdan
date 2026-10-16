@@ -3,9 +3,11 @@ import { useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES, useTranslation } from '@bookdan/i18n';
-import { Badge, Button, Chip, T, colors, radius, spacing } from '@bookdan/ui';
+import { maskId } from '@bookdan/domain';
+import { Badge, Button, Chip, PressableScale, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
 import { useAuth } from '../../src/auth';
+import { useProfile } from '../../src/queries';
 import { signOutAndWipe } from '../../src/session';
 import { usePrefs } from '../../src/store';
 
@@ -14,14 +16,32 @@ export default function Profile() {
   const { setLanguage, currency, setCurrency } = usePrefs();
   const router = useRouter();
   const identity = useAuth((s) => s.identity);
+  const profile = useProfile(!!identity);
   return (
     <SafeAreaView style={{ flex: 1, padding: spacing.lg }} edges={['top']}>
-      <T variant="h1">{t('profile.title')}</T>
+      <Reveal><T variant="h1">{t('profile.title')}</T></Reveal>
 
-      <Pressable onPress={() => router.push('/bookings')} accessibilityRole="button" style={{ marginTop: spacing.xl, minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }}>
+      {identity ? (
+        <Reveal index={1}>
+        <PressableScale scaleTo={0.98} onPress={() => router.push('/guest-details')} accessibilityRole="button" style={{ marginTop: spacing.xl, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: profile.data ? colors.line : colors.primary, backgroundColor: profile.data ? colors.surface : colors.primarySoft }}>
+          <Ionicons name="id-card-outline" size={24} color={colors.primaryInk} />
+          <View style={{ flex: 1 }}>
+            <T variant="h3">{t('profile.my_details')}</T>
+            <T variant="small" color={colors.inkSoft}>
+              {profile.data ? `${profile.data.full_name} · ${t(`idType.${profile.data.id_type}`)} ${maskId(profile.data.id_last4)}` : t('profile.add_id')}
+            </T>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </PressableScale>
+        </Reveal>
+      ) : null}
+
+      <Reveal index={2}>
+      <PressableScale scaleTo={0.98} onPress={() => router.push('/bookings')} accessibilityRole="button" style={{ marginTop: spacing.md, minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }}>
         <T variant="h3">{t('tabs.bookings')}</T>
         <Ionicons name="chevron-forward" size={20} color={colors.muted} />
-      </Pressable>
+      </PressableScale>
+      </Reveal>
 
       <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('profile.language').toUpperCase()}</T>
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Modal, Pressable, View } from 'react-native';
 import { DECLINE_REASONS, type DeclineReason } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, T, colors, radius, spacing } from '@bookdan/ui';
+import { Button, PressableScale, T, colors, radius, spacing } from '@bookdan/ui';
 
 /** Bottom sheet asking for the reason when a hotel declines. A reason is required. */
 export function DeclineSheet({ visible, busy, onClose, onConfirm }: {
@@ -26,8 +26,9 @@ export function DeclineSheet({ visible, busy, onClose, onConfirm }: {
           {DECLINE_REASONS.map((r) => {
             const selected = reason === r;
             return (
-              <Pressable
+              <PressableScale
                 key={r}
+                scaleTo={0.98}
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
                 onPress={() => setReason(r)}
@@ -39,7 +40,7 @@ export function DeclineSheet({ visible, busy, onClose, onConfirm }: {
               >
                 <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={22} color={selected ? colors.primary : colors.muted} />
                 <T variant="h3" color={selected ? colors.primaryInk : colors.ink} style={{ flex: 1 }}>{t(`partner.reason_${r}`)}</T>
-              </Pressable>
+              </PressableScale>
             );
           })}
         </View>

@@ -2,6 +2,8 @@ import type {
   Amenity,
   Booking,
   DeclineReason,
+  GuestProfile,
+  GuestProfileInput,
   Identity,
   PaymentMethod,
   PartnerBooking,
@@ -21,6 +23,8 @@ export interface SearchParams {
   check_in: string;
   check_out: string;
   guests: number;
+  /** Rooms wanted (default 1). Hotels without that many free rooms of one type are not offered. */
+  rooms?: number;
   types?: PropertyType[];
   amenities?: Amenity[];
   cursor?: string | null;
@@ -38,6 +42,8 @@ export interface CreateQuoteParams {
   check_in: string;
   check_out: string;
   guests: number;
+  /** Rooms of this type (default 1, at most 9). */
+  rooms?: number;
 }
 
 export interface Tokens {
@@ -67,7 +73,8 @@ export interface Api extends AuthApi {
 
   createQuote(params: CreateQuoteParams): Promise<Quote>;
   /**
-   * Places a time-limited hold on the room. Fails with SOLD_OUT or QUOTE_EXPIRED.
+   * Places a time-limited hold on the room. Fails with SOLD_OUT, QUOTE_EXPIRED, or PROFILE_INCOMPLETE when the guest has
+   * not saved their name and ID yet. The hotel receives a copy of the guest's profile with the request.
    * idempotency_key is created once per checkout attempt and reused on retries: the same key
    * returns the same booking, the same key with different details fails with IDEMPOTENCY_MISMATCH.
    */
@@ -81,6 +88,12 @@ export interface Api extends AuthApi {
   startPayment(params: { booking_id: string; method: PaymentMethod }): Promise<{ booking: Booking; session: PaymentSession | null }>;
   getBooking(id: string): Promise<Booking>;
   listBookings(): Promise<Booking[]>;
+  /** The guest's own saved details, or null if none yet. The ID number comes back masked (last four only). */
+  getProfile(): Promise<GuestProfile | null>;
+  /** Saves the guest's name, ID and nationality. Fails with INVALID_ID for a number that cannot be an ID. */
+  saveProfile(input: GuestProfileInput): Promise<GuestProfile>;
+  /** Removes the guest's saved ID details. */
+  deleteProfile(): Promise<void>;
   /** Signed voucher for a confirmed booking. Fails with VOUCHER_NOT_READY before confirmation. */
   getVoucher(bookingId: string): Promise<Voucher>;
 
@@ -113,7 +126,12 @@ export interface PushRegistration {
 export interface PartnerApi extends AuthApi {
   /** Registers (or refreshes) this phone for new-booking alerts. */
   registerPushToken(registration: PushRegistration): Promise<void>;
-  /** The hotel's bookings: those waiting for an answer, upcoming stays, and recent ones. */
+  /**
+   * Shows the full ID number of the guest on one booking. Audited on the server; only staff of the hotel that holds the
+   * booking. Fails with GONE once the number was erased after the retention period.
+   */
+  revealGuestId(bookingId: string): Promise<{ id_number: string }>;
+  /** The hotel's bookings: those waiting for an answer, upcoming stays, and recent ones. Each carries the guest's profile (masked ID). */
   listBookings(): Promise<PartnerBookingList>;
   /** Accept a booking. Fails with DEADLINE_PASSED once the time to answer is over (the guest is refunded). */
   acceptBooking(id: string): Promise<PartnerBooking>;
@@ -134,7 +152,7 @@ export class ApiError extends Error {
   constructor(
     public code:
       | 'NETWORK' | 'NOT_FOUND' | 'SERVER' | 'UNAUTHENTICATED' | 'INVALID_PHONE' | 'INVALID_EMAIL' | 'INVALID_OTP'
-      | 'SOLD_OUT' | 'QUOTE_EXPIRED' | 'HOLD_EXPIRED' | 'IDEMPOTENCY_MISMATCH' | 'VOUCHER_NOT_READY' | 'PAYMENT_FAILED' | 'DEADLINE_PASSED' | 'INVALID_STATE'
+      | 'SOLD_OUT' | 'QUOTE_EXPIRED' | 'HOLD_EXPIRED' | 'IDEMPOTENCY_MISMATCH' | 'VOUCHER_NOT_READY' | 'PAYMENT_FAILED' | 'DEADLINE_PASSED' | 'INVALID_STATE' | 'INVALID_ID' | 'GONE' | 'PROFILE_INCOMPLETE'
       | (string & {}),
     message: string,
     public request_id?: string,

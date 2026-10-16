@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { normalizeEmail, normalizeEthiopianPhone, type Identity, type IdentityType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, Chip, T, colors, radius, spacing } from '@bookdan/ui';
+import { Badge, Button, Chip, Pop, Reveal, StepTransition, T, colors, radius, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../src/api';
 import { useAuth } from '../src/auth';
 import { Field } from '../src/Field';
@@ -63,10 +63,13 @@ export default function Login() {
     <SafeAreaView style={{ flex: 1 }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
-          <Image source={require('../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 64, height: 64, borderRadius: radius.md, marginTop: spacing.lg }} />
-          <T variant="display" style={{ marginTop: spacing.lg }}>{t('partner.login_title')}</T>
-          <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('partner.login_subtitle')}</T>
+          <Pop><Image source={require('../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 64, height: 64, borderRadius: radius.md, marginTop: spacing.lg }} /></Pop>
+          <Reveal index={1}>
+            <T variant="display" style={{ marginTop: spacing.lg }}>{t('partner.login_title')}</T>
+            <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('partner.login_subtitle')}</T>
+          </Reveal>
 
+          <StepTransition stepKey={identity === null ? 'enter' : 'code'}>
           {identity === null ? (
             <>
               <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
@@ -127,6 +130,7 @@ export default function Login() {
               />
             </>
           )}
+          </StepTransition>
 
           {isMockApi ? (
             <View style={{ marginTop: spacing.xl, gap: spacing.sm }}>

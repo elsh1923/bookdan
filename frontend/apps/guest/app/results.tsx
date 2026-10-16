@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { nightsBetween, type Amenity, type PropertyType, type SearchItem } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, Chip, EmptyState, T, colors, radius, spacing } from '@bookdan/ui';
+import { Button, Chip, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
 import { PropertyCard } from '../src/PropertyCard';
 import { shortDate } from '../src/format';
 import { useSearch } from '../src/queries';
@@ -50,7 +50,7 @@ function FilterSheet({ visible, types, amenities, onClose, onApply }: {
 export default function Results() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
-  const p = useLocalSearchParams<{ q?: string; in: string; out: string; guests: string }>();
+  const p = useLocalSearchParams<{ q?: string; in: string; out: string; guests: string; rooms?: string }>();
   const months = t('months.short', { returnObjects: true }) as unknown as string[];
 
   const [types, setTypes] = useState<PropertyType[]>([]);
@@ -59,8 +59,8 @@ export default function Results() {
   const [view, setView] = useState<'list' | 'map'>('list');
 
   const criteria = useMemo(
-    () => ({ q: p.q ?? '', check_in: p.in, check_out: p.out, guests: Number(p.guests) || 1, types, amenities }),
-    [p.q, p.in, p.out, p.guests, types, amenities],
+    () => ({ q: p.q ?? '', check_in: p.in, check_out: p.out, guests: Number(p.guests) || 1, rooms: Number(p.rooms) || 1, types, amenities }),
+    [p.q, p.in, p.out, p.guests, p.rooms, types, amenities],
   );
   const query = useSearch(criteria);
   const items = query.data?.pages.flatMap((pg) => pg.items) ?? [];
@@ -91,7 +91,7 @@ export default function Results() {
           <View style={{ flex: 1 }}>
             <T variant="h3" numberOfLines={1}>{p.q || t('results.title')}</T>
             <T variant="small" color={colors.inkSoft}>
-              {shortDate(p.in, months)} – {shortDate(p.out, months)} · {t('common.night', { count: nights })} · {t('common.guest', { count: Number(p.guests) || 1 })}
+              {shortDate(p.in, months)} – {shortDate(p.out, months)} · {t('common.night', { count: nights })} · {t('common.guest', { count: Number(p.guests) || 1 })}{Number(p.rooms) > 1 ? ` · ${t('common.room', { count: Number(p.rooms) })}` : ''}
             </T>
           </View>
         </View>
@@ -106,7 +106,15 @@ export default function Results() {
       {view === 'map' ? (
         <EmptyState icon="🗺️" title={t('results.map')} body={t('results.map_soon')} />
       ) : query.isPending ? (
-        <ActivityIndicator style={{ marginTop: 64 }} color={colors.primary} size="large" />
+        <View style={{ padding: spacing.lg, gap: spacing.lg }}>
+          {[0, 1, 2].map((i) => (
+            <View key={i}>
+              <Skeleton height={190} radius={radius.lg} />
+              <Skeleton height={20} width="70%" style={{ marginTop: spacing.md }} />
+              <Skeleton height={14} width="45%" style={{ marginTop: spacing.sm }} />
+            </View>
+          ))}
+        </View>
       ) : query.isError ? (
         errorView()
       ) : items.length === 0 ? (
@@ -116,8 +124,8 @@ export default function Results() {
           data={items}
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ padding: spacing.lg }}
-          renderItem={({ item }) => (
-            <PropertyCard item={item} onPress={() => router.push({ pathname: '/property/[id]', params: { id: item.id, in: p.in, out: p.out, guests: p.guests } })} />
+          renderItem={({ item, index }) => (
+            <Reveal index={index}><PropertyCard item={item} onPress={() => router.push({ pathname: '/property/[id]', params: { id: item.id, in: p.in, out: p.out, guests: p.guests, rooms: p.rooms ?? '1' } })} /></Reveal>
           )}
           onEndReached={() => query.hasNextPage && !query.isFetchingNextPage && query.fetchNextPage()}
           onEndReachedThreshold={0.5}

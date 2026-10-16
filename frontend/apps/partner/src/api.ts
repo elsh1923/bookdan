@@ -25,6 +25,7 @@ export type { SessionHooks };
 export const api: PartnerApi = {
   ...raw,
   registerPushToken: withRefresh(raw.registerPushToken),
+  revealGuestId: withRefresh(raw.revealGuestId),
   listBookings: withRefresh(raw.listBookings),
   acceptBooking: withRefresh(raw.acceptBooking),
   declineBooking: withRefresh(raw.declineBooking),

@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { formatCountdown, holdRemainingMs, shouldResumeOnLaunch, type Booking, type PaymentMethod } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, EmptyState, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
+import { Badge, Button, EmptyState, Pop, Reveal, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
 import { callPhone } from '../../src/links';
 import { clearPendingPayment, openGateway, savePendingPayment } from '../../src/payment';
@@ -157,9 +157,9 @@ export default function BookingScreen() {
       {header}
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, paddingBottom: spacing.xxl * 2 }}>
         <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
-          <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: colors.fill, alignItems: 'center', justifyContent: 'center' }}>
+          <Pop key={hero.icon + hero.title} style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: confirmed ? colors.successSoft : colors.fill, alignItems: 'center', justifyContent: 'center' }}>
             <Ionicons name={hero.icon} size={38} color={hero.color} />
-          </View>
+          </Pop>
           <T variant="displaySm" style={{ textAlign: 'center', marginTop: spacing.md }}>{hero.title}</T>
           {hero.body ? <T color={colors.inkSoft} style={{ textAlign: 'center', marginTop: spacing.xs }}>{hero.body}</T> : null}
           <View style={{ marginTop: spacing.md }}><StatusBadge status={expired ? 'EXPIRED' : b.status} /></View>
@@ -212,18 +212,18 @@ export default function BookingScreen() {
           </View>
         ) : null}
 
-        <View style={[{ backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, marginTop: spacing.xl }, shadow.card]}>
+        <Reveal index={1} style={[{ backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, marginTop: spacing.xl }, shadow.card]}>
           <T variant="displaySm">{b.property_name}</T>
           <T color={colors.inkSoft} style={{ marginBottom: spacing.sm }}>{b.address}</T>
           <Line label={t('booking.reference')} value={b.reference} />
-          <Line label={t('booking.room')} value={b.room_name} />
+          <Line label={t('booking.room')} value={b.rooms > 1 ? `${b.rooms} × ${b.room_name}` : b.room_name} />
           <Line label={t('booking.check_in')} value={shortDate(b.check_in, months)} />
           <Line label={t('booking.check_out')} value={shortDate(b.check_out, months)} />
           <Line label={t('booking.guests')} value={String(b.guests)} />
           {b.payment_method ? <Line label={t('booking.paid_with')} value={t(`booking.${b.payment_method}`)} /> : null}
           <View style={{ height: 1, backgroundColor: colors.line, marginVertical: spacing.sm }} />
           <Line label={t('booking.total')} value={total} />
-        </View>
+        </Reveal>
 
         {expired ? <Button title={t('booking.try_again')} onPress={() => router.replace('/')} style={{ marginTop: spacing.xl }} /> : null}
         {confirmed ? (

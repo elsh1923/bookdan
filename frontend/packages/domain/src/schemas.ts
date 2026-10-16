@@ -94,6 +94,11 @@ export const QuoteSchema = z.object({
   check_out: z.string(),
   nights: z.number().int(),
   guests: z.number().int(),
+  /** How many rooms of this type the guest is booking. Prices below are for all of them. */
+  rooms: z.number().int().min(1).default(1),
+  /** How many of this room type could still be booked for these dates when the quote was made. */
+  rooms_available: z.number().int().default(1),
+  /** The price of one room for one night. */
   nightly_santim: z.number().int(),
   subtotal_santim: z.number().int(),
   vat_santim: z.number().int(),
@@ -118,6 +123,7 @@ export const BookingSchema = z.object({
   check_out: z.string(),
   nights: z.number().int(),
   guests: z.number().int(),
+  rooms: z.number().int().min(1).default(1),
   guest_name: z.string(),
   total_santim: z.number().int(),
   currency: CurrencySchema,
@@ -158,6 +164,7 @@ export const VoucherSchema = z.object({
   check_out: z.string(),
   nights: z.number().int(),
   guests: z.number().int(),
+  rooms: z.number().int().min(1).default(1),
   guest_name: z.string(),
   balance_due_santim: z.number().int(), // what is still owed at the hotel
   currency: CurrencySchema,

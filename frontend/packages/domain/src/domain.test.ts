@@ -9,6 +9,7 @@ import { VoucherSchema } from './schemas.ts';
 import { normalizeEmail } from './identity.ts';
 import { PartnerBookingSchema, DECLINE_REASONS, isAwaitingAnswer, sortInbox } from './partner.ts';
 import { alertReadiness, parseBookingAlert } from './alerts.ts';
+import { BookingGuestSchema, GuestProfileInputSchema, GuestProfileSchema, idLast4, isProfileComplete, maskId, normalizeIdNumber } from './guestIdentity.ts';
 import { isPaymentInFlight, isStillChanging, shouldResumeOnLaunch } from './booking.ts';
 import { formatCountdown, normalizeEthiopianPhone, priceStay } from './pricing.ts';
 
@@ -152,7 +153,9 @@ test('polling stops once a booking can no longer change by itself', () => {
 const pb = (over: Record<string, unknown>) => ({
   id: 'b', reference: 'BD-1', status: 'CONFIRMED', guest_name: 'G', room_name: 'R', check_in: '2026-10-20', check_out: '2026-10-21',
   nights: 1, guests: 1, total_santim: 368000, currency: 'ETB', paid_at: null, hotel_deadline_at: null, decline_reason: null,
-  server_time: '2026-10-15T08:00:00.000Z', ...over,
+  server_time: '2026-10-15T08:00:00.000Z',
+  guest: { full_name: 'G', contact: '+251911234567', nationality: 'Ethiopian', id_type: 'national_id', id_last4: '9012', id_purged: false },
+  ...over,
 });
 
 test('inbox puts bookings awaiting an answer first, nearest deadline on top', () => {
@@ -171,12 +174,17 @@ test('only PAID_AWAITING_HOTEL needs an answer', () => {
   for (const status of ['CONFIRMED', 'DECLINED_REFUNDED', 'HELD', 'EXPIRED'] as const) assert.equal(isAwaitingAnswer({ status }), false, status);
 });
 
-test('PartnerBookingSchema accepts a booking and carries no contact or card data', () => {
+test('PartnerBookingSchema carries the guest profile but never a full ID number, card data, PIN or token', () => {
   const ok = PartnerBookingSchema.safeParse(pb({}));
   assert.equal(ok.success, true);
-  if (ok.success) assert.deepEqual(Object.keys(ok.data).filter((k) => /phone|email|card|pin|token/i.test(k)), []);
+  if (ok.success) {
+    const all = JSON.stringify(Object.keys(ok.data)) + JSON.stringify(Object.keys(ok.data.guest));
+    assert.equal(/card|pin|token|id_number/i.test(all), false, all);
+    assert.equal(ok.data.guest.id_last4, '9012');
+  }
   assert.equal(PartnerBookingSchema.safeParse(pb({ total_santim: 12.5 })).success, false);
   assert.equal(PartnerBookingSchema.safeParse(pb({ status: 'NOPE' })).success, false);
+  assert.equal(PartnerBookingSchema.safeParse(pb({ guest: undefined })).success, false); // a booking always shows who the guest is
   assert.deepEqual([...DECLINE_REASONS], ['fully_booked', 'room_unavailable', 'maintenance', 'other']);
 });
 
@@ -208,4 +216,43 @@ test('only a well-formed new-booking push is accepted', () => {
   for (const bad of [null, undefined, {}, { type: 'new_booking' }, { type: 'new_booking', booking_id: '' }, { type: 'other', booking_id: 'x' }, { type: 'new_booking', booking_id: 5 }, 'text']) {
     assert.equal(parseBookingAlert(bad), null, JSON.stringify(bad));
   }
+});
+
+test('ID numbers are cleaned up and anything that cannot be an ID is refused', () => {
+  assert.equal(normalizeIdNumber(' ab 1234-56 '), 'AB1234-56');
+  assert.equal(normalizeIdNumber('1234 5678 9012'), '123456789012');
+  assert.equal(normalizeIdNumber('EP/0012345'), 'EP/0012345');
+  for (const bad of ['', '123', 'ab', 'has_underscore1', 'bad!char1', 'x'.repeat(26), '١٢٣٤٥٦']) assert.equal(normalizeIdNumber(bad), null, JSON.stringify(bad));
+});
+
+test('only the last four characters of an ID are ever shown', () => {
+  assert.equal(idLast4('123456789012'), '9012');
+  assert.equal(idLast4('AB12'), 'AB12');
+  assert.equal(maskId('9012'), '•••• 9012');
+  assert.equal(maskId(idLast4('EP/0012345')).includes('0012'), false);
+});
+
+test('a guest profile needs a name, a valid ID type and a nationality', () => {
+  const ok = { full_name: 'Hanna Tesfaye', id_type: 'national_id', id_number: '123456789012', nationality: 'Ethiopian' };
+  assert.equal(GuestProfileInputSchema.safeParse(ok).success, true);
+  assert.equal(GuestProfileInputSchema.safeParse({ ...ok, full_name: 'H' }).success, false);
+  assert.equal(GuestProfileInputSchema.safeParse({ ...ok, id_type: 'library_card' }).success, false);
+  assert.equal(GuestProfileInputSchema.safeParse({ ...ok, nationality: '' }).success, false);
+});
+
+test('what the guest app and the hotel receive can never contain a full ID number', () => {
+  for (const shape of [GuestProfileSchema.shape, BookingGuestSchema.shape]) {
+    assert.deepEqual(Object.keys(shape).filter((k) => k.includes('id_number')), []);
+    assert.equal(Object.keys(shape).includes('id_last4'), true);
+  }
+});
+
+test('booking needs a complete profile', () => {
+  const p = { full_name: 'Hanna Tesfaye', id_last4: '9012', nationality: 'Ethiopian' };
+  assert.equal(isProfileComplete(p), true);
+  assert.equal(isProfileComplete(null), false);
+  assert.equal(isProfileComplete(undefined), false);
+  assert.equal(isProfileComplete({ ...p, id_last4: '' }), false);
+  assert.equal(isProfileComplete({ ...p, nationality: ' ' }), false);
+  assert.equal(isProfileComplete({ ...p, full_name: 'H' }), false);
 });

@@ -46,8 +46,8 @@ any state where more rooms are promised than exist.
 ### Booking
 | Table | Purpose |
 |---|---|
-| `quotes` | id, user_id, property_id, room_type_id, check_in, check_out, guests, currency, base/service/vat/total/deposit/balance_due `_santim`, price_snapshot jsonb, expires_at |
-| `bookings` | id, code (short, unique), user_id, property_id, room_type_id, room_id (nullable until assigned), check_in, check_out, guests, guest_name, status, amounts copied from the quote, hold_expires_at, hotel_deadline_at, version, created_at |
+| `quotes` | id, user_id, property_id, room_type_id, check_in, check_out, guests, rooms, currency, base/service/vat/total/deposit/balance_due `_santim`, price_snapshot jsonb, expires_at |
+| `bookings` | id, code (short, unique), user_id, property_id, room_type_id, room_id (nullable until assigned), check_in, check_out, guests, rooms, guest_name, status, amounts copied from the quote, hold_expires_at, hotel_deadline_at, version, created_at |
 | `booking_events` | append-only status history: booking_id, from_status, to_status, actor, reason, at |
 | `idempotency_keys` | user_id, key, endpoint, request_hash, response_status, response_body, created_at. Same key with a different body = `409 IDEMPOTENCY_MISMATCH` |
 
@@ -80,6 +80,33 @@ ledger**. The app never calculates them.
 | `sync_actions` | action_id (pk, from the device), device_id, property_id, seq, type, payload, status, result, error, processed_at. Sending the same action twice returns the saved result |
 | `change_log` | id bigserial, property_id, entity, entity_id, op. The `sync/pull` cursor is the last id seen |
 | `audit_log` | append-only record of security-relevant actions (login, refresh reuse, PIN lockout, device revoke) |
+
+### Guest identity and the hotel's copy (national ID)
+Tables `guest_profiles` and `booking_guests` (migration 00008). The guest enters their name, ID type, ID number and
+nationality **once, in the guest app**. A booking cannot be made without a complete profile (`PROFILE_INCOMPLETE`).
+When the guest requests a room, the server freezes a copy of the profile into `booking_guests`, and the partner app
+shows it with the booking: the hotel sees the guest as they were when they asked.
+
+- **Stored encrypted:** the full ID number is AES-GCM ciphertext (`id_number_enc`); the key lives in the server's
+  secret store (or a KMS), never in the database or the apps. A database leak alone does not expose numbers.
+- **Findable but not readable:** `id_number_hash` is a keyed hash, so a hotel can recognise a returning guest.
+- **Masked in lists and caches:** both apps hold only `id_last4`. A hotel reads the full number with an explicit
+  `reveal` call (`POST /partner/bookings/{id}/guest/reveal`) that writes an `audit_log` row first. Full numbers are
+  never logged. The guest can see only the last four of what they saved; changing it means typing it again.
+- **The guest owns their profile:** they can change or delete it any time (`/me/profile`). Deleting it does not
+  remove a hotel's copy for stays already requested; that copy is erased by the retention job.
+- **The hotel's copy is a record, not a draft:** never edited or deleted. The only change allowed is the one-way
+  erasure of the ID number after the retention period (`purge_id_numbers(date)`, run by a job).
+- **Hotel isolation:** the copy is tied to the booking's own hotel by a composite foreign key, and every partner
+  endpoint checks `property_staff`, so a hotel only sees its own guests.
+- **Consent:** the guest app tells the guest, before they save, that the ID is stored encrypted and shared with a hotel
+  only when they request a room there.
+
+**DECISION 5 (retention and law):** how long must a hotel keep the full ID number, and when must it be erased?
+Ethiopian hotel-register and data-protection rules decide this; take legal advice. The erasure function has no default
+on purpose. Also decide: which ID formats to accept (kebele ID, Fayda, passport, licence), the wording of the privacy
+notice, and **when the hotel first sees the full ID**: today it is visible, behind a tap, from the moment of the
+request. Showing it only after the hotel accepts the booking would share less with hotels that decline.
 
 ## 3. Pricing
 
@@ -144,3 +171,11 @@ change that creates them.
 8. Offline sync and check-in.
 
 Every phase updates `api/openapi.yaml` first and ships with integration tests against real PostgreSQL.
+
+## More than one room
+
+A quote and a booking are for `rooms` (1 to 9) units of one room type. The amounts cover all of them, `rooms` can never change
+after the booking exists, and `guests >= rooms`. When the booking is held, paid, cancelled or expired the server moves
+`inventory.held`/`booked` by `rooms` in one statement per night (`held + booked + rooms <= capacity`), so the
+"never oversold" rule still holds for multi-room bookings: either all the rooms are taken or none. Different room types
+in one stay are separate bookings for now (decision for later: a basket with one payment).

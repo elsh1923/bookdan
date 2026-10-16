@@ -1,21 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import type { SearchItem } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { T, colors, radius, shadow, spacing } from '@bookdan/ui';
+import { PressableScale, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { Photo } from './Photo';
 import { price } from './format';
 
 export function PropertyCard({ item, onPress }: { item: SearchItem; onPress: () => void }) {
   const { t } = useTranslation();
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      style={({ pressed }) => [
-        { backgroundColor: colors.surface, borderRadius: radius.lg, marginBottom: spacing.lg, overflow: 'hidden', opacity: pressed ? 0.94 : 1 },
-        shadow.card,
-      ]}
+      scaleTo={0.98}
+      style={[{ backgroundColor: colors.surface, borderRadius: radius.lg, marginBottom: spacing.lg, overflow: 'hidden' }, shadow.card]}
     >
       <View>
         <Photo uri={item.photo_url} accent={item.accent} name={item.name} style={{ width: '100%', aspectRatio: 4 / 3 }} />
@@ -53,6 +51,6 @@ export function PropertyCard({ item, onPress }: { item: SearchItem; onPress: () 
           </View>
         </View>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }

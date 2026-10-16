@@ -5,10 +5,15 @@ import {
   QuoteSchema,
   SearchResponseSchema,
   VoucherSchema,
+  GuestProfileInputSchema,
+  GuestProfileSchema,
   encodeVoucherToken,
+  idLast4,
+  normalizeIdNumber,
   nightsBetween,
   priceStay,
   type Booking,
+  type GuestProfile,
   type PaymentMethod,
   type PaymentSession,
   type PropertyDetail,
@@ -38,6 +43,7 @@ const LANDMARKS: Record<string, string[]> = {
   'fasil': ['p-gondar-1'],
 };
 
+const MAX_ROOMS = 9;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function toItem(s: (typeof SEED)[number]): SearchItem {
@@ -95,6 +101,10 @@ export function createMockApi(opts: MockOptions = {}): Api {
   // idempotency: owner + key -> what the first request asked for and the booking it created
   const holdKeys = new Map<string, { quote_id: string; guest_name: string; booking_id: string }>();
   const sessions = new Map<string, SessionInfo>();
+  // The guest's saved identity details, by who is signed in. DEMO ONLY: the real server stores the number encrypted
+  // and the app never gets it back; this mock keeps it so the hotel's copy can be shown in demos.
+  interface ProfileRow { full_name: string; id_type: GuestProfile['id_type']; id_number: string; nationality: string; updated_at: string }
+  const profiles = new Map<string, ProfileRow>();
 
   // ---- optional persistence (demo only)
   let hydration: Promise<void> | null = null;
@@ -109,12 +119,13 @@ export function createMockApi(opts: MockOptions = {}): Api {
         for (const [k, v] of s.rows ?? []) rows.set(k, v);
         for (const [k, v] of s.holdKeys ?? []) holdKeys.set(k, v);
         for (const [k, v] of s.sessions ?? []) sessions.set(k, v);
+        for (const [k, v] of s.profiles ?? []) profiles.set(k, v);
       } catch {
         // a damaged demo store is simply ignored
       }
     })());
   const persist = async () => {
-    await opts.store?.save(JSON.stringify({ seq, quotes: [...quotes], rows: [...rows], holdKeys: [...holdKeys], sessions: [...sessions] }));
+    await opts.store?.save(JSON.stringify({ seq, quotes: [...quotes], rows: [...rows], holdKeys: [...holdKeys], sessions: [...sessions], profiles: [...profiles] }));
   };
 
   async function gate() {
@@ -144,13 +155,17 @@ export function createMockApi(opts: MockOptions = {}): Api {
     r.b = { ...r.b, status: 'PAID_AWAITING_HOTEL', payment_method: method, hold_expires_at: null, payment: 'none' };
   };
 
+  // What the guest gets back about their own profile: never the full number.
+  const toProfile = (p: ProfileRow): GuestProfile =>
+    GuestProfileSchema.parse({ full_name: p.full_name, id_type: p.id_type, id_last4: idLast4(p.id_number), nationality: p.nationality, updated_at: p.updated_at, server_time: new Date().toISOString() });
+
   const roomsLeft = (propertyId: string, roomId: string) => {
     const room = SEED.find((x) => x.id === propertyId)?.rooms.find((x) => x.id === roomId);
     if (!room) return 0;
     const live = [...rows.values()].filter((r) => {
       const v = view(r);
       return v.property_id === propertyId && v.room_name === room.name && ['HELD', 'PAID_AWAITING_HOTEL', 'CONFIRMED'].includes(v.status);
-    }).length;
+    }).reduce((sum, r) => sum + view(r).rooms, 0);
     return room.rooms_left - live;
   };
 
@@ -173,14 +188,18 @@ export function createMockApi(opts: MockOptions = {}): Api {
       const s = SEED.find((x) => x.id === p.property_id);
       const room = s?.rooms.find((x) => x.id === p.room_type_id);
       if (!s || !room) throw new ApiError('NOT_FOUND', 'Room not found');
-      if (roomsLeft(s.id, room.id) <= 0) throw new ApiError('SOLD_OUT', 'Sold out');
+      const rooms = p.rooms ?? 1;
+      if (!Number.isInteger(rooms) || rooms < 1 || rooms > MAX_ROOMS) throw new ApiError('INVALID_STATE', 'Choose between 1 and 9 rooms');
+      if (p.guests < rooms) throw new ApiError('INVALID_STATE', 'Each room needs at least one guest');
+      const available = roomsLeft(s.id, room.id);
+      if (available < rooms) throw new ApiError('SOLD_OUT', 'Not enough rooms left');
       const nights = nightsBetween(p.check_in, p.check_out);
       const q = QuoteSchema.parse({
         id: `q_${++seq}_${Date.now().toString(36)}`,
         property_id: s.id, property_name: s.name,
         room_type_id: room.id, room_name: room.name,
-        check_in: p.check_in, check_out: p.check_out, nights, guests: p.guests,
-        nightly_santim: room.price_santim, ...priceStay(room.price_santim, nights), currency: room.currency,
+        check_in: p.check_in, check_out: p.check_out, nights, guests: p.guests, rooms, rooms_available: available,
+        nightly_santim: room.price_santim, ...priceStay(room.price_santim * rooms, nights), currency: room.currency,
         pay_at_hotel: s.amenities.includes('pay_at_hotel'),
         server_time: new Date().toISOString(),
       });
@@ -189,9 +208,36 @@ export function createMockApi(opts: MockOptions = {}): Api {
       return q;
     },
 
+    async getProfile() {
+      await gate();
+      const p = profiles.get(identityOf());
+      return p ? toProfile(p) : null;
+    },
+
+    async saveProfile(input) {
+      await gate();
+      const owner = identityOf();
+      const parsed = GuestProfileInputSchema.safeParse(input);
+      if (!parsed.success) throw new ApiError('INVALID_STATE', 'Name, ID type and nationality are required');
+      const number = normalizeIdNumber(parsed.data.id_number);
+      if (!number) throw new ApiError('INVALID_ID', 'That cannot be an ID number');
+      const row = { full_name: parsed.data.full_name, id_type: parsed.data.id_type, id_number: number, nationality: parsed.data.nationality, updated_at: new Date().toISOString() };
+      profiles.set(owner, row);
+      await persist();
+      return toProfile(row);
+    },
+
+    async deleteProfile() {
+      await gate();
+      profiles.delete(identityOf());
+      await persist();
+    },
+
     async createHold({ quote_id, guest_name, idempotency_key }) {
       await gate();
       const owner = identityOf();
+      // A room request carries the guest's profile to the hotel, so there must be one.
+      if (!profiles.has(owner)) throw new ApiError('PROFILE_INCOMPLETE', 'Add your name and ID before booking');
       const keyId = `${owner}:${idempotency_key}`;
       const prior = holdKeys.get(keyId);
       if (prior) {
@@ -203,7 +249,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       }
       const q = quotes.get(quote_id);
       if (!q || q.expires < Date.now()) throw new ApiError('QUOTE_EXPIRED', 'Price expired');
-      if (roomsLeft(q.property_id, q.room_type_id) <= 0) throw new ApiError('SOLD_OUT', 'Sold out');
+      if (roomsLeft(q.property_id, q.room_type_id) < q.rooms) throw new ApiError('SOLD_OUT', 'Sold out');
       const s = SEED.find((x) => x.id === q.property_id)!;
       const now = Date.now();
       const id = `b_${++seq}_${now.toString(36)}`;
@@ -211,7 +257,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
         id, reference: `BD-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
         status: 'HELD',
         property_id: s.id, property_name: s.name, property_phone: s.phone, address: s.address,
-        room_name: q.room_name, check_in: q.check_in, check_out: q.check_out, nights: q.nights, guests: q.guests,
+        room_name: q.room_name, check_in: q.check_in, check_out: q.check_out, nights: q.nights, guests: q.guests, rooms: q.rooms,
         guest_name, total_santim: q.total_santim, currency: q.currency,
         payment_method: null,
         pay_at_hotel: q.pay_at_hotel,
@@ -272,7 +318,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       return VoucherSchema.parse({
         booking_id: v.id, reference: v.reference, token: tokenText, pin: r.pin, expires_at: new Date(exp * 1000).toISOString(),
         property_id: v.property_id, property_name: v.property_name, property_phone: v.property_phone, address: v.address,
-        lat: s.lat, lng: s.lng, check_in: v.check_in, check_out: v.check_out, nights: v.nights, guests: v.guests,
+        lat: s.lat, lng: s.lng, check_in: v.check_in, check_out: v.check_out, nights: v.nights, guests: v.guests, rooms: v.rooms,
         guest_name: v.guest_name,
         balance_due_santim: v.payment_method === 'pay_at_hotel' ? v.total_santim : 0,
         currency: v.currency, server_time: new Date().toISOString(),
@@ -294,7 +340,8 @@ export function createMockApi(opts: MockOptions = {}): Api {
       let found = SEED.filter((s) => matches(p.q ?? '', s)).sort((a, b) => Number(direct(b)) - Number(direct(a)));
       if (p.types?.length) found = found.filter((s) => p.types!.includes(s.type));
       if (p.amenities?.length) found = found.filter((s) => p.amenities!.every((a) => s.amenities.includes(a)));
-      found = found.filter((s) => s.rooms.some((r) => r.capacity >= p.guests) || !s.available);
+      const wanted = p.rooms ?? 1;
+      found = found.filter((s) => s.rooms.some((r) => r.capacity * wanted >= p.guests && r.rooms_left >= wanted) || !s.available);
 
       const start = p.cursor ? Number(p.cursor) : 0;
       const page = found.slice(start, start + PAGE_SIZE);

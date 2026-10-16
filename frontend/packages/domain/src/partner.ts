@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BookingGuestSchema } from './guestIdentity.ts';
 import { BookingStatusSchema, CurrencySchema } from './schemas.ts';
 
 /** Reasons a hotel can give when declining. The server stores the code; the app translates it. */
@@ -6,17 +7,20 @@ export const DeclineReasonSchema = z.enum(['fully_booked', 'room_unavailable', '
 export type DeclineReason = z.infer<typeof DeclineReasonSchema>;
 export const DECLINE_REASONS = DeclineReasonSchema.options;
 
-/** A booking as the hotel sees it. Only what reception needs: no payment details, no contact data. */
+/** A booking as the hotel sees it: the stay, and the guest's profile. No payment details and no full ID number. */
 export const PartnerBookingSchema = z.object({
   id: z.string(),
   reference: z.string(),
   status: BookingStatusSchema,
   guest_name: z.string(),
+  /** The guest's profile as it was when they requested the room, including the masked ID. */
+  guest: BookingGuestSchema,
   room_name: z.string(),
   check_in: z.string(),
   check_out: z.string(),
   nights: z.number().int(),
   guests: z.number().int(),
+  rooms: z.number().int().min(1).default(1),
   total_santim: z.number().int(),
   currency: CurrencySchema,
   paid_at: z.string().nullable(),

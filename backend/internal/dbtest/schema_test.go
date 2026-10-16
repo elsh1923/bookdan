@@ -246,6 +246,43 @@ func TestBookingPriceIsFrozenAndMustAddUp(t *testing.T) {
 	})
 }
 
+func TestSeveralRoomsAreHeldAllOrNothingAndFixedAfterBooking(t *testing.T) {
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		rt := newRoomType(t, tx, newProperty(t, tx), 3)
+		if _, err := tx.Exec(`INSERT INTO inventory (room_type_id, night, capacity) VALUES ($1, '2026-11-01', 3)`, rt); err != nil {
+			t.Fatal(err)
+		}
+		holdN := `UPDATE inventory SET held = held + $2 WHERE room_type_id = $1 AND night = '2026-11-01' AND held + booked + $2 <= capacity`
+		two, _ := tx.Exec(holdN, rt, 2)
+		if n, _ := two.RowsAffected(); n != 1 {
+			t.Fatalf("two of three rooms should be held, rows=%d", n)
+		}
+		another, _ := tx.Exec(holdN, rt, 2) // only one room is left: take none, not one
+		if n, _ := another.RowsAffected(); n != 0 {
+			t.Fatalf("a request for two rooms with one left must take nothing, rows=%d", n)
+		}
+		var held int
+		tx.QueryRow(`SELECT held FROM inventory WHERE room_type_id = $1`, rt).Scan(&held)
+		if held != 2 {
+			t.Fatalf("held = %d, want 2", held)
+		}
+	})
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		booking, _, _ := newBooking(t, tx)
+		_, err := tx.Exec(`UPDATE bookings SET rooms = 2, guests = 2 WHERE id = $1`, booking)
+		dbtest.MustFail(t, err, "number of rooms is part of the price")
+	})
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		user := newUser(t, tx)
+		property := newProperty(t, tx)
+		rt := newRoomType(t, tx, property, 3)
+		_, err := tx.Exec(`INSERT INTO quotes (user_id, property_id, room_type_id, check_in, check_out, guests, rooms, currency,
+			base_santim, service_santim, vat_santim, total_santim, deposit_santim, balance_due_santim, price_snapshot, expires_at)
+			VALUES ($1, $2, $3, '2026-11-01', '2026-11-02', 1, 2, 'ETB', 640000, 0, 96000, 736000, 736000, 0, '{}', now() + interval '10 minutes')`, user, property, rt)
+		dbtest.MustFail(t, err, "quote_guests_cover_rooms") // two rooms need at least two guests
+	})
+}
+
 func TestRoomMustBelongToItsOwnHotelsRoomType(t *testing.T) {
 	dbtest.Tx(t, conn, func(tx *sql.Tx) {
 		hotelA, hotelB := newProperty(t, tx), newProperty(t, tx)
@@ -360,6 +397,121 @@ func TestAuditAndHistoryAreAppendOnly(t *testing.T) {
 	dbtest.MustFail(t, err, "append-only")
 	_, err = conn.Exec(`DELETE FROM app.audit_log WHERE action = 'test.append_only'`)
 	dbtest.MustFail(t, err, "append-only")
+}
+
+// ---- guest identity: the guest's profile, and the copy the hotel sees with a booking
+
+func newProfile(t *testing.T, tx *sql.Tx, user string) {
+	t.Helper()
+	if _, err := tx.Exec(`INSERT INTO guest_profiles (user_id, full_name, id_type, id_number_enc, id_number_hash, id_last4, nationality)
+		VALUES ($1, 'Hanna Tesfaye', 'national_id', '\xdeadbeef', '\x0102030405', '9012', 'Ethiopian')`, user); err != nil {
+		t.Fatalf("profile fixture: %v", err)
+	}
+}
+
+// hotelCopy attaches the guest's details to a booking, as happens when the guest requests the room.
+func hotelCopy(tx *sql.Tx, booking, property string) error {
+	_, err := tx.Exec(`INSERT INTO booking_guests (booking_id, property_id, full_name, contact, nationality, id_type, id_number_enc, id_number_hash, id_last4)
+		VALUES ($1, $2, 'Hanna Tesfaye', '+251911234567', 'Ethiopian', 'national_id', '\xdeadbeef', '\x0102030405', '9012')`, booking, property)
+	return err
+}
+
+func TestGuestProfileIsCompleteAndOnePerGuest(t *testing.T) {
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		user := newUser(t, tx)
+		newProfile(t, tx, user)
+		tx.Exec(`SAVEPOINT s`)
+		_, err := tx.Exec(`INSERT INTO guest_profiles (user_id, full_name, id_type, id_number_enc, id_number_hash, id_last4, nationality)
+			VALUES ($1, 'Second Profile', 'passport', '\x01', '\x01', 'AB12', 'British')`, user)
+		dbtest.MustFail(t, err, "guest_profiles_pkey") // one profile per guest
+		tx.Exec(`ROLLBACK TO SAVEPOINT s`)
+		// A guest can remove their own ID details.
+		if _, err := tx.Exec(`DELETE FROM guest_profiles WHERE user_id = $1`, user); err != nil {
+			t.Fatalf("a guest must be able to delete their profile: %v", err)
+		}
+	})
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		user := newUser(t, tx)
+		// The whole ID in the "last four" column is refused.
+		_, err := tx.Exec(`INSERT INTO guest_profiles (user_id, full_name, id_type, id_number_enc, id_number_hash, id_last4, nationality)
+			VALUES ($1, 'Too Much', 'national_id', '\x01', '\x01', '123456789012', 'Ethiopian')`, user)
+		dbtest.MustFail(t, err, "guest_profiles_id_last4_check")
+	})
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		user := newUser(t, tx)
+		_, err := tx.Exec(`INSERT INTO guest_profiles (user_id, full_name, id_type, id_number_enc, id_number_hash, id_last4, nationality)
+			VALUES ($1, 'No Nationality', 'national_id', '\x01', '\x01', '9012', ' ')`, user)
+		dbtest.MustFail(t, err, "guest_profiles_nationality_check")
+	})
+}
+
+func TestHotelCopyBelongsToTheBookingsOwnHotel(t *testing.T) {
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		booking, _, property := newBooking(t, tx)
+		if err := hotelCopy(tx, booking, property); err != nil {
+			t.Fatalf("attaching a guest to their booking: %v", err)
+		}
+		tx.Exec(`SAVEPOINT s`)
+		dbtest.MustFail(t, hotelCopy(tx, booking, property), "booking_guests_pkey") // one copy per booking
+		tx.Exec(`ROLLBACK TO SAVEPOINT s`)
+	})
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		booking, _, _ := newBooking(t, tx)
+		otherHotel := newProperty(t, tx)
+		// One hotel can never be handed another hotel's guest.
+		dbtest.MustFail(t, hotelCopy(tx, booking, otherHotel), "violates foreign key")
+	})
+}
+
+func TestHotelCopyIsAppendOnlyExceptErasingTheNumber(t *testing.T) {
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		booking, _, property := newBooking(t, tx)
+		if err := hotelCopy(tx, booking, property); err != nil {
+			t.Fatal(err)
+		}
+		try := func(sql, want string) {
+			tx.Exec(`SAVEPOINT p`)
+			_, err := tx.Exec(sql, booking)
+			dbtest.MustFail(t, err, want)
+			tx.Exec(`ROLLBACK TO SAVEPOINT p`)
+		}
+		try(`UPDATE booking_guests SET full_name = 'Someone Else' WHERE booking_id = $1`, "append-only")
+		try(`DELETE FROM booking_guests WHERE booking_id = $1`, "cannot be deleted")
+		// Erasing while quietly changing the name is refused too.
+		try(`UPDATE booking_guests SET id_number_enc = NULL, purged_at = now(), full_name = 'Changed' WHERE booking_id = $1`, "must not change anything else")
+		// Clearing the ciphertext without recording the erasure breaks the pairing rule.
+		try(`UPDATE booking_guests SET id_number_enc = NULL WHERE booking_id = $1`, "only erasing the ID number is allowed")
+	})
+}
+
+func TestIDNumbersAreErasedAfterTheRetentionDate(t *testing.T) {
+	dbtest.Tx(t, conn, func(tx *sql.Tx) {
+		booking, _, property := newBooking(t, tx) // checks out 2026-11-02
+		if err := hotelCopy(tx, booking, property); err != nil {
+			t.Fatal(err)
+		}
+		var erased int
+		// A retention date before the stay ended erases nothing.
+		tx.QueryRow(`SELECT purge_id_numbers('2026-11-01')`).Scan(&erased)
+		if erased != 0 {
+			t.Fatalf("erased %d rows before the stay ended", erased)
+		}
+		tx.QueryRow(`SELECT purge_id_numbers('2026-12-01')`).Scan(&erased)
+		if erased < 1 {
+			t.Fatalf("expected the finished stay to be erased, got %d", erased)
+		}
+		var enc []byte
+		var purged sql.NullTime
+		var last4 string
+		tx.QueryRow(`SELECT id_number_enc, purged_at, id_last4 FROM booking_guests WHERE booking_id = $1`, booking).Scan(&enc, &purged, &last4)
+		if enc != nil || !purged.Valid || last4 != "9012" {
+			t.Fatalf("after erasing: ciphertext=%v purged=%v last4=%q (only the last four should remain)", enc, purged.Valid, last4)
+		}
+		// An erased record can never be touched again.
+		tx.Exec(`SAVEPOINT s`)
+		_, err := tx.Exec(`UPDATE booking_guests SET contact = 'x' WHERE booking_id = $1`, booking)
+		dbtest.MustFail(t, err, "already erased")
+	})
 }
 
 // ---- data safety

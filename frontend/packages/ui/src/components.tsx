@@ -12,6 +12,7 @@ import {
   ViewStyle,
   StyleProp,
 } from 'react-native';
+import { PressableScale } from './motion';
 import { colors, fonts, gradients, MIN_TOUCH, radius, shadow, spacing } from './theme';
 
 type Variant = 'display' | 'displaySm' | 'h1' | 'h2' | 'h3' | 'body' | 'small' | 'label';
@@ -72,16 +73,17 @@ export function Button({
   const primary = variant === 'primary';
   const fg = primary ? colors.onPrimary : colors.primaryInk;
   return (
-    <Pressable
+    <PressableScale
       accessibilityRole="button"
       accessibilityState={{ disabled: !!disabled || !!loading }}
       onPress={onPress}
       disabled={disabled || loading}
-      style={({ pressed }) => [
+      scaleTo={0.96}
+      style={[
         styles.button,
         variant === 'secondary' && { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary },
         primary && !disabled && shadow.button,
-        { opacity: disabled ? 0.5 : pressed ? 0.88 : 1 },
+        { opacity: disabled ? 0.5 : 1 },
         style,
       ]}
     >
@@ -101,7 +103,7 @@ export function Button({
           <T variant="h3" color={fg} style={{ textAlign: 'center' }}>{title}</T>
         </View>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -115,10 +117,11 @@ export function Chip({
   onPress?: () => void;
 }) {
   return (
-    <Pressable
+    <PressableScale
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
       onPress={onPress}
+      scaleTo={0.94}
       style={[
         styles.chip,
         selected && { backgroundColor: colors.primarySoft, borderColor: colors.primary },
@@ -127,7 +130,7 @@ export function Chip({
       <T variant="small" color={selected ? colors.primaryInk : colors.inkSoft} style={selected ? { fontFamily: fonts.medium } : undefined}>
         {selected ? '✓ ' : ''}{label}
       </T>
-    </Pressable>
+    </PressableScale>
   );
 }
 

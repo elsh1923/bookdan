@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, View } from 'react-native';
 import type { SearchItem } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { T, colors, radius, spacing } from '@bookdan/ui';
+import { Animated, PressableScale, T, colors, radius, spacing, useBounce } from '@bookdan/ui';
 import { Photo } from './Photo';
 import { price } from './format';
 import { usePrefs } from './store';
@@ -14,10 +14,11 @@ export function PropertyTile({ item, width, onPress }: { item: SearchItem; width
   const { t } = useTranslation();
   const saved = usePrefs((s) => s.saved.includes(item.id));
   const toggleSaved = usePrefs((s) => s.toggleSaved);
+  const heart = useBounce();
 
   return (
     <View style={{ width }}>
-      <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}>
+      <PressableScale onPress={onPress} accessibilityRole="button" scaleTo={0.97}>
         <Photo
           uri={item.photo_url}
           accent={item.accent}
@@ -40,7 +41,7 @@ export function PropertyTile({ item, width, onPress }: { item: SearchItem; width
             ) : null}
           </View>
         </View>
-      </Pressable>
+      </PressableScale>
 
       {item.rating && item.rating >= GUEST_FAVORITE_MIN_RATING ? (
         <View pointerEvents="none" style={{ position: 'absolute', top: spacing.sm + 4, left: spacing.sm + 4, backgroundColor: '#fff', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 }}>
@@ -50,14 +51,14 @@ export function PropertyTile({ item, width, onPress }: { item: SearchItem; width
 
       {/* Sibling of the card Pressable, not a child: nested buttons are invalid on the web. */}
       <Pressable
-        onPress={() => toggleSaved(item.id)}
+        onPress={() => { if (!saved) heart.bounce(); toggleSaved(item.id); }}
         accessibilityRole="button"
         accessibilityLabel={t('wishlist.save')}
         accessibilityState={{ selected: saved }}
         hitSlop={8}
         style={{ position: 'absolute', top: spacing.sm, right: spacing.sm, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
       >
-        <Ionicons name={saved ? 'heart' : 'heart-outline'} size={26} color={saved ? colors.favorite : '#fff'} />
+        <Animated.View style={heart.style}><Ionicons name={saved ? 'heart' : 'heart-outline'} size={26} color={saved ? colors.favorite : '#fff'} /></Animated.View>
       </Pressable>
     </View>
   );

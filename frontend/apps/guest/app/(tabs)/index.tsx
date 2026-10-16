@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { PropertyType, SearchItem } from '@bookdan/domain';
 import { addDays, todayAddis } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { EmptyState, T, dark, gradients, radius, spacing } from '@bookdan/ui';
+import { EmptyState, PressableScale, Reveal, Skeleton, T, dark, gradients, radius, spacing } from '@bookdan/ui';
 import { StayCard } from '../../src/StayCard';
 import { useAllProperties } from '../../src/queries';
 
@@ -28,17 +28,18 @@ function hashUnit(id: string, seed: number): number {
 
 function Pill({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      scaleTo={0.94}
       style={{ minHeight: 44, borderRadius: radius.pill, overflow: 'hidden', borderWidth: 1, borderColor: selected ? 'transparent' : dark.line, justifyContent: 'center' }}
     >
       {selected ? (
         <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
       ) : null}
       <T variant="small" color={selected ? '#FFFFFF' : dark.text} style={{ paddingHorizontal: spacing.md }}>{label}</T>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -100,11 +101,15 @@ export default function Home() {
           </Pressable>
         </View>
 
-        <T variant="display" color={dark.text} style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>{t('home.welcome')}</T>
+        <Reveal>
+          <T variant="display" color={dark.text} style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>{t('home.welcome')}</T>
+        </Reveal>
 
-        <Pressable
+        <Reveal index={1}>
+        <PressableScale
           onPress={() => router.push('/search')}
           accessibilityRole="search"
+          scaleTo={0.98}
           style={{
             flexDirection: 'row', alignItems: 'center', marginHorizontal: spacing.lg, marginTop: spacing.lg, minHeight: 56,
             borderRadius: radius.md, borderWidth: 1, borderColor: dark.line, backgroundColor: dark.surface, padding: spacing.sm,
@@ -118,7 +123,8 @@ export default function Home() {
           <View style={{ width: 1, height: 24, backgroundColor: dark.line, marginHorizontal: spacing.sm }} />
           <Ionicons name="calendar-outline" size={18} color={dark.accent} />
           <T variant="small" color={dark.textSoft} style={{ marginLeft: spacing.sm, marginRight: spacing.sm }}>{t('home.dates')}</T>
-        </Pressable>
+        </PressableScale>
+        </Reveal>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm }}>
           {CATEGORIES.map((c) => (
@@ -127,7 +133,10 @@ export default function Home() {
         </ScrollView>
 
         {all.isPending ? (
-          <ActivityIndicator color={dark.accent} style={{ marginTop: spacing.xxl }} />
+          <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg }}>
+            <Skeleton dark width={wideWidth} height={Math.round(wideWidth * 0.78)} radius={radius.lg} />
+            <Skeleton dark width={wideWidth} height={Math.round(wideWidth * 0.78)} radius={radius.lg} />
+          </View>
         ) : all.isError ? (
           <EmptyState icon="⚠️" title={t('results.error_title')} body={t('results.error_body')} actionLabel={t('common.retry')} onAction={() => all.refetch()} />
         ) : featured.length === 0 ? (
@@ -135,8 +144,8 @@ export default function Home() {
         ) : (
           <>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
-              {featured.map((item) => (
-                <StayCard key={item.id} item={item} large width={wideWidth} height={Math.round(wideWidth * 0.78)} onPress={() => open(item)} />
+              {featured.map((item, i) => (
+                <Reveal key={item.id} index={i}><StayCard item={item} large width={wideWidth} height={Math.round(wideWidth * 0.78)} onPress={() => open(item)} /></Reveal>
               ))}
             </ScrollView>
 
@@ -144,8 +153,8 @@ export default function Home() {
               <View style={{ marginTop: spacing.xl }}>
                 <T variant="displaySm" color={dark.text} style={{ paddingHorizontal: spacing.lg }}>{t('home.more')}</T>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, paddingHorizontal: spacing.lg, marginTop: spacing.md }}>
-                  {more.map((item) => (
-                    <StayCard key={item.id} item={item} width={gridWidth} height={Math.round(gridWidth * 0.95)} onPress={() => open(item)} />
+                  {more.map((item, i) => (
+                    <Reveal key={item.id} index={i}><StayCard item={item} width={gridWidth} height={Math.round(gridWidth * 0.95)} onPress={() => open(item)} /></Reveal>
                   ))}
                 </View>
               </View>

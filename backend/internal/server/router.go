@@ -39,10 +39,14 @@ func New(cfg config.Config, db Pinger) http.Handler {
 		r.Get("/bookings/{id}", notImplemented)
 		r.Post("/bookings/{id}/pay", notImplemented)
 		r.Get("/bookings/{id}/voucher", notImplemented)
+		r.Get("/me/profile", notImplemented)
+		r.Put("/me/profile", notImplemented)
+		r.Delete("/me/profile", notImplemented)
 
 		// Partner app
 		r.Route("/partner", func(r chi.Router) {
 			r.Put("/devices/push-token", notImplemented)
+			r.Post("/bookings/{id}/guest/reveal", notImplemented)
 			r.Get("/bookings", notImplemented)
 			r.Post("/bookings/{id}/accept", notImplemented)
 			r.Post("/bookings/{id}/decline", notImplemented)

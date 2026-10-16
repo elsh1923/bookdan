@@ -87,6 +87,32 @@ paths:
         "booking_alerts" (highest importance, its own sound). The countdown and the escalation chain
         (Telegram, SMS, automated call) run on the server; the app only shows the countdown.
       responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /me/profile:
+    get:
+      summary: The signed-in guest's own profile (masked), or 404 if they have not filled it in
+      description: |
+        Returns full_name, id_type, id_last4, nationality. Never the full ID number.
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+    put:
+      summary: Save the guest's name, ID and nationality
+      description: |
+        Body: full_name, id_type (national_id, passport, driving_licence, residence_permit, other), id_number,
+        nationality. The server normalises the number (INVALID_ID if it cannot be an ID), encrypts it (AES-GCM, key
+        kept outside the database), and stores a keyed hash and the last four characters. Requires Idempotency-Key.
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+    delete:
+      summary: Remove the guest's ID details
+      description: Deletes the profile. Copies already given to hotels for requested stays stay until the retention job erases them.
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+  /partner/bookings/{id}/guest/reveal:
+    post:
+      summary: Show the full ID number of the guest on one booking
+      description: |
+        The only way a hotel can read a full number. Only staff of the hotel that holds the booking. Writes an
+        audit_log entry (who, which booking, when) before answering, and is rate-limited. Returns id_number.
+        Fails with 410 GONE once the number was erased after the retention period.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
   /partner/bookings:
     get:
       summary: Partner inbox, with hotel_deadline_at per booking

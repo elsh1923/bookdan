@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, View } from 'react-native';
 import type { SearchItem } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { T, colors, dark, radius, spacing } from '@bookdan/ui';
+import { Animated, PressableScale, T, colors, dark, radius, spacing, useBounce } from '@bookdan/ui';
 import { Photo } from './Photo';
 import { price } from './format';
 import { usePrefs } from './store';
@@ -16,16 +16,15 @@ export function StayCard({ item, width, height, large, onPress }: {
   const saved = usePrefs((s) => s.saved.includes(item.id));
   const toggleSaved = usePrefs((s) => s.toggleSaved);
   const stars = Math.round(item.rating ?? 0);
+  const heart = useBounce();
 
   return (
     <View style={{ width }}>
-      <Pressable
+      <PressableScale
         onPress={onPress}
         accessibilityRole="button"
-        style={({ pressed }) => ({
-          borderRadius: radius.lg, overflow: 'hidden', borderWidth: 1, borderColor: dark.line,
-          backgroundColor: dark.surface, opacity: pressed ? 0.92 : 1,
-        })}
+        scaleTo={0.97}
+        style={{ borderRadius: radius.lg, overflow: 'hidden', borderWidth: 1, borderColor: dark.line, backgroundColor: dark.surface }}
       >
         <Photo uri={item.photo_url} accent={item.accent} name={item.name} showInitial={false} style={{ width: '100%', height }} />
         <LinearGradient
@@ -44,18 +43,18 @@ export function StayCard({ item, width, height, large, onPress }: {
             {t('common.from')} {price(item.from_price_santim, item.currency)}
           </T>
         </View>
-      </Pressable>
+      </PressableScale>
 
       {/* Sibling of the card Pressable, not a child: nested buttons are invalid on the web. */}
       <Pressable
-        onPress={() => toggleSaved(item.id)}
+        onPress={() => { if (!saved) heart.bounce(); toggleSaved(item.id); }}
         accessibilityRole="button"
         accessibilityLabel={t('wishlist.save')}
         accessibilityState={{ selected: saved }}
         hitSlop={8}
         style={{ position: 'absolute', top: spacing.sm, right: spacing.sm, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
       >
-        <Ionicons name={saved ? 'heart' : 'heart-outline'} size={24} color={saved ? colors.favorite : '#fff'} />
+        <Animated.View style={heart.style}><Ionicons name={saved ? 'heart' : 'heart-outline'} size={24} color={saved ? colors.favorite : '#fff'} /></Animated.View>
       </Pressable>
     </View>
   );

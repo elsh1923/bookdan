@@ -60,14 +60,14 @@ export default function RootLayout() {
           <UpdateBanner />
           <View style={{ flex: 1, alignItems: 'center', backgroundColor: colors.background }}>
             <View style={{ flex: 1, width: '100%', maxWidth: 640 }}>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background }, animation: 'slide_from_right', animationDuration: 280 }}>
                 {/* Signed out: only the login screen. Signed in: only the app. The navigator redirects by itself. */}
                 <Stack.Protected guard={!!token}>
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="booking/[id]" />
                 </Stack.Protected>
                 <Stack.Protected guard={!token}>
-                  <Stack.Screen name="login" />
+                  <Stack.Screen name="login" options={{ animation: 'fade' }} />
                 </Stack.Protected>
               </Stack>
             </View>

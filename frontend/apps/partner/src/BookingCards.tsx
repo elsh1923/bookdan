@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
-import { formatCountdown, type PartnerBooking } from '@bookdan/domain';
+import { formatCountdown, maskId, type PartnerBooking } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
+import { Badge, Button, Pop, PressableScale, Pulse, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { URGENT_MS, useRemaining } from './Countdown';
 import { price, shortDate } from './format';
 
@@ -12,13 +12,28 @@ function useMonths(): string[] {
   return i18n.t('months.short', { returnObjects: true }) as unknown as string[];
 }
 
+/** Who the guest is, from the profile they saved in the guest app. The ID is masked here; the booking screen can show it all. */
+function GuestLine({ b, onOpen }: { b: PartnerBooking; onOpen?: () => void }) {
+  const { t } = useTranslation();
+  const Wrap: any = onOpen ? PressableScale : View;
+  return (
+    <Wrap onPress={onOpen} scaleTo={0.98} accessibilityRole={onOpen ? 'button' : undefined} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xs, minHeight: onOpen ? 44 : undefined }}>
+      <Ionicons name="id-card-outline" size={16} color={colors.inkSoft} />
+      <T variant="small" color={colors.inkSoft} style={{ flex: 1 }} numberOfLines={1}>
+        {t(`partner.id_type_${b.guest.id_type}`)} {maskId(b.guest.id_last4)} · {b.guest.nationality}
+      </T>
+      {onOpen ? <Ionicons name="chevron-forward" size={18} color={colors.muted} /> : null}
+    </Wrap>
+  );
+}
+
 function StayLine({ b }: { b: PartnerBooking }) {
   const { t } = useTranslation();
   const months = useMonths();
   return (
     <>
       <T color={colors.inkSoft}>
-        {b.room_name} · {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {t('common.night', { count: b.nights })}
+        {b.rooms > 1 ? `${b.rooms} × ` : ''}{b.room_name} · {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {t('common.night', { count: b.nights })}
       </T>
       <T variant="small" color={colors.muted}>{t('common.guest', { count: b.guests })} · {b.reference}</T>
     </>
@@ -26,7 +41,7 @@ function StayLine({ b }: { b: PartnerBooking }) {
 }
 
 /** A booking the hotel still has to answer: countdown, and large Accept / Decline buttons. */
-export function AwaitingCard({ b, receivedAt, busy, error, onAccept, onDecline, onTimeUp }: {
+export function AwaitingCard({ b, receivedAt, busy, error, onAccept, onDecline, onTimeUp, onOpen }: {
   b: PartnerBooking;
   receivedAt: number;
   busy: boolean;
@@ -34,6 +49,8 @@ export function AwaitingCard({ b, receivedAt, busy, error, onAccept, onDecline, 
   onAccept: () => void;
   onDecline: () => void;
   onTimeUp: () => void;
+  /** Opens the booking screen with the guest's full profile. */
+  onOpen?: () => void;
 }) {
   const { t } = useTranslation();
   const remaining = useRemaining(b.hotel_deadline_at, b.server_time, receivedAt);
@@ -59,7 +76,7 @@ export function AwaitingCard({ b, receivedAt, busy, error, onAccept, onDecline, 
             <T variant="h2" numberOfLines={2}>{b.guest_name}</T>
           </View>
           {remaining !== null ? (
-            <View style={{ alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.md, backgroundColor: urgent || over ? colors.dangerSoft : colors.primarySoft }}>
+            <Pulse active={urgent && !over} style={{ alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.md, backgroundColor: urgent || over ? colors.dangerSoft : colors.primarySoft }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Ionicons name="timer-outline" size={16} color={accent} />
                 <T style={{ fontFamily: fonts.bold, fontVariant: ['tabular-nums'] }} color={over ? colors.danger : accent}>
@@ -67,11 +84,12 @@ export function AwaitingCard({ b, receivedAt, busy, error, onAccept, onDecline, 
                 </T>
               </View>
               {!over ? <T variant="label" color={colors.inkSoft}>{t('partner.time_to_answer')}</T> : null}
-            </View>
+            </Pulse>
           ) : null}
         </View>
 
         <View style={{ marginTop: spacing.xs }}><StayLine b={b} /></View>
+        <GuestLine b={b} onOpen={onOpen} />
         <T variant="h3" color={colors.primaryInk} style={{ marginTop: spacing.sm }}>
           {t('partner.paid')} · {price(b.total_santim, b.currency)}
         </T>
@@ -93,7 +111,7 @@ export function AwaitingCard({ b, receivedAt, busy, error, onAccept, onDecline, 
 }
 
 /** A booking that is already answered (or answered for us when the time ran out). */
-export function BookingRow({ b }: { b: PartnerBooking }) {
+export function BookingRow({ b, onOpen }: { b: PartnerBooking; onOpen?: () => void }) {
   const { t } = useTranslation();
   const confirmed = b.status === 'CONFIRMED' || b.status === 'CHECKED_IN' || b.status === 'COMPLETED';
   const reason = b.decline_reason ? t(`partner.reason_${b.decline_reason}`) : null;
@@ -101,10 +119,11 @@ export function BookingRow({ b }: { b: PartnerBooking }) {
     <View style={{ padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, marginBottom: spacing.sm }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm }}>
         <T variant="h3" style={{ flex: 1 }} numberOfLines={1}>{b.guest_name}</T>
-        <Badge tone={confirmed ? 'success' : 'neutral'} icon={confirmed ? '✓' : '✕'} label={t(`status.${b.status}`)} />
+        <Pop key={b.status}><Badge tone={confirmed ? 'success' : 'neutral'} icon={confirmed ? '✓' : '✕'} label={t(`status.${b.status}`)} /></Pop>
       </View>
       <StayLine b={b} />
       {reason ? <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{reason}</T> : null}
+      <GuestLine b={b} onOpen={onOpen} />
     </View>
   );
 }

@@ -1,9 +1,9 @@
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, View } from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from '@bookdan/i18n';
-import { EmptyState, T, colors, radius, shadow, spacing } from '@bookdan/ui';
+import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { useAuth } from '../../src/auth';
 import { price, shortDate } from '../../src/format';
 import { useBookings } from '../../src/queries';
@@ -43,7 +43,9 @@ export default function Bookings() {
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
       {title}
       {query.isPending ? (
-        <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+        <View style={{ padding: spacing.lg, paddingTop: 0, gap: spacing.md }}>
+          {[0, 1, 2].map((i) => <Skeleton key={i} height={118} radius={radius.lg} />)}
+        </View>
       ) : query.isError ? (
         <EmptyState icon="⚠️" title={t('bookings.error_title')} body={t('results.error_body')} actionLabel={t('common.retry')} onAction={() => query.refetch()} />
       ) : (
@@ -55,10 +57,12 @@ export default function Bookings() {
           ListEmptyComponent={
             <EmptyState icon="🎫" title={t('bookings.empty_title')} body={t('bookings.empty_body')} actionLabel={t('bookings.find')} onAction={() => router.navigate('/')} />
           }
-          renderItem={({ item: b }) => (
-            <Pressable
+          renderItem={({ item: b, index }) => (
+            <Reveal index={index}>
+            <PressableScale
               accessibilityRole="button"
               onPress={() => router.push({ pathname: '/booking/[id]', params: { id: b.id } })}
+              scaleTo={0.98}
               style={[{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md }, shadow.card]}
             >
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm }}>
@@ -75,7 +79,8 @@ export default function Bookings() {
                 <T variant="label" color={colors.muted}>{b.reference}</T>
                 <T variant="h3" color={colors.primaryInk}>{price(b.total_santim, b.currency)}</T>
               </View>
-            </Pressable>
+            </PressableScale>
+            </Reveal>
           )}
         />
       )}

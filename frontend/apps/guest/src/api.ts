@@ -25,6 +25,9 @@ export type { SessionHooks };
 
 export const api: Api = {
   ...raw,
+  getProfile: withRefresh(raw.getProfile),
+  saveProfile: withRefresh(raw.saveProfile),
+  deleteProfile: withRefresh(raw.deleteProfile),
   createQuote: withRefresh(raw.createQuote),
   createHold: withRefresh(raw.createHold),
   startPayment: withRefresh(raw.startPayment),

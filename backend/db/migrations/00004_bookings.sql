@@ -23,6 +23,7 @@ CREATE TABLE quotes (
   check_in         date NOT NULL,
   check_out        date NOT NULL,
   guests           integer NOT NULL CHECK (guests > 0),
+  rooms            integer NOT NULL DEFAULT 1 CHECK (rooms BETWEEN 1 AND 9),  -- rooms of this type; the amounts cover all of them
   currency         text NOT NULL CHECK (currency IN ('ETB', 'USD', 'EUR')),
   base_santim      bigint NOT NULL CHECK (base_santim >= 0),
   service_santim   bigint NOT NULL CHECK (service_santim >= 0),
@@ -34,6 +35,7 @@ CREATE TABLE quotes (
   expires_at       timestamptz NOT NULL,
   created_at       timestamptz NOT NULL DEFAULT now(),
   CHECK (check_out > check_in),
+  CONSTRAINT quote_guests_cover_rooms CHECK (guests >= rooms),  -- every room has at least one guest
   CONSTRAINT quote_amounts_add_up CHECK (
     total_santim = base_santim + service_santim + vat_santim
     AND deposit_santim + balance_due_santim = total_santim
@@ -53,6 +55,7 @@ CREATE TABLE bookings (
   check_in           date NOT NULL,
   check_out          date NOT NULL,
   guests             integer NOT NULL CHECK (guests > 0),
+  rooms              integer NOT NULL DEFAULT 1 CHECK (rooms BETWEEN 1 AND 9),  -- held and sold as this many units of room_type_id
   guest_name         text NOT NULL CHECK (length(btrim(guest_name)) >= 2),
   status             text NOT NULL DEFAULT 'HELD' CHECK (status IN (
     'HELD', 'PAID_AWAITING_HOTEL', 'CONFIRMED', 'CHECKED_IN', 'COMPLETED', 'EXPIRED',
@@ -73,6 +76,7 @@ CREATE TABLE bookings (
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now(),
   CHECK (check_out > check_in),
+  CONSTRAINT booking_guests_cover_rooms CHECK (guests >= rooms),
   CONSTRAINT booking_amounts_add_up CHECK (
     total_santim = base_santim + service_santim + vat_santim
     AND deposit_santim + balance_due_santim = total_santim
@@ -119,6 +123,9 @@ BEGIN
     RAISE EXCEPTION 'illegal booking status change % -> %', OLD.status, NEW.status USING ERRCODE = 'check_violation';
   END IF;
   -- The agreed price never changes after the booking exists.
+  IF NEW.rooms IS DISTINCT FROM OLD.rooms THEN
+    RAISE EXCEPTION 'booking amounts cannot be changed: the number of rooms is part of the price' USING ERRCODE = 'check_violation';
+  END IF;
   IF (NEW.currency, NEW.base_santim, NEW.service_santim, NEW.vat_santim, NEW.total_santim, NEW.deposit_santim, NEW.balance_due_santim)
      IS DISTINCT FROM
      (OLD.currency, OLD.base_santim, OLD.service_santim, OLD.vat_santim, OLD.total_santim, OLD.deposit_santim, OLD.balance_due_santim) THEN

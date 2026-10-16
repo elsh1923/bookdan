@@ -20,6 +20,7 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        animation: 'fade',
         sceneStyle: { backgroundColor: colors.background },
         // Deep navy bar with a light-blue active tab, on every tab screen.
         tabBarActiveTintColor: dark.accent,

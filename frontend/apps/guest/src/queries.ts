@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { isStillChanging, type Amenity, type PropertyType } from '@bookdan/domain';
 import type { CreateQuoteParams } from '@bookdan/api-client';
@@ -9,6 +9,7 @@ export interface SearchCriteria {
   check_in: string;
   check_out: string;
   guests: number;
+  rooms?: number;
   types: PropertyType[];
   amenities: Amenity[];
 }
@@ -37,8 +38,15 @@ export function useQuote(p: CreateQuoteParams, enabled: boolean) {
     enabled,
     staleTime: 0,
     gcTime: 0,
+    // Changing the number of rooms asks for a new quote; keep showing the old one until it arrives.
+    placeholderData: keepPreviousData,
     retry: false, // SOLD_OUT and auth errors are answers, not glitches
   });
+}
+
+/** The guest's saved name and ID (the ID masked to its last four characters), or null if they have not saved any. */
+export function useProfile(enabled: boolean) {
+  return useQuery({ queryKey: ['profile'], queryFn: () => api.getProfile(), enabled, staleTime: 60_000 });
 }
 
 /** Polls while the booking can still change; stops on a final status. */

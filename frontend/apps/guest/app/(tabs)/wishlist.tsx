@@ -1,10 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, View, useWindowDimensions } from 'react-native';
+import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { addDays, todayAddis } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { EmptyState, T, colors, spacing } from '@bookdan/ui';
+import { EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
 import { PropertyTile } from '../../src/PropertyTile';
 import { useAllProperties } from '../../src/queries';
 import { usePrefs } from '../../src/store';
@@ -28,19 +28,23 @@ export default function Wishlist() {
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
       <T variant="h1" style={{ padding: spacing.lg }}>{t('wishlist.title')}</T>
       {all.isPending && saved.length > 0 ? (
-        <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+        <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg }}>
+          <Skeleton width={tileWidth} height={tileWidth + 56} radius={radius.lg} />
+          <Skeleton width={tileWidth} height={tileWidth + 56} radius={radius.lg} />
+        </View>
       ) : items.length === 0 ? (
         <EmptyState icon="🤍" title={t('wishlist.empty_title')} body={t('wishlist.empty_body')} />
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-            {items.map((item) => (
-              <PropertyTile
-                key={item.id}
-                item={item}
-                width={tileWidth}
-                onPress={() => router.push({ pathname: '/property/[id]', params: { id: item.id, in: today, out: checkOut, guests: '1' } })}
-              />
+            {items.map((item, i) => (
+              <Reveal key={item.id} index={i}>
+                <PropertyTile
+                  item={item}
+                  width={tileWidth}
+                  onPress={() => router.push({ pathname: '/property/[id]', params: { id: item.id, in: today, out: checkOut, guests: '1' } })}
+                />
+              </Reveal>
             ))}
           </View>
         </ScrollView>

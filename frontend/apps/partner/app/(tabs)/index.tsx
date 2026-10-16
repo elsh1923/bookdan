@@ -1,10 +1,12 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
+import { RefreshControl, ScrollView, View } from 'react-native';
+import Animated, { FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { isAwaitingAnswer, sortInbox, type DeclineReason, type PartnerBooking } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { EmptyState, T, colors, spacing } from '@bookdan/ui';
+import { EmptyState, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../../src/api';
 import { AwaitingCard, BookingRow } from '../../src/BookingCards';
 import { DeclineSheet } from '../../src/DeclineSheet';
@@ -13,6 +15,7 @@ import { useAnswers } from '../../src/useAnswers';
 
 export default function Inbox() {
   const { t } = useTranslation();
+  const router = useRouter();
   const inbox = useInbox();
   const { busyId, errors, answer, refresh } = useAnswers();
   const [declining, setDeclining] = useState<PartnerBooking | null>(null);
@@ -31,7 +34,11 @@ export default function Inbox() {
         <T variant="display">{t('partner.tab_bookings')}</T>
 
         {inbox.isPending ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
+          <View style={{ marginTop: spacing.lg, gap: spacing.md }}>
+            <Skeleton height={176} radius={radius.lg} />
+            <Skeleton height={96} radius={radius.md} />
+            <Skeleton height={96} radius={radius.md} />
+          </View>
         ) : inbox.isError ? (
           <EmptyState
             icon="⚠️"
@@ -47,9 +54,9 @@ export default function Inbox() {
             {waiting.length > 0 ? (
               <View style={{ marginTop: spacing.lg }}>
                 <T variant="h3" style={{ marginBottom: spacing.sm }}>{t('partner.waiting_title')} ({waiting.length})</T>
-                {waiting.map((b) => (
+                {waiting.map((b, i) => (
+                  <Animated.View key={b.id} layout={LinearTransition.duration(260)} entering={FadeInDown.delay(Math.min(i, 6) * 70).duration(380)} exiting={FadeOut.duration(180)}>
                   <AwaitingCard
-                    key={b.id}
                     b={b}
                     receivedAt={inbox.dataUpdatedAt}
                     busy={busyId === b.id}
@@ -57,7 +64,9 @@ export default function Inbox() {
                     onAccept={() => answer(b, () => api.acceptBooking(b.id))}
                     onDecline={() => setDeclining(b)}
                     onTimeUp={refresh}
+                    onOpen={() => router.push({ pathname: '/booking/[id]', params: { id: b.id } })}
                   />
+                  </Animated.View>
                 ))}
               </View>
             ) : null}
@@ -65,7 +74,11 @@ export default function Inbox() {
             {others.length > 0 ? (
               <View style={{ marginTop: spacing.lg }}>
                 <T variant="h3" style={{ marginBottom: spacing.sm }}>{t('partner.upcoming_title')}</T>
-                {others.map((b) => <BookingRow key={b.id} b={b} />)}
+                {others.map((b, i) => (
+                  <Animated.View key={b.id} layout={LinearTransition.duration(260)} entering={FadeInDown.delay(Math.min(i, 6) * 70).duration(380)}>
+                    <BookingRow b={b} onOpen={() => router.push({ pathname: '/booking/[id]', params: { id: b.id } })} />
+                  </Animated.View>
+                ))}
               </View>
             ) : null}
           </>

@@ -56,6 +56,7 @@ export default function SearchSheet() {
   const [checkIn, setCheckIn] = useState(today);
   const [nights, setNights] = useState(1);
   const [guests, setGuests] = useState(1);
+  const [rooms, setRooms] = useState(1);
   const checkOut = addDays(checkIn, nights);
 
   // Suggestions are debounced about 300 ms so typing never janks.
@@ -66,7 +67,7 @@ export default function SearchSheet() {
 
   const go = (query: string) => {
     addRecent(query);
-    router.replace({ pathname: '/results', params: { q: query, in: checkIn, out: checkOut, guests: String(guests) } });
+    router.replace({ pathname: '/results', params: { q: query, in: checkIn, out: checkOut, guests: String(guests), rooms: String(rooms) } });
   };
 
   // GPS permission is only requested when this button is tapped.
@@ -141,9 +142,20 @@ export default function SearchSheet() {
             <Stepper
               label={t('search.guests')}
               value={t('common.guest', { count: guests })}
-              min={guests <= 1}
+              min={guests <= rooms}
               max={guests >= 10}
               onChange={(d) => setGuests(guests + d)}
+            />
+            <Stepper
+              label={t('search.rooms')}
+              value={t('common.room', { count: rooms })}
+              min={rooms <= 1}
+              max={rooms >= 9}
+              onChange={(d) => {
+                const next = rooms + d;
+                setRooms(next);
+                if (guests < next) setGuests(next); // every room has at least one guest
+              }}
             />
           </View>
 

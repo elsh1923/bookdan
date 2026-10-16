@@ -62,7 +62,7 @@ answer countdown, accept, decline with a reason, and missed-deadline handling.
 **Guest app (BookDan)**
 1. Open it, pick a language, tap **Get started**. Show the home screen, then switch to Amharic in Profile.
 2. Search a landmark ("Meskel Square"), open a hotel, tap **Select room**.
-3. Sign in (any number, code `123456`), enter a name, **Hold this room**. Point at the 15-minute countdown.
+3. Sign in (any number, code `123456`). Checkout asks for your ID first: tap **Add my ID**, enter a name and any ID number (the app never shows it again, only its last four characters). Then **Hold this room** and point at the 15-minute countdown.
 4. Choose Telebirr, pay. On the payment page tap **Decline** to show the failure message, then retry and **Approve**.
 5. Wait about 8 seconds: **Booking confirmed**. Open **View voucher** and show the QR and the hidden PIN.
 6. **Turn on airplane mode** and reopen the voucher. It still works. This is a strong moment: hotels have weak signal.
@@ -70,8 +70,9 @@ answer countdown, accept, decline with a reason, and missed-deadline handling.
 **Partner app (BookDan Partner)**
 1. Sign in (code `123456`). Show the inbox: bookings waiting for an answer, closest deadline first, with countdowns.
 2. Settings, **Add a test booking**, go back to Bookings: a new one arrives with a fresh 15 minutes.
-3. **Accept** one. **Decline** another and show that a reason is required and that the guest is refunded.
-4. Settings, **Alerts**: show the checklist, tap **Send a test alert**, lock the phone. It rings with the booking
+3. Tap the guest line on a booking: the **Guest profile** shows name, contact, nationality and the ID masked. **Show ID number** reveals it (in production this is logged), **Hide** clears it.
+4. **Accept** one. **Decline** another and show that a reason is required and that the guest is refunded.
+5. Settings, **Alerts**: show the checklist, tap **Send a test alert**, lock the phone. It rings with the booking
    sound. Tap it and the booking opens. (This local test works without Firebase. Real alerts from a server need the
    Firebase setup in `apps/partner/docs/push-notifications.md`.)
 

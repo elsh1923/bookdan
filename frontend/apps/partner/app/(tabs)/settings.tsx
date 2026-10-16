@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES, useTranslation } from '@bookdan/i18n';
-import { Badge, Button, Chip, T, colors, spacing } from '@bookdan/ui';
+import { Badge, Button, Chip, Reveal, T, colors, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
 import { AlertsChecklist } from '../../src/AlertsChecklist';
 import { useAuth } from '../../src/auth';
@@ -20,10 +20,12 @@ export default function Settings() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-        <T variant="display">{t('partner.settings_title')}</T>
+        <Reveal><T variant="display">{t('partner.settings_title')}</T></Reveal>
 
-        <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('partner.hotel').toUpperCase()}</T>
-        <T variant="h3" style={{ marginTop: spacing.xs }}>{inbox.data?.property.name ?? '—'}</T>
+        <Reveal index={1}>
+          <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('partner.hotel').toUpperCase()}</T>
+          <T variant="h3" style={{ marginTop: spacing.xs }}>{inbox.data?.property.name ?? '—'}</T>
+        </Reveal>
 
         <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('partner.language').toUpperCase()}</T>
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
@@ -32,7 +34,7 @@ export default function Settings() {
           ))}
         </View>
 
-        <AlertsChecklist />
+        <Reveal index={3}><AlertsChecklist /></Reveal>
 
         <View style={{ marginTop: spacing.xl }}>
           {identity ? <T color={colors.inkSoft}>{t('partner.signed_in_as', { who: identity.value })}</T> : null}

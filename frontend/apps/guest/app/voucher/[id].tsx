@@ -7,7 +7,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, EmptyState, T, colors, radius, shadow, spacing } from '@bookdan/ui';
+import { Badge, Button, EmptyState, Pop, Reveal, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { ActionTile } from '../../src/ActionTile';
 import { isMockApi } from '../../src/api';
 import { callPhone, openDirections } from '../../src/links';
@@ -98,10 +98,10 @@ export default function VoucherScreen() {
         <T variant="display">{t('voucher.title')}</T>
         <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('voucher.subtitle')}</T>
 
-        <View style={{ alignItems: 'center', marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: '#fff' }}>
+        <Pop delay={120} style={{ alignItems: 'center', marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: '#fff' }}>
           <QRCode value={v.token} size={qrSize} ecl="M" quietZone={8} />
           <T variant="h2" style={{ marginTop: spacing.md, letterSpacing: 2 }}>{v.reference}</T>
-        </View>
+        </Pop>
 
         <Pressable
           onPress={() => setShowPin((s) => !s)}
@@ -126,15 +126,16 @@ export default function VoucherScreen() {
         </View>
         {isMockApi ? <View style={{ marginTop: spacing.sm }}><Badge tone="warning" icon="⚠" label="SIMULATED VOUCHER · not valid at a real hotel" /></View> : null}
 
-        <View style={[{ marginTop: spacing.xl, padding: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }, shadow.card]}>
+        <Reveal index={3} style={[{ marginTop: spacing.xl, padding: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }, shadow.card]}>
           <T variant="displaySm">{v.property_name}</T>
           <T color={colors.inkSoft} style={{ marginBottom: spacing.sm }}>{v.address}</T>
           <Line label={t('booking.check_in')} value={shortDate(v.check_in, months)} />
           <Line label={t('booking.check_out')} value={shortDate(v.check_out, months)} />
+          {v.rooms > 1 ? <Line label={t('booking.room')} value={t('common.room', { count: v.rooms })} /> : null}
           <Line label={t('booking.guests')} value={`${v.guests} · ${v.guest_name}`} />
           <View style={{ height: 1, backgroundColor: colors.line, marginVertical: spacing.sm }} />
           <Line label={t('voucher.balance_due')} value={owed > 0 ? price(owed, v.currency) : t('voucher.nothing_due')} />
-        </View>
+        </Reveal>
 
         <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg }}>
           <ActionTile icon="call-outline" label={t('booking.call_hotel')} onPress={() => attempt(callPhone(v.property_phone), v.property_phone)} />

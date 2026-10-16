@@ -69,16 +69,17 @@ export default function RootLayout() {
           <UpdateBanner />
         <View style={{ flex: 1, alignItems: 'center', backgroundColor: colors.background }}>
           <View style={{ flex: 1, width: '100%', maxWidth: 640 }}>
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background }, animation: 'slide_from_right', animationDuration: 280 }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="welcome" options={{ gestureEnabled: false }} />
-          <Stack.Screen name="search" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="search" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="results" />
           <Stack.Screen name="property/[id]" />
           <Stack.Screen name="signin" options={{ presentation: 'modal' }} />
           <Stack.Screen name="checkout" />
           <Stack.Screen name="booking/[id]" />
           <Stack.Screen name="voucher/[id]" />
+          <Stack.Screen name="guest-details" options={{ presentation: 'modal' }} />
           <Stack.Screen name="mock-gateway/[session]" options={{ presentation: 'modal' }} />
           <Stack.Screen name="payment-return" />
         </Stack>
