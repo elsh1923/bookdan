@@ -35,6 +35,7 @@ var (
 	srv  *httptest.Server
 	app  *api.Server
 	keys *api.Keys
+	push = &recorder{}
 )
 
 const (
@@ -64,7 +65,9 @@ func TestMain(m *testing.M) {
 	}
 	cfg := config.Config{Env: "test", DemoMode: true, PublicURL: "http://example.test", PaymentProvider: "dev", PaymentWebhookSecret: "whsec"}
 	keys, _ = api.NewKeys(cfg)
-	app, err = api.New(ctx, cfg, pool, keys, api.DevProviders(cfg))
+	providers := api.DevProviders(cfg)
+	providers.Push = push // records every alert so tests can read them
+	app, err = api.New(ctx, cfg, pool, keys, providers)
 	if err != nil {
 		fmt.Println("api:", err)
 		stop()
@@ -192,6 +195,8 @@ func payOnline(t *testing.T, c *client, bookingID string, outcome string) {
 
 // hotelFor signs in as the demo owner (the staff member of Meskel Square Palace Hotel).
 func hotelFor(t *testing.T) *client {
+	// Many tests sign the owner in; start each from a clean slate so the sign-in limit (5 codes / 10 min) does not trip.
+	pool.Exec(context.Background(), `DELETE FROM otp_challenges WHERE identifier = 'owner@bookdan.test'`)
 	c := newClient(t, "partner")
 	c.signIn("email", "owner@bookdan.test")
 	return c

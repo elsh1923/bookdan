@@ -344,6 +344,13 @@ const am: Resources = {
     residence_permit: 'የነዋሪነት ፈቃድ',
     other: 'ሌላ',
   },
+  notify: {
+    title: 'ሆቴሉ ሲመልስ መልእክት ያግኙ',
+    body: 'መተግበሪያውን መዝጋት ይችላሉ። ሆቴሉ ሲያረጋግጥ ወይም ሲያሰናብት ወዲያውኑ እናሳውቆታለን።',
+    enable: 'አሳውቀኝ',
+    denied: 'ለዚህ መተግበሪያ ማሳወቂያዎች ጠፍተዋል። ከሆቴሉ መልእክት ለማግኘት በስልክዎ ቅንብር ያብሯቸው።',
+    open_settings: 'ቅንብሮችን ክፈት',
+  },
   status: {
     HELD: 'ተይዟል',
     PAID_AWAITING_HOTEL: 'ሆቴሉን በመጠበቅ ላይ',

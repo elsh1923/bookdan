@@ -9,6 +9,7 @@ import { formatCountdown, holdRemainingMs, shouldResumeOnLaunch, type Booking, t
 import { useTranslation } from '@bookdan/i18n';
 import { Badge, Button, EmptyState, Pop, Reveal, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
+import { NotifyMeCard } from '../../src/NotifyMeCard';
 import { callPhone } from '../../src/links';
 import { clearPendingPayment, openGateway, savePendingPayment } from '../../src/payment';
 import { price, shortDate } from '../../src/format';
@@ -173,6 +174,8 @@ export default function BookingScreen() {
             </T>
           </View>
         ) : null}
+
+        {b.status === 'PAID_AWAITING_HOTEL' ? <NotifyMeCard /> : null}
 
         {paymentPending ? (
           <View style={{ marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primarySoft }}>

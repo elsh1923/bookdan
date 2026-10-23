@@ -144,6 +144,9 @@ export function createHttpApi(options: HttpOptions): Api {
     deleteProfile: async () => {
       await request('DELETE', '/me/profile', null);
     },
+    registerPushToken: async (r) => {
+      await request('PUT', '/me/devices/push-token', null, r);
+    },
     getVoucher: (id) => request('GET', `/bookings/${encodeURIComponent(id)}/voucher`, VoucherSchema),
     // No demo controls: those exist only on the mock.
   };

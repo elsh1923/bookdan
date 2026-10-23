@@ -56,6 +56,24 @@ export interface BookingAlertData {
   booking_id: string;
 }
 
+/** A push the guest gets when the hotel answers (or does not). The server sends the booking and what happened to it. */
+export interface BookingUpdateData {
+  type: 'booking_update';
+  booking_id: string;
+  status: 'confirmed' | 'declined' | 'no_response';
+}
+
+export function parseBookingUpdate(data: unknown): BookingUpdateData | null {
+  const d = data as { type?: unknown; booking_id?: unknown; status?: unknown } | null;
+  if (
+    d && d.type === 'booking_update' && typeof d.booking_id === 'string' && d.booking_id.length > 0 &&
+    (d.status === 'confirmed' || d.status === 'declined' || d.status === 'no_response')
+  ) {
+    return { type: 'booking_update', booking_id: d.booking_id, status: d.status };
+  }
+  return null;
+}
+
 export function parseBookingAlert(data: unknown): BookingAlertData | null {
   const d = data as { type?: unknown; booking_id?: unknown } | null;
   if (d && d.type === 'new_booking' && typeof d.booking_id === 'string' && d.booking_id.length > 0) {

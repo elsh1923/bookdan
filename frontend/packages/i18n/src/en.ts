@@ -341,6 +341,13 @@ const en = {
     residence_permit: 'Residence permit',
     other: 'Other',
   },
+  notify: {
+    title: 'Get a message when the hotel answers',
+    body: 'You can close the app. We will tell you as soon as the hotel confirms or declines.',
+    enable: 'Notify me',
+    denied: 'Notifications are off for this app. Turn them on in your phone settings to hear from the hotel.',
+    open_settings: 'Open settings',
+  },
   status: {
     HELD: 'Held',
     PAID_AWAITING_HOTEL: 'Waiting for hotel',

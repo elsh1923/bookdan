@@ -17,7 +17,11 @@
       "android": {
         "buildType": "apk"
       },
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_MODE": "http",
+        "EXPO_PUBLIC_API_URL": "https://bookdan.onrender.com"
+      }
     },
     "production": {
       "android": {

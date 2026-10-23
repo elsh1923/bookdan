@@ -15,7 +15,7 @@ import (
 //
 //   1. OTPSender   sends the sign-in code by SMS (Ethiopian number) or email.      TODO: choose providers.
 //   2. Gateway     creates a payment page and refunds money (Telebirr, Chapa).     TODO: merchant accounts + API keys.
-//   3. Pusher      sends the new-booking alert to the hotel's phone (Firebase).    TODO: Firebase project + service key.
+//   3. Pusher      sends alerts to phones through Firebase (fcm.go). BUILT: set PUSH_PROVIDER=fcm and FCM_SERVICE_ACCOUNT_B64.
 // ============================================================================================================
 
 // OTPSender delivers a one-time code. channel is "sms" or "email".
@@ -39,9 +39,10 @@ type Gateway interface {
 	Refund(ctx context.Context, providerRef string, amountSantim int64, currency string) error
 }
 
-// Pusher sends an alert to a phone.
+// Pusher sends an alert to phones. It returns the tokens the push service no longer knows (an uninstalled app), so the
+// server can forget them.
 type Pusher interface {
-	Notify(ctx context.Context, tokens []string, title, body string, data map[string]string) error
+	Notify(ctx context.Context, tokens []string, title, body string, data map[string]string) (invalid []string, err error)
 }
 
 // ---- development stand-ins
@@ -70,9 +71,9 @@ func (devGateway) Refund(_ context.Context, ref string, amount int64, currency s
 
 type logPusher struct{}
 
-func (logPusher) Notify(_ context.Context, tokens []string, title, body string, data map[string]string) error {
+func (logPusher) Notify(_ context.Context, tokens []string, title, body string, data map[string]string) ([]string, error) {
 	slog.Info("push alert (development stand-in, nothing was sent)", "devices", len(tokens), "title", title, "body", body, "data", data)
-	return nil
+	return nil, nil
 }
 
 // Providers bundles the integrations.
@@ -102,6 +103,12 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 	}
 	switch cfg.PushProvider {
 	case "log", "":
+	case "fcm":
+		fcm, err := newFCMPusher(cfg.FCMServiceAccountB64)
+		if err != nil {
+			return p, err
+		}
+		p.Push = fcm
 	default:
 		return p, errors.New("PUSH_PROVIDER " + cfg.PushProvider + " is not built yet")
 	}

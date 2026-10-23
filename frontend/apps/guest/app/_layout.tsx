@@ -19,6 +19,7 @@ import { i18next, initI18n, pickLanguage } from '@bookdan/i18n';
 import { DisplayFontContext, colors, fonts } from '@bookdan/ui';
 import { PERSISTED_QUERY_KEYS, queryClient, queryPersister } from '../src/api';
 import { usePaymentRecovery } from '../src/payment';
+import { usePushUpdates } from '../src/notifications';
 import { UpdateBanner } from '../src/UpdateBanner';
 import { usePrefs } from '../src/store';
 
@@ -30,6 +31,7 @@ export default function RootLayout() {
     PlayfairDisplay_500Medium,
     PlayfairDisplay_700Bold,
   });
+  usePushUpdates();
   usePaymentRecovery(); // an interrupted payment takes the guest back to its booking on the next launch
   const hydrated = usePrefs((s) => s.hydrated);
   const language = usePrefs((s) => s.language);

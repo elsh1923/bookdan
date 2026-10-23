@@ -29,7 +29,9 @@ type Config struct {
 	// integration has been written (see internal/api/providers.go).
 	OTPProvider     string // log | (sms and email providers to be built)
 	PaymentProvider string // dev | (telebirr, chapa to be built)
-	PushProvider    string // log | (fcm to be built)
+	PushProvider    string // log | fcm
+	// FCMServiceAccountB64 is the Firebase service-account key (JSON file) in base64. Required when PUSH_PROVIDER=fcm.
+	FCMServiceAccountB64 string
 	// PaymentWebhookSecret signs payment-gateway callbacks (HMAC-SHA256 of the body).
 	PaymentWebhookSecret string
 }
@@ -51,6 +53,7 @@ func Load() Config {
 		OTPProvider:          get("OTP_PROVIDER", "log"),
 		PaymentProvider:      get("PAYMENT_PROVIDER", "dev"),
 		PushProvider:         get("PUSH_PROVIDER", "log"),
+		FCMServiceAccountB64: get("FCM_SERVICE_ACCOUNT_B64", ""),
 		PaymentWebhookSecret: get("PAYMENT_WEBHOOK_SECRET", ""),
 	}
 }
@@ -91,7 +94,10 @@ func (c Config) Validate() error {
 		problems = append(problems, "PAYMENT_PROVIDER=dev is a fake gateway; build the Telebirr/Chapa integration (internal/api/providers.go)")
 	}
 	if c.PushProvider == "log" {
-		problems = append(problems, "PUSH_PROVIDER=log only logs alerts; build the FCM integration (internal/api/providers.go)")
+		problems = append(problems, "PUSH_PROVIDER=log only logs alerts; set PUSH_PROVIDER=fcm and FCM_SERVICE_ACCOUNT_B64")
+	}
+	if c.PushProvider == "fcm" && c.FCMServiceAccountB64 == "" {
+		problems = append(problems, "FCM_SERVICE_ACCOUNT_B64 is required when PUSH_PROVIDER=fcm")
 	}
 	if len(problems) == 0 {
 		return nil

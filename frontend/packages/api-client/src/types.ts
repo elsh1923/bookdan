@@ -94,6 +94,8 @@ export interface Api extends AuthApi {
   saveProfile(input: GuestProfileInput): Promise<GuestProfile>;
   /** Removes the guest's saved ID details. */
   deleteProfile(): Promise<void>;
+  /** Registers this phone for booking updates (the hotel confirmed or declined). Re-sent whenever the token changes. */
+  registerPushToken(registration: PushRegistration): Promise<void>;
   /** Signed voucher for a confirmed booking. Fails with VOUCHER_NOT_READY before confirmation. */
   getVoucher(bookingId: string): Promise<Voucher>;
 

@@ -227,6 +227,11 @@ export function createMockApi(opts: MockOptions = {}): Api {
       return toProfile(row);
     },
 
+    async registerPushToken() {
+      await gate();
+      identityOf(); // the mock has nobody to send to; it only checks the guest is signed in
+    },
+
     async deleteProfile() {
       await gate();
       profiles.delete(identityOf());

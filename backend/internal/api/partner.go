@@ -164,6 +164,11 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, accept bool, rea
 		return err
 	}
 	s.runRefunds(ctx)
+	if accept {
+		s.notifyGuest(ctx, id, "confirmed")
+	} else {
+		s.notifyGuest(ctx, id, "declined")
+	}
 	respond(w, http.StatusOK, b)
 	return nil
 }
@@ -281,8 +286,13 @@ func (s *Server) partnerReveal(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// registerPushToken saves where to send this phone's alerts (one token per install; a new one replaces the old).
-func (s *Server) registerPushToken(w http.ResponseWriter, r *http.Request) error {
+// registerPushToken saves where to send this phone's alerts (one token per install; a new one replaces the old). The same
+// endpoint serves the hotel app (alerts for new requests) and the guest app (updates on their bookings).
+func (s *Server) registerPushToken(app string) handler {
+	return func(w http.ResponseWriter, r *http.Request) error { return s.savePushToken(app, w, r) }
+}
+
+func (s *Server) savePushToken(app string, w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Token      string `json:"token"`
 		TokenType  string `json:"token_type"`
@@ -298,10 +308,10 @@ func (s *Server) registerPushToken(w http.ResponseWriter, r *http.Request) error
 	}
 	c := claimsFrom(r)
 	if _, err := s.pool.Exec(r.Context(), `INSERT INTO devices (user_id, device_id, app, platform, app_version, push_token)
-		VALUES ($1, $2, 'partner', $3, $4, $5)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (user_id, device_id, app) DO UPDATE SET push_token = EXCLUDED.push_token, platform = EXCLUDED.platform,
 		  app_version = EXCLUDED.app_version, revoked_at = NULL, last_seen_at = now()`,
-		c.Sub, in.DeviceID, in.Platform, in.AppVersion, in.Token); err != nil {
+		c.Sub, in.DeviceID, app, in.Platform, in.AppVersion, in.Token); err != nil {
 		return err
 	}
 	respond(w, http.StatusOK, httpx.NowMeta())
@@ -313,7 +323,9 @@ func (s *Server) registerPushToken(w http.ResponseWriter, r *http.Request) error
 // sweep closes what time has overtaken: holds that ran out, and requests the hotel did not answer in time (the guest is
 // refunded). It is cheap and idempotent, so it runs on a timer and also whenever a hotel looks at its bookings.
 func (s *Server) sweep(ctx context.Context) {
+	var timedOut []string // hotels that did not answer: their guests are told after the commit
 	if err := s.tx(ctx, func(tx pgx.Tx) error {
+		timedOut = nil
 		rows, err := tx.Query(ctx, `SELECT id, room_type_id, check_in, check_out, rooms, status FROM bookings
 			WHERE (status = 'HELD' AND hold_expires_at <= now()) OR (status = 'PAID_AWAITING_HOTEL' AND hotel_deadline_at <= now())
 			ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED`)
@@ -351,6 +363,7 @@ func (s *Server) sweep(ctx context.Context) {
 			if err := s.decline(ctx, tx, d.id, d.roomType, pgDate(d.in), pgDate(d.out), d.rooms, "no_response", "system"); err != nil {
 				return err
 			}
+			timedOut = append(timedOut, d.id)
 		}
 		return nil
 	}); err != nil {
@@ -358,6 +371,9 @@ func (s *Server) sweep(ctx context.Context) {
 		return
 	}
 	s.runRefunds(ctx)
+	for _, id := range timedOut {
+		s.notifyGuest(ctx, id, "no_response")
+	}
 }
 
 // Sweep runs one pass (also used by tests).

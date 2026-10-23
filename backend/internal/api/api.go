@@ -107,6 +107,7 @@ func (s *Server) Routes(root chi.Router) {
 			r.Get("/bookings/{id}", s.h(s.getBooking))
 			r.Post("/bookings/{id}/pay", s.h(s.payBooking))
 			r.Get("/bookings/{id}/voucher", s.h(s.voucher))
+			r.Put("/me/devices/push-token", s.h(s.registerPushToken("guest")))
 			r.Get("/me/profile", s.h(s.getProfile))
 			r.Put("/me/profile", s.h(s.putProfile))
 			r.Delete("/me/profile", s.h(s.deleteProfile))
@@ -114,7 +115,7 @@ func (s *Server) Routes(root chi.Router) {
 
 		r.Route("/partner", func(r chi.Router) {
 			r.Use(s.authenticate("partner"))
-			r.Put("/devices/push-token", s.h(s.registerPushToken))
+			r.Put("/devices/push-token", s.h(s.registerPushToken("partner")))
 			r.Get("/bookings", s.h(s.partnerBookings))
 			r.Post("/bookings/{id}/accept", s.h(s.partnerAccept))
 			r.Post("/bookings/{id}/decline", s.h(s.partnerDecline))

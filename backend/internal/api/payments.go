@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -326,9 +327,57 @@ func (s *Server) notifyHotel(ctx context.Context, bookingID string) {
 	if len(tokens) == 0 {
 		return
 	}
-	if err := s.p.Push.Notify(ctx, tokens, "New booking request", guest+" · "+code, map[string]string{"booking_id": bookingID, "type": "new_booking"}); err != nil {
+	s.push(ctx, tokens, "New booking request", guest+" · "+code, map[string]string{"booking_id": bookingID, "type": "new_booking", "channel": "booking_alerts"})
+}
+
+// push sends an alert and forgets any phone the push service says is gone. Failures are logged, never returned: an alert
+// that cannot be sent must not undo the booking that caused it.
+func (s *Server) push(ctx context.Context, tokens []string, title, body string, data map[string]string) {
+	invalid, err := s.p.Push.Notify(ctx, tokens, title, body, data)
+	if err != nil {
 		slog.Error("push failed", "err", err)
 	}
+	if len(invalid) > 0 {
+		if _, err := s.pool.Exec(ctx, `UPDATE devices SET push_token = NULL WHERE push_token = ANY($1::text[])`, invalid); err != nil {
+			slog.Error("forget push tokens", "err", err)
+		}
+	}
+}
+
+// Guest messages. The text is English because the server does not know the guest's language yet; the data carries the
+// booking and its new status so the app can open the right screen.
+var guestMessages = map[string][2]string{
+	"confirmed":   {"Booking confirmed", "%s has confirmed your room. Your voucher is ready."},
+	"declined":    {"Booking not available", "%s could not accept your request. You will get a full refund."},
+	"no_response": {"The hotel did not answer in time", "%s did not answer in time. You will get a full refund."},
+}
+
+// notifyGuest tells the guest what the hotel decided. kind is confirmed, declined or no_response.
+func (s *Server) notifyGuest(ctx context.Context, bookingID, kind string) {
+	msg, ok := guestMessages[kind]
+	if !ok {
+		return
+	}
+	rows, err := s.pool.Query(ctx, `SELECT d.push_token, p.name FROM bookings b JOIN properties p ON p.id = b.property_id
+		JOIN devices d ON d.user_id = b.user_id AND d.app = 'guest' AND d.push_token IS NOT NULL AND d.revoked_at IS NULL
+		WHERE b.id = $1`, bookingID)
+	if err != nil {
+		slog.Error("notify guest", "err", err)
+		return
+	}
+	defer rows.Close()
+	var tokens []string
+	var hotel string
+	for rows.Next() {
+		var t string
+		if rows.Scan(&t, &hotel) == nil {
+			tokens = append(tokens, t)
+		}
+	}
+	if len(tokens) == 0 {
+		return
+	}
+	s.push(ctx, tokens, msg[0], fmt.Sprintf(msg[1], hotel), map[string]string{"booking_id": bookingID, "type": "booking_update", "status": kind, "channel": "booking_updates"})
 }
 
 // ---- voucher

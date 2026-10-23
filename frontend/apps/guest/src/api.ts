@@ -42,6 +42,7 @@ export const api: Api = {
   getBooking: withRefresh(raw.getBooking),
   listBookings: withRefresh(raw.listBookings),
   getVoucher: withRefresh(raw.getVoucher),
+  registerPushToken: withRefresh(raw.registerPushToken),
   // Demo controls exist only on the mock and must never ship in a production build.
   demo: isMockApi ? raw.demo : undefined,
 };

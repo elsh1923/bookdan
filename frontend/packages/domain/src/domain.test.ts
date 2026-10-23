@@ -8,7 +8,7 @@ import { b64urlDecode, b64urlEncode, decodeVoucherPayload, encodeVoucherToken, n
 import { VoucherSchema } from './schemas.ts';
 import { normalizeEmail } from './identity.ts';
 import { PartnerBookingSchema, DECLINE_REASONS, isAwaitingAnswer, sortInbox } from './partner.ts';
-import { alertReadiness, parseBookingAlert } from './alerts.ts';
+import { alertReadiness, parseBookingAlert, parseBookingUpdate } from './alerts.ts';
 import { BookingGuestSchema, GuestProfileInputSchema, GuestProfileSchema, idLast4, isProfileComplete, maskId, normalizeIdNumber } from './guestIdentity.ts';
 import { isPaymentInFlight, isStillChanging, shouldResumeOnLaunch } from './booking.ts';
 import { formatCountdown, normalizeEthiopianPhone, priceStay } from './pricing.ts';
@@ -215,6 +215,13 @@ test('only a well-formed new-booking push is accepted', () => {
   assert.deepEqual(parseBookingAlert({ type: 'new_booking', booking_id: 'pb_1' }), { type: 'new_booking', booking_id: 'pb_1' });
   for (const bad of [null, undefined, {}, { type: 'new_booking' }, { type: 'new_booking', booking_id: '' }, { type: 'other', booking_id: 'x' }, { type: 'new_booking', booking_id: 5 }, 'text']) {
     assert.equal(parseBookingAlert(bad), null, JSON.stringify(bad));
+  }
+});
+
+test('only a well-formed booking-update push is accepted', () => {
+  assert.deepEqual(parseBookingUpdate({ type: 'booking_update', booking_id: 'b1', status: 'confirmed' }), { type: 'booking_update', booking_id: 'b1', status: 'confirmed' });
+  for (const bad of [null, {}, { type: 'booking_update', booking_id: 'b1' }, { type: 'booking_update', booking_id: 'b1', status: 'paid' }, { type: 'new_booking', booking_id: 'b1', status: 'confirmed' }, { type: 'booking_update', booking_id: '', status: 'declined' }]) {
+    assert.equal(parseBookingUpdate(bad), null, JSON.stringify(bad));
   }
 });
 
