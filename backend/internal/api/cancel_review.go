@@ -136,25 +136,20 @@ func reverseConfirmedAndOweRefund(ctx context.Context, tx pgx.Tx, bookingID, pay
 
 // alertHotelOfCancellation tells the hotel's phones. Failure is logged, never returned.
 func (s *Server) alertHotelOfCancellation(ctx context.Context, bookingID string) {
-	rows, err := s.pool.Query(ctx, `SELECT d.push_token, b.guest_name, b.code
-		FROM bookings b JOIN property_staff ps ON ps.property_id = b.property_id
-		JOIN devices d ON d.user_id = ps.user_id AND d.app = 'partner' AND d.push_token IS NOT NULL AND d.revoked_at IS NULL
-		WHERE b.id = $1`, bookingID)
+	q, err := s.loadRequest(ctx, bookingID)
 	if err != nil {
 		slog.Error("alert hotel of cancellation", "err", err)
 		return
 	}
-	defer rows.Close()
-	var tokens []string
-	var guest, code string
-	for rows.Next() {
-		var t string
-		if rows.Scan(&t, &guest, &code) == nil {
-			tokens = append(tokens, t)
-		}
+	// Whoever would have been alerted to the request is told it is gone (owners too, if the request had reached them).
+	var escalated bool
+	_ = s.pool.QueryRow(ctx, `SELECT hotel_escalated_at IS NOT NULL FROM bookings WHERE id = $1`, bookingID).Scan(&escalated)
+	wave := firstWave(q.people, q.mode)
+	if escalated {
+		wave = append(wave, escalationWave(q.people)...)
 	}
-	if len(tokens) > 0 {
-		s.push(ctx, tokens, "Booking cancelled", guest+" · "+code+" was cancelled by the guest", map[string]string{"booking_id": bookingID, "type": "booking_cancelled", "channel": "booking_alerts"})
+	if len(wave) > 0 {
+		s.push(ctx, tokensOf(wave), "Booking cancelled", q.guest+" · "+q.code+" was cancelled by the guest", s.alertData(q, "booking_cancelled"))
 	}
 }
 

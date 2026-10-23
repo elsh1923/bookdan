@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isAwaitingAnswer } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { colors, fonts } from '@bookdan/ui';
-import { useInbox } from '../../src/queries';
+import { ApiError } from '@bookdan/api-client';
+import { useEarnings, useInbox } from '../../src/queries';
 
 const icon = (name: keyof typeof Ionicons.glyphMap) => ({ color, size }: { color: ColorValue; size: number }) => (
   <Ionicons name={name} size={size} color={color} />
@@ -15,6 +16,9 @@ export default function TabsLayout() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const inbox = useInbox();
+  // Money is for owners: for a receptionist the server says FORBIDDEN and the tab disappears.
+  const earnings = useEarnings();
+  const owner = !(earnings.error instanceof ApiError && earnings.error.code === 'FORBIDDEN');
   // A red badge on the tab: how many bookings are waiting for an answer.
   const waiting = inbox.data?.items.filter(isAwaitingAnswer).length ?? 0;
 
@@ -39,6 +43,8 @@ export default function TabsLayout() {
           tabBarBadgeStyle: { backgroundColor: colors.danger },
         }}
       />
+      <Tabs.Screen name="checkin" options={{ title: t('partner.tab_checkin'), tabBarIcon: icon('qr-code-outline') }} />
+      <Tabs.Screen name="earnings" options={{ title: t('partner.tab_earnings'), tabBarIcon: icon('wallet-outline'), href: owner ? undefined : null }} />
       <Tabs.Screen name="settings" options={{ title: t('partner.tab_settings'), tabBarIcon: icon('settings-outline') }} />
     </Tabs>
   );

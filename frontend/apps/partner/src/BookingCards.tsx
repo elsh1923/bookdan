@@ -27,7 +27,7 @@ function GuestLine({ b, onOpen }: { b: PartnerBooking; onOpen?: () => void }) {
   );
 }
 
-function StayLine({ b }: { b: PartnerBooking }) {
+export function StayLine({ b }: { b: PartnerBooking }) {
   const { t } = useTranslation();
   const months = useMonths();
   return (

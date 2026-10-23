@@ -149,6 +149,29 @@ func (k *Keys) SignVoucher(propertyID, code, checkIn, checkOut string, exp time.
 	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
+// VerifyVoucher checks the signature and the expiry of a voucher token (the text inside the guest's QR code) and returns what it says.
+func (k *Keys) VerifyVoucher(token string, now time.Time) (voucherPayload, error) {
+	var p voucherPayload
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return p, errors.New("malformed voucher")
+	}
+	payload, err1 := base64.RawURLEncoding.DecodeString(parts[0])
+	sig, err2 := base64.RawURLEncoding.DecodeString(parts[1])
+	if err1 != nil || err2 != nil || len(sig) != ed25519.SignatureSize || !ed25519.Verify(k.VoucherPub, payload, sig) {
+		return p, errors.New("voucher signature is not valid")
+	}
+	if err := json.Unmarshal(payload, &p); err != nil || p.V != 1 || p.PID == "" || p.Code == "" {
+		return voucherPayload{}, errors.New("malformed voucher")
+	}
+	if now.Unix() > p.Exp {
+		return p, errVoucherExpired
+	}
+	return p, nil
+}
+
+var errVoucherExpired = errors.New("voucher expired")
+
 // ---- Access tokens: HS256 JWTs, 15 minutes.
 
 type claims struct {

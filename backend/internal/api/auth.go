@@ -176,6 +176,12 @@ func (s *Server) verifyOTP(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if app == "partner" {
+			// First sign-in of invited staff: they have joined.
+			if _, err := tx.Exec(ctx, `UPDATE property_staff SET joined_at = now() WHERE user_id = $1 AND joined_at IS NULL`, userID); err != nil {
+				return err
+			}
+		}
 		var devPK string
 		if err := tx.QueryRow(ctx, `INSERT INTO devices (user_id, device_id, app, platform, last_seen_at) VALUES ($1, $2, $3, $4, now())
 			ON CONFLICT (user_id, device_id, app) DO UPDATE SET last_seen_at = now(), revoked_at = NULL, platform = EXCLUDED.platform

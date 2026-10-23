@@ -1,6 +1,9 @@
 import type {
   Amenity,
   Booking,
+  CheckinLookup,
+  CheckinQuery,
+  Earnings,
   DeclineReason,
   GuestProfile,
   GuestProfileInput,
@@ -149,6 +152,16 @@ export interface PartnerApi extends AuthApi {
   acceptBooking(id: string): Promise<PartnerBooking>;
   /** Decline a booking, with a reason. The guest is refunded in full. */
   declineBooking(id: string, reason: DeclineReason): Promise<PartnerBooking>;
+
+  /**
+   * Finds the booking behind a guest's voucher (the text in their QR code, or reference + PIN) and says whether it can be checked
+   * in. Changes nothing. Fails with INVALID_VOUCHER, VOUCHER_EXPIRED, WRONG_HOTEL, INVALID_PIN or PIN_LOCKED.
+   */
+  lookupCheckin(query: CheckinQuery): Promise<CheckinLookup>;
+  /** What the owner's hotels have earned and been paid. Fails with FORBIDDEN for anyone who is not an owner. */
+  getEarnings(): Promise<Earnings>;
+  /** Marks the guest as arrived. Harmless to repeat. Fails with INVALID_STATE when the booking cannot be checked in. */
+  checkInGuest(id: string): Promise<PartnerBooking>;
 
   /** Demo controls. Only the mock implements this; production builds must not have it. */
   demo?: {

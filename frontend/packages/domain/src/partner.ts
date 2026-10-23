@@ -29,6 +29,10 @@ export const PartnerBookingSchema = z.object({
   /** Until when the hotel may answer. After this the guest is refunded automatically. */
   hotel_deadline_at: z.string().nullable(),
   decline_reason: z.string().nullable(), // a DeclineReason, or 'no_response' when the deadline was missed
+  /** When the guest arrived (set by check-in). */
+  checked_in_at: z.string().nullable().default(null),
+  /** What the guest still pays at the hotel: the whole total for a pay-at-hotel booking, otherwise 0. */
+  balance_due_santim: z.number().int().default(0),
   server_time: z.string(),
 });
 
@@ -37,6 +41,63 @@ export const PartnerBookingListSchema = z.object({
   items: z.array(PartnerBookingSchema),
   server_time: z.string(),
 });
+
+/** One booking's share of a hotel's earnings. Amounts are santim: what the guest paid, BookDan's fee, VAT on the fee, and what the hotel receives. */
+export const EarningLineSchema = z.object({
+  booking_id: z.string(),
+  reference: z.string(),
+  guest_name: z.string(),
+  check_in: z.string(),
+  check_out: z.string(),
+  status: z.string(),
+  gross_santim: z.number().int(),
+  commission_santim: z.number().int(),
+  vat_santim: z.number().int(),
+  net_santim: z.number().int(),
+  /** True once the guest has checked in or the stay is over: the money is payable. */
+  ready: z.boolean(),
+});
+
+export const PayoutLineSchema = z.object({
+  id: z.string(),
+  amount_santim: z.number().int(),
+  method: z.string(),
+  reference: z.string(),
+  note: z.string().optional(),
+  paid_at: z.string(),
+});
+
+export const HotelEarningsSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  currency: CurrencySchema,
+  /** Payable now (checked in or stay over), not payable yet (stay still to come), already paid, and what BookDan owes the hotel today. */
+  ready_santim: z.number().int(),
+  upcoming_santim: z.number().int(),
+  paid_santim: z.number().int(),
+  to_pay_santim: z.number().int(),
+  last_paid_at: z.string().nullable(),
+  items: z.array(EarningLineSchema),
+  payouts: z.array(PayoutLineSchema),
+});
+
+export const EarningsSchema = z.object({ hotels: z.array(HotelEarningsSchema), server_time: z.string() });
+export type EarningLine = z.infer<typeof EarningLineSchema>;
+export type PayoutLine = z.infer<typeof PayoutLineSchema>;
+export type HotelEarnings = z.infer<typeof HotelEarningsSchema>;
+export type Earnings = z.infer<typeof EarningsSchema>;
+
+/** What a check-in lookup found: ready to check in, or why not. */
+export const CHECKIN_STATES = ['ready', 'checked_in', 'too_early', 'ended', 'cancelled', 'waiting', 'not_ready'] as const;
+export const CheckinLookupSchema = z.object({
+  state: z.enum(CHECKIN_STATES),
+  booking: PartnerBookingSchema,
+  server_time: z.string(),
+});
+export type CheckinState = (typeof CHECKIN_STATES)[number];
+export type CheckinLookup = z.infer<typeof CheckinLookupSchema>;
+/** Look a booking up from the guest's voucher QR code, or from the booking reference and the 4-digit PIN. */
+export type CheckinQuery = { token: string } | { reference: string; pin: string };
 
 export type PartnerBooking = z.infer<typeof PartnerBookingSchema>;
 export type PartnerBookingList = z.infer<typeof PartnerBookingListSchema>;

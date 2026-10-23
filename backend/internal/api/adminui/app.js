@@ -139,7 +139,7 @@
     }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
     return shell(h('div', {},
       h('div', { class: 'row between' }, h('h1', {}, 'Hotels'),
-        state.role === 'admin' ? h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel') : null),
+        state.role === 'admin' ? h('span', {}, h('button', { class: 'secondary', onclick: function () { go('#/payouts'); } }, 'Payouts'), ' ', h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel')) : null),
       holder));
   }
 
@@ -189,7 +189,7 @@
       h('div', { class: 'field' }, h('label', {}, 'Features'), h('div', { class: 'checks' }, amen.map(function (a) { return h('label', { class: 'check' }, a.box, a.label); }))),
       h('div', { class: 'field' }, h('label', { class: 'check' }, f.pay, 'Guests may choose to pay at the hotel')),
       state.role === 'admin' ? h('div', { class: 'field' }, h('label', { class: 'check' }, f.verified, 'Verified by BookDan (shows a "Verified" badge)')) : null,
-      isNew ? null : field('Status', f.status, 'A hotel needs at least one room with a price before it can be published.'),
+      isNew ? null : field('Status', f.status, 'To publish a hotel it needs at least one room with a price, and (set by a platform admin) its business and payout details.'),
       h('div', { class: 'field' }, btn), out);
     return form;
   }
@@ -213,11 +213,13 @@
     function paint(hotel) {
       clear(holder);
       var tabs = [['details', 'Details'], ['rooms', 'Rooms & prices'], ['photos', 'Photos (' + hotel.photos.length + ')']];
-      if (state.role === 'admin') tabs.push(['staff', 'Staff (' + hotel.staff.length + ')']);
+      tabs.push(['staff', 'Staff (' + hotel.staff.length + ')']);
+      tabs.push(['alerts', 'Booking alerts']);
+      if (state.role === 'admin') tabs.push(['business', hotel.business ? 'Business' : hotel.status === 'active' ? 'Business (not set)' : 'Business (needed to publish)']);
       add(holder, [
         h('div', { class: 'row between' }, h('h1', {}, hotel.name), h('span', { class: 'chip ' + hotel.status }, hotel.status === 'active' ? 'Published' : hotel.status === 'draft' ? 'Draft' : 'Hidden')),
         h('div', { class: 'tabs' }, tabs.map(function (t) { return h('button', { class: tab === t[0] ? 'on' : '', onclick: function () { tab = t[0]; paint(hotel); } }, t[1]); })),
-        h('div', { class: 'card' }, tab === 'details' ? detailsForm(hotel, load) : tab === 'rooms' ? roomsPanel(hotel, load) : tab === 'photos' ? photosPanel(hotel, load) : staffPanel(hotel, load))
+        h('div', { class: 'card' }, tab === 'details' ? detailsForm(hotel, load) : tab === 'rooms' ? roomsPanel(hotel, load) : tab === 'photos' ? photosPanel(hotel, load) : tab === 'business' ? businessPanel(hotel, load) : tab === 'alerts' ? alertsPanel(hotel, load) : staffPanel(hotel, load))
       ]);
     }
     load();
@@ -298,26 +300,163 @@
     return wrap;
   }
 
+  function when(iso) { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
+
   function staffPanel(hotel, reload) {
+    var isAdmin = state.role === 'admin';
     var wrap = h('div', {});
-    add(wrap, h('p', { class: 'soft' }, 'Owners can manage this hotel here and answer booking requests in the hotel app. Receptionists only answer requests in the hotel app. They sign in with the email or phone you enter here.'));
+    add(wrap, h('p', { class: 'soft' }, isAdmin
+      ? 'Owners manage this hotel here and answer booking requests in the hotel app. Receptionists only answer requests in the hotel app. Everyone gets an invitation email and signs in to the hotel app with the email you enter here.'
+      : 'Add your receptionists here: they answer booking requests in the hotel app. They get an invitation email and sign in with that email. Owners are added by BookDan.'));
     if (hotel.staff.length) {
-      var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Role'), h('th', {}))));
+      var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Role'), h('th', {}, 'Status'), h('th', {}))));
       var body = h('tbody', {});
-      hotel.staff.forEach(function (s) {
-        add(body, h('tr', {}, h('td', {}, s.contact), h('td', {}, s.role === 'owner' ? 'Owner' : 'Receptionist'),
-          h('td', {}, h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove ' + s.contact + ' from this hotel?')) call('DELETE', '/admin/hotels/' + hotel.id + '/staff/' + s.user_id).then(reload, function (e) { alert(e.message); }); } }, 'Remove'))));
+      hotel.staff.forEach(function (p) {
+        var canRemove = isAdmin || p.role !== 'owner';
+        add(body, h('tr', {}, h('td', {}, p.contact), h('td', {}, p.role === 'owner' ? 'Owner' : 'Receptionist'),
+          h('td', {}, p.status === 'joined' ? h('span', { class: 'chip active' }, 'Joined ' + when(p.joined_at)) : h('span', { class: 'chip draft' }, 'Invited ' + when(p.invited_at))),
+          h('td', {}, canRemove ? h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove ' + p.contact + ' from this hotel?')) call('DELETE', '/admin/hotels/' + hotel.id + '/staff/' + p.user_id).then(reload, function (e) { alert(e.message); }); } }, 'Remove') : null)));
       });
-      add(table, body); add(wrap, table);
+      add(table, body); add(wrap, h('div', { style: 'overflow-x:auto' }, table));
+      add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, '"Invited" means they have not signed in yet. If they did not receive the email, check their address and spam folder, or remove and add them again.'));
     } else add(wrap, h('p', {}, 'Nobody works for this hotel yet, so booking requests will not reach anyone.'));
-    var contact = h('input', { placeholder: 'name@example.com or +2519…' }), role = select([['owner', 'Owner'], ['receptionist', 'Receptionist']], 'owner'), out = h('div', {});
-    var btn = h('button', { type: 'submit' }, 'Add person');
+    var contact = h('input', { placeholder: 'name@example.com or +2519…' });
+    var role = isAdmin ? select([['owner', 'Owner'], ['receptionist', 'Receptionist']], 'owner') : h('input', { value: 'Receptionist', disabled: true });
+    var out = h('div', {});
+    var btn = h('button', { type: 'submit' }, 'Add and invite');
     add(wrap, h('h3', { style: 'margin-top:24px' }, 'Add a person'));
     add(wrap, h('form', { onsubmit: function (e) {
       e.preventDefault(); btn.disabled = true; clear(out);
-      call('POST', '/admin/hotels/' + hotel.id + '/staff', { contact: contact.value, role: role.value }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
-    } }, h('div', { class: 'grid' }, field('Email or phone', contact), field('Role', role)), h('div', { class: 'field' }, btn), out));
+      call('POST', '/admin/hotels/' + hotel.id + '/staff', { contact: contact.value, role: isAdmin ? role.value : 'receptionist' }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+    } }, h('div', { class: 'grid' }, field('Email or phone', contact, 'An email address gets an invitation. A phone number is added without an email.'), field('Role', role)), h('div', { class: 'field' }, btn), out));
     return wrap;
+  }
+
+  // Booking alerts: who is told when a request arrives, and when. Owners and platform admins both manage this.
+  function alertsPanel(hotel, reload) {
+    var wrap = h('div', {});
+    add(wrap, h('p', { class: 'soft' }, 'When a guest books, the people on duty are alerted on their phones at the same time and the first to answer wins. Five minutes before the request runs out, everyone gets a reminder and the owners get an email.'));
+    var mode = select([['everyone', 'Everyone on duty at once'], ['front_desk_first', 'Receptionists first, owners only if nobody answers']], hotel.alert_mode);
+    var wait = h('input', { type: 'number', min: '1', max: '10', value: String(hotel.escalate_after_min) });
+    var out = h('div', {});
+    var save = h('button', { type: 'submit' }, 'Save rules');
+    add(wrap, h('form', { onsubmit: function (e) {
+      e.preventDefault(); save.disabled = true; clear(out);
+      call('PUT', '/admin/hotels/' + hotel.id + '/alerts', { alert_mode: mode.value, escalate_after_min: parseInt(wait.value, 10) || 0 }).then(reload, function (err) { save.disabled = false; add(out, msg('err', err.message)); });
+    } }, h('div', { class: 'grid' }, field('Who is alerted first', mode, 'If nobody in that group has the hotel app signed in or is on duty, the next group is alerted straight away.'),
+      field('Alert the owners after (minutes)', wait, 'Only for "receptionists first". The request lasts 15 minutes in total.')), h('div', { class: 'field' }, save), out));
+
+    add(wrap, h('h3', { style: 'margin-top:24px' }, 'People and shifts'));
+    add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, 'Shifts use Addis Ababa time. Leave both times empty for always on duty. A shift can pass midnight (22:00 to 06:00). Owners are still alerted outside their shift when nobody else answers; switch their alerts off to stop that.'));
+    if (!hotel.staff.length) { add(wrap, h('p', {}, 'Nobody works for this hotel yet, so booking requests will not reach anyone.')); return wrap; }
+    var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Phone'), h('th', {}, 'Alerts'), h('th', {}, 'From'), h('th', {}, 'Until'), h('th', {}))));
+    var body = h('tbody', {});
+    hotel.staff.forEach(function (p) {
+      var on = h('input', { type: 'checkbox' }); on.checked = p.alerts_on;
+      var from = h('input', { type: 'time', value: p.shift_start || '' }), to = h('input', { type: 'time', value: p.shift_end || '' });
+      var note = h('span', { class: 'muted', style: 'font-size:13px' });
+      var canEdit = state.role === 'admin' || p.role !== 'owner' || p.contact === state.contact;
+      var btn = h('button', { class: 'secondary', disabled: !canEdit, onclick: function () {
+        note.textContent = '';
+        call('PUT', '/admin/hotels/' + hotel.id + '/staff/' + p.user_id + '/alerts', { alerts_on: on.checked, shift_start: from.value, shift_end: to.value })
+          .then(function () { note.textContent = 'Saved'; }, function (e) { note.textContent = e.message; });
+      } }, 'Save');
+      add(body, h('tr', {}, h('td', {}, p.contact + (p.role === 'owner' ? ' (owner)' : '')),
+        h('td', {}, p.reachable ? h('span', { class: 'chip active' }, 'Signed in') : h('span', { class: 'chip draft' }, 'No phone')),
+        h('td', {}, on), h('td', {}, from), h('td', {}, to), h('td', {}, btn, ' ', note)));
+    });
+    add(table, body); add(wrap, h('div', { style: 'overflow-x:auto' }, table));
+    add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, '"No phone" means the person has not signed in to the hotel app on a phone that allows notifications, so they cannot be alerted.'));
+    return wrap;
+  }
+
+  var PAYOUTS = [['telebirr', 'Telebirr'], ['cbe_birr', 'CBE Birr'], ['bank_transfer', 'Bank transfer']];
+
+  // The business behind the hotel: platform admins only, because it holds the account the hotel is paid into.
+  function businessPanel(hotel, reload) {
+    var b = hotel.business || { legal_name: '', license_number: '', tin: '', contact_name: '', contact_phone: '', contact_email: '', payout_method: 'bank_transfer', payout_account_name: '', payout_last4: '' };
+    var f = {
+      legal: h('input', { value: b.legal_name }), license: h('input', { value: b.license_number }), tin: h('input', { value: b.tin || '' }),
+      cname: h('input', { value: b.contact_name }), cphone: h('input', { value: b.contact_phone, placeholder: '+251 9…' }), cmail: h('input', { value: b.contact_email, type: 'email' }),
+      method: select(PAYOUTS, b.payout_method), aname: h('input', { value: b.payout_account_name }),
+      anumber: h('input', { value: '', autocomplete: 'off', placeholder: hotel.business ? 'Leave empty to keep •••• ' + b.payout_last4 : 'Account or phone number' })
+    };
+    var out = h('div', {});
+    var shown = h('div', {});
+    var btn = h('button', { type: 'submit' }, 'Save business details');
+    var wrap = h('div', {});
+    add(wrap, h('p', { class: 'soft' }, 'Who the business is and where BookDan pays it. Required before the hotel can be published. The payout account number is stored encrypted; only its last four digits are shown here.'));
+    add(wrap, h('form', { onsubmit: function (e) {
+      e.preventDefault(); btn.disabled = true; clear(out);
+      call('PUT', '/admin/hotels/' + hotel.id + '/business', {
+        legal_name: f.legal.value, license_number: f.license.value, tin: f.tin.value, contact_name: f.cname.value, contact_phone: f.cphone.value, contact_email: f.cmail.value,
+        payout_method: f.method.value, payout_account_name: f.aname.value, payout_account_number: f.anumber.value
+      }).then(function () { reload(); }, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+    } },
+      h('div', { class: 'grid' }, field('Legal name of the business', f.legal), field('Trade licence number', f.license), field('Tax number (TIN), optional', f.tin),
+        field('Contact person', f.cname), field('Contact phone', f.cphone), field('Contact email', f.cmail)),
+      h('h3', { style: 'margin-top:20px' }, 'Where BookDan pays this hotel'),
+      h('div', { class: 'grid' }, field('Method', f.method), field('Name on the account', f.aname), field('Account or phone number', f.anumber)),
+      hotel.business ? h('div', { class: 'field' }, h('button', { type: 'button', class: 'secondary', onclick: function () {
+        if (!confirm('Show the full account number? This is recorded in the audit log.')) return;
+        call('POST', '/admin/hotels/' + hotel.id + '/business/payout/reveal').then(function (res) { clear(shown); add(shown, msg('ok', 'Account number: ' + res.account_number + ' (this view was logged)')); }, function (e) { clear(shown); add(shown, msg('err', e.message)); });
+      } }, 'Show the full account number'), shown) : null,
+      h('div', { class: 'field' }, btn), out));
+    return wrap;
+  }
+
+  // ---- payouts (platform admin): who is owed what, and recording a transfer that was made
+  function birr(santim) { return 'ETB ' + (santim / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  var METHODS = { telebirr: 'Telebirr', cbe_birr: 'CBE Birr', bank_transfer: 'Bank transfer' };
+
+  function payoutsView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    function load() {
+      call('GET', '/admin/payouts').then(function (res) {
+        clear(holder);
+        if (!res.hotels.length) { add(holder, h('div', { class: 'card' }, h('p', {}, 'No hotel has earned anything yet. Money appears here once a hotel accepts a booking that was paid online.'))); return; }
+        add(holder, h('p', { class: 'soft' }, 'To pay is what BookDan owes a hotel today: bookings where the guest has checked in or the stay is over, minus what was already paid. Money for stays still to come is not payable yet, because the guest can still cancel. Make the transfer yourself (bank or Telebirr), then record it here with its reference.'));
+        res.hotels.forEach(function (x) { add(holder, payoutCard(x, load)); });
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Payouts'), holder));
+  }
+
+  function payoutCard(x, reload) {
+    var amount = h('input', { value: x.to_pay_santim ? String(x.to_pay_santim / 100) : '', inputmode: 'decimal', placeholder: 'Amount in birr' });
+    var ref = h('input', { placeholder: 'Bank or Telebirr transaction reference' });
+    var note = h('input', { placeholder: 'Optional note' });
+    var out = h('div', {});
+    var history = h('div', {});
+    var btn = h('button', { type: 'submit', disabled: !x.to_pay_santim || !x.has_business }, 'Record payout');
+    var card = h('div', { class: 'card' },
+      h('div', { class: 'row between' }, h('h3', {}, x.name), x.has_business ? h('span', { class: 'soft' }, METHODS[x.payout_method] + ' · ' + x.payout_account_name + ' ••••' + x.payout_last4) : h('span', { class: 'chip draft' }, 'No business details')),
+      h('div', { class: 'grid', style: 'margin-top:12px' },
+        field('To pay now', h('strong', {}, birr(x.to_pay_santim))),
+        field('After check-in (not payable yet)', h('span', {}, birr(x.upcoming_santim))),
+        field('Paid so far', h('span', {}, birr(x.paid_santim) + (x.last_paid_at ? ' · last ' + new Date(x.last_paid_at).toLocaleDateString() : '')))),
+      x.has_business ? null : h('p', { class: 'muted' }, 'Add the hotel\'s business and payout details (hotel page, Business tab) before paying it.'),
+      h('form', { onsubmit: function (e) {
+        e.preventDefault(); clear(out);
+        var santim = Math.round(parseFloat(String(amount.value).replace(/,/g, '')) * 100);
+        if (!(santim > 0)) { add(out, msg('err', 'Enter the amount in birr.')); return; }
+        if (!confirm('Record a payout of ' + birr(santim) + ' to ' + x.name + '? Make sure the transfer has really been sent.')) return;
+        btn.disabled = true;
+        call('POST', '/admin/hotels/' + x.id + '/payouts', { amount_santim: santim, reference: ref.value, note: note.value }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+      } }, h('div', { class: 'grid' }, field('Amount (birr)', amount), field('Transfer reference', ref), field('Note', note)), h('div', { class: 'field' }, btn), out),
+      h('button', { class: 'ghost', onclick: function () {
+        clear(history);
+        call('GET', '/admin/hotels/' + x.id + '/payouts').then(function (res) {
+          if (!res.payouts.length) { add(history, h('p', { class: 'muted' }, 'No payouts recorded yet.')); return; }
+          var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', {}, 'Amount'), h('th', {}, 'Method'), h('th', {}, 'Reference'), h('th', {}, 'Note'))));
+          var body = h('tbody', {});
+          res.payouts.forEach(function (p) { add(body, h('tr', {}, h('td', {}, new Date(p.paid_at).toLocaleString()), h('td', {}, birr(p.amount_santim)), h('td', {}, METHODS[p.method] || p.method), h('td', {}, p.reference), h('td', {}, p.note || ''))); });
+          add(table, body); add(history, h('div', { style: 'overflow-x:auto' }, table));
+        }, function (err) { add(history, msg('err', err.message)); });
+      } }, 'Show payout history'),
+      history);
+    return card;
   }
 
   // ---- routing
@@ -328,6 +467,7 @@
     var m = location.hash.match(/^#\/hotel\/([0-9a-f-]{36})$/);
     if (m) add(app, hotelView(m[1], 'details'));
     else if (location.hash === '#/new' && state.role === 'admin') add(app, newView());
+    else if (location.hash === '#/payouts' && state.role === 'admin') add(app, payoutsView());
     else add(app, listView());
   }
   window.addEventListener('hashchange', render);

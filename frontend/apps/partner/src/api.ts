@@ -36,6 +36,9 @@ export const api: PartnerApi = {
   listBookings: withRefresh(raw.listBookings),
   acceptBooking: withRefresh(raw.acceptBooking),
   declineBooking: withRefresh(raw.declineBooking),
+  lookupCheckin: withRefresh(raw.lookupCheckin),
+  checkInGuest: withRefresh(raw.checkInGuest),
+  getEarnings: withRefresh(raw.getEarnings),
   // Demo controls exist only on the mock and must never ship in a production build.
   demo: isMockApi ? raw.demo : undefined,
 };

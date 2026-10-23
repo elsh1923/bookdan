@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net"
+	"net/mail"
 	"strings"
 	"sync"
 	"testing"
@@ -132,10 +135,10 @@ func TestEmailCodeIsDeliveredWithTheCodeInSubjectAndBody(t *testing.T) {
 	if len(f.mails) != 1 {
 		t.Fatalf("expected one email, got %d", len(f.mails))
 	}
-	m := f.mails[0]
+	m := decodeMail(t, f.mails[0])
 	for _, want := range []string{
 		"Subject: 482915 is your BookDan sign-in code", "To: guest@mailbox.test", "From: \"BookDan\" <bookdan@gmail.test>",
-		"Content-Type: multipart/alternative", "Your BookDan sign-in code is 482915", "<p style=",
+		"Your BookDan sign-in code is 482915", "<p style=",
 	} {
 		if !strings.Contains(m, want) {
 			t.Errorf("the email is missing %q:\n%s", want, m)
@@ -196,4 +199,30 @@ func TestEmailSettingsAreCheckedAtStartup(t *testing.T) {
 	if !isLoopback("localhost") || !isLoopback("127.0.0.1") || isLoopback("smtp.gmail.com") || isLoopback("10.0.0.5") {
 		t.Fatalf("only this computer may be reached without encryption")
 	}
+}
+
+// decodeMail turns the raw message the fake server received into readable text: decoded subject and the decoded text and HTML parts.
+func decodeMail(t *testing.T, raw string) string {
+	t.Helper()
+	msg, err := mail.ReadMessage(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec := new(mime.WordDecoder)
+	subject, _ := dec.DecodeHeader(msg.Header.Get("Subject"))
+	out := "Subject: " + subject + "\nTo: " + msg.Header.Get("To") + "\nFrom: " + msg.Header.Get("From") + "\n"
+	_, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr := multipart.NewReader(msg.Body, params["boundary"])
+	for {
+		p, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+		b, _ := io.ReadAll(base64.NewDecoder(base64.StdEncoding, p))
+		out += string(b) + "\n"
+	}
+	return out
 }

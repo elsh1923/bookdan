@@ -1,5 +1,7 @@
 import {
   BookingSchema,
+  CheckinLookupSchema,
+  EarningsSchema,
   GuestProfileSchema,
   PartnerBookingListSchema,
   PartnerBookingSchema,
@@ -170,5 +172,8 @@ export function createHttpPartnerApi(options: HttpOptions): PartnerApi {
     listBookings: () => request('GET', '/partner/bookings', PartnerBookingListSchema),
     acceptBooking: (id) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/accept`, PartnerBookingSchema),
     declineBooking: (id, reason) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/decline`, PartnerBookingSchema, { reason }),
+    lookupCheckin: (query) => request('POST', '/partner/checkin/lookup', CheckinLookupSchema, query),
+    getEarnings: () => request('GET', '/partner/earnings', EarningsSchema),
+    checkInGuest: (id) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/check-in`, PartnerBookingSchema),
   };
 }

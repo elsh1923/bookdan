@@ -37,6 +37,7 @@ var (
 	keys   *api.Keys
 	push   = &recorder{}
 	mailer = &otpRecorder{}
+	mails  = &mailRecorder{}
 )
 
 const (
@@ -69,7 +70,8 @@ func TestMain(m *testing.M) {
 		DemoAccountDomains: []string{"bookdan.test", "example.com", "example.org"}}
 	keys, _ = api.NewKeys(cfg)
 	providers := api.DevProviders(cfg)
-	providers.Push = push                                                       // records every alert so tests can read them
+	providers.Push = push // records every alert so tests can read them
+	providers.Mail = mails
 	providers.OTP, providers.EmailReal = api.RoutedSender(mailer, mailer), true // sign-in codes go to a recorder, as with real email
 	app, err = api.New(ctx, cfg, pool, keys, providers)
 	if err != nil {

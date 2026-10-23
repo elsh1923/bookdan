@@ -52,7 +52,7 @@ export default function Login() {
       const res = await api.verifyOtp(identity, code.trim());
       signIn({ token: res.token, refresh_token: res.refresh_token }, res.identity); // the navigator then shows the inbox
     } catch (e) {
-      setError(e instanceof ApiError && e.code === 'INVALID_OTP' ? t('auth.invalid_code') : t('results.error_body'));
+      setError(e instanceof ApiError && e.code === 'INVALID_OTP' ? t('auth.invalid_code') : e instanceof ApiError && e.code === 'NOT_STAFF' ? t('auth.not_staff') : t('results.error_body'));
       setBusy(false);
     }
   }

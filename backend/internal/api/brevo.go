@@ -42,6 +42,15 @@ func (b *brevoSender) Send(ctx context.Context, channel, to, code string) error 
 		return errors.New("refusing to send to an invalid address")
 	}
 	subject, text, html := otpEmailParts(code)
+	return b.SendMail(ctx, rcpt.Address, subject, text, html)
+}
+
+// SendMail sends any email through Brevo's web API.
+func (b *brevoSender) SendMail(ctx context.Context, to, subject, text, html string) error {
+	rcpt, err := mail.ParseAddress(to)
+	if err != nil || rcpt.Address != to || strings.ContainsAny(to, "\r\n") {
+		return errors.New("refusing to send to an invalid address")
+	}
 	body, _ := json.Marshal(map[string]any{
 		"sender":      map[string]string{"name": b.from.Name, "email": b.from.Address},
 		"to":          []map[string]string{{"email": rcpt.Address}},

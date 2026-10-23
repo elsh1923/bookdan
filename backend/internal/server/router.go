@@ -45,17 +45,16 @@ func New(cfg config.Config, db Pinger, mount func(chi.Router), mountRoot ...func
 				{"GET", "/me/profile"}, {"PUT", "/me/profile"}, {"DELETE", "/me/profile"},
 				{"PUT", "/partner/devices/push-token"}, {"POST", "/partner/bookings/{id}/guest/reveal"}, {"GET", "/partner/bookings"},
 				{"POST", "/partner/bookings/{id}/accept"}, {"POST", "/partner/bookings/{id}/decline"},
+				{"POST", "/partner/bookings/{id}/check-in"}, {"POST", "/partner/checkin/lookup"}, {"GET", "/partner/earnings"},
 			} {
 				r.MethodFunc(route.method, route.path, notImplemented)
 			}
 		}
 
-		// Not built yet: the hotel's offline tools (rooms chart, sync, QR check-in, statements).
+		// Not built yet: the hotel's offline tools (rooms chart, sync).
 		r.Get("/partner/rooms", notImplemented)
 		r.Post("/partner/sync/push", notImplemented)
 		r.Get("/partner/sync/pull", notImplemented)
-		r.Post("/partner/checkin", notImplemented)
-		r.Get("/partner/statements", notImplemented)
 	})
 	return r
 }

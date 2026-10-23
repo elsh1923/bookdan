@@ -55,7 +55,7 @@ func (l *loginLimiter) allow(key string, now time.Time) bool {
 	return true
 }
 
-func (s *Server) adminEnabled() bool { return s.cfg.AdminPassword != "" || s.cfg.AdminOwners }
+func (s *Server) adminEnabled() bool { return s.cfg.AdminPassword != "" || s.ownerAdminEnabled() }
 
 func (s *Server) adminToken(userID, role string) string {
 	now := s.now()
@@ -68,7 +68,7 @@ func (s *Server) adminConfig(w http.ResponseWriter, _ *http.Request) error {
 		httpx.Meta
 		Password bool `json:"password"`
 		Owners   bool `json:"owners"`
-	}{httpx.NowMeta(), s.cfg.AdminPassword != "", s.cfg.AdminOwners})
+	}{httpx.NowMeta(), s.cfg.AdminPassword != "", s.ownerAdminEnabled()})
 	return nil
 }
 
@@ -118,15 +118,23 @@ func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) error {
 
 // adminOTPRequest sends a sign-in code to a hotel owner (same limits as the apps).
 func (s *Server) adminOTPRequest(w http.ResponseWriter, r *http.Request) error {
-	if !s.cfg.AdminOwners {
+	if !s.ownerAdminEnabled() {
 		return errNotFound
 	}
 	return s.requestOTP(w, r)
 }
 
+// adminDemoAccount refuses the demo accounts (no inbox, fixed public code) on the admin page: they could be used by anyone.
+func (s *Server) adminDemoAccount(id identity, channel string) error {
+	if s.fixedCode(id, channel) {
+		return fail(http.StatusForbidden, codeForbidden, "This demo account cannot use the admin page")
+	}
+	return nil
+}
+
 // adminOTPVerify signs in a hotel owner with the code. Only people who own a hotel get in.
 func (s *Server) adminOTPVerify(w http.ResponseWriter, r *http.Request) error {
-	if !s.cfg.AdminOwners {
+	if !s.ownerAdminEnabled() {
 		return errNotFound
 	}
 	var in struct {
@@ -136,8 +144,11 @@ func (s *Server) adminOTPVerify(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &in); err != nil {
 		return err
 	}
-	id, _, err := in.identity.clean()
+	id, channel, err := in.identity.clean()
 	if err != nil {
+		return err
+	}
+	if err := s.adminDemoAccount(id, channel); err != nil {
 		return err
 	}
 	ctx := r.Context()
@@ -155,6 +166,10 @@ func (s *Server) adminOTPVerify(w http.ResponseWriter, r *http.Request) error {
 		if err == pgx.ErrNoRows {
 			return fail(http.StatusForbidden, codeNotStaff, "Only hotel owners can use the admin page")
 		}
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE property_staff SET joined_at = now() WHERE user_id = $1 AND joined_at IS NULL`, uid)
 		return err
 	})
 	var wc *wrongCode
@@ -236,6 +251,13 @@ func (s *Server) adminRoutes(r chi.Router) {
 		r.Post("/admin/hotels/{id}/photos", s.h(s.adminUploadPhoto))
 		r.Post("/admin/hotels/{id}/photos/{photo}/cover", s.h(s.adminCoverPhoto))
 		r.Delete("/admin/hotels/{id}/photos/{photo}", s.h(s.adminDeletePhoto))
+		r.Put("/admin/hotels/{id}/business", s.h(s.adminSetBusiness))
+		r.Post("/admin/hotels/{id}/business/payout/reveal", s.h(s.adminRevealPayout))
+		r.Get("/admin/payouts", s.h(s.adminPayouts))
+		r.Get("/admin/hotels/{id}/payouts", s.h(s.adminHotelPayouts))
+		r.Post("/admin/hotels/{id}/payouts", s.h(s.adminRecordPayout))
+		r.Put("/admin/hotels/{id}/alerts", s.h(s.adminSetAlertRules))
+		r.Put("/admin/hotels/{id}/staff/{user}/alerts", s.h(s.adminSetStaffAlerts))
 		r.Post("/admin/hotels/{id}/staff", s.h(s.adminAddStaff))
 		r.Delete("/admin/hotels/{id}/staff/{user}", s.h(s.adminRemoveStaff))
 	})

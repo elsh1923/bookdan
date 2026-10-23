@@ -68,23 +68,26 @@ type partnerBooking struct {
 	PaidAt        *string `json:"paid_at"`
 	HotelDeadline *string `json:"hotel_deadline_at"`
 	DeclineReason *string `json:"decline_reason"`
+	// CheckedInAt is when the guest arrived; BalanceDue is what the guest still pays at the hotel (a pay-at-hotel booking: the whole total).
+	CheckedInAt *string `json:"checked_in_at"`
+	BalanceDue  int64   `json:"balance_due_santim"`
 }
 
 // A hotel never sees a room that is only held: the guest has not paid or asked yet.
 const partnerSelect = `
 	SELECT b.id, b.code, b.status, b.guest_name, g.full_name, g.contact, g.nationality, g.id_type, g.id_last4, g.purged_at IS NOT NULL,
 	       rt.name, b.check_in, b.check_out, b.guests, b.rooms, b.total_santim, b.currency, b.paid_at, b.hotel_deadline_at, b.decline_reason,
-	       p.name
+	       p.name, b.checked_in_at, CASE WHEN b.payment_method = 'pay_at_hotel' THEN b.total_santim ELSE 0 END
 	FROM bookings b JOIN booking_guests g ON g.booking_id = b.id JOIN room_types rt ON rt.id = b.room_type_id
 	JOIN properties p ON p.id = b.property_id`
 
 func scanPartner(row pgx.Row, multiHotel bool) (partnerBooking, error) {
 	var b partnerBooking
 	var in, out time.Time
-	var paid, deadline *time.Time
+	var paid, deadline, checkedIn *time.Time
 	var hotel string
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.GuestName, &b.Guest.FullName, &b.Guest.Contact, &b.Guest.Nationality, &b.Guest.IDType,
-		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel); err != nil {
+		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel, &checkedIn, &b.BalanceDue); err != nil {
 		return b, err
 	}
 	if multiHotel {
@@ -99,6 +102,10 @@ func scanPartner(row pgx.Row, multiHotel bool) (partnerBooking, error) {
 	if deadline != nil {
 		t := deadline.UTC().Format(time.RFC3339)
 		b.HotelDeadline = &t
+	}
+	if checkedIn != nil {
+		t := checkedIn.UTC().Format(time.RFC3339)
+		b.CheckedInAt = &t
 	}
 	return b, nil
 }
@@ -351,6 +358,7 @@ func (s *Server) savePushToken(app string, w http.ResponseWriter, r *http.Reques
 // sweep closes what time has overtaken: holds that ran out, and requests the hotel did not answer in time (the guest is
 // refunded). It is cheap and idempotent, so it runs on a timer and also whenever a hotel looks at its bookings.
 func (s *Server) sweep(ctx context.Context) {
+	s.stepAlerts(ctx)
 	var timedOut []string // hotels that did not answer: their guests are told after the commit
 	if err := s.tx(ctx, func(tx pgx.Tx) error {
 		timedOut = nil

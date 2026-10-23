@@ -49,6 +49,8 @@ type Config struct {
 	AdminEmails   []string
 	AdminPassword string
 	AdminOwners   bool
+	// PartnerAppURL is where hotel staff download the BookDan Partner app (a link to the APK today, the Play Store later). It goes in invitation emails.
+	PartnerAppURL string
 	// PaymentWebhookSecret signs payment-gateway callbacks (HMAC-SHA256 of the body).
 	PaymentWebhookSecret string
 }
@@ -82,6 +84,7 @@ func Load() Config {
 		AdminEmails:          splitList(get("ADMIN_EMAILS", "")),
 		AdminPassword:        get("ADMIN_PASSWORD", ""),
 		AdminOwners:          get("ADMIN_OWNERS", "false") == "true",
+		PartnerAppURL:        get("PARTNER_APP_URL", ""),
 		PaymentWebhookSecret: get("PAYMENT_WEBHOOK_SECRET", ""),
 	}
 }

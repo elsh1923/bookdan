@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -168,6 +170,28 @@ type staffOut struct {
 	UserID  string `json:"user_id"`
 	Contact string `json:"contact"`
 	Role    string `json:"role"`
+	// Status is "invited" until the person first signs in, then "joined".
+	Status    string  `json:"status"`
+	InvitedAt string  `json:"invited_at"`
+	JoinedAt  *string `json:"joined_at"`
+	// Alerts: switched on or off, the shift (HH:MM in Addis Ababa time, both null = always), and whether any phone is signed in to receive them.
+	AlertsOn   bool    `json:"alerts_on"`
+	ShiftStart *string `json:"shift_start"`
+	ShiftEnd   *string `json:"shift_end"`
+	Reachable  bool    `json:"reachable"`
+}
+
+type businessOut struct {
+	LegalName   string  `json:"legal_name"`
+	License     string  `json:"license_number"`
+	TIN         *string `json:"tin"`
+	ContactName string  `json:"contact_name"`
+	ContactTel  string  `json:"contact_phone"`
+	ContactMail string  `json:"contact_email"`
+	Method      string  `json:"payout_method"`
+	AccountName string  `json:"payout_account_name"`
+	// Last4 is all the page shows of the payout account; the full number is revealed on request (and logged).
+	Last4 string `json:"payout_last4"`
 }
 
 func (s *Server) photoURL(id, size string) string {
@@ -183,29 +207,32 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 	lat, lng := s.latLng("location")
 	var h struct {
 		httpx.Meta
-		ID          string     `json:"id"`
-		Name        string     `json:"name"`
-		Type        string     `json:"type"`
-		City        string     `json:"city"`
-		Area        string     `json:"area"`
-		Address     string     `json:"address"`
-		Phone       string     `json:"phone"`
-		Description string     `json:"description"`
-		Lat         float64    `json:"lat"`
-		Lng         float64    `json:"lng"`
-		Amenities   []string   `json:"amenities"`
-		HouseRules  any        `json:"house_rules"`
-		PayAtHotel  bool       `json:"pay_at_hotel"`
-		Verified    bool       `json:"verified"`
-		Status      string     `json:"status"`
-		Rooms       []roomOut  `json:"rooms"`
-		Photos      []photoOut `json:"photos"`
-		Staff       []staffOut `json:"staff"`
+		ID          string       `json:"id"`
+		Name        string       `json:"name"`
+		Type        string       `json:"type"`
+		City        string       `json:"city"`
+		Area        string       `json:"area"`
+		Address     string       `json:"address"`
+		Phone       string       `json:"phone"`
+		Description string       `json:"description"`
+		Lat         float64      `json:"lat"`
+		Lng         float64      `json:"lng"`
+		Amenities   []string     `json:"amenities"`
+		HouseRules  any          `json:"house_rules"`
+		PayAtHotel  bool         `json:"pay_at_hotel"`
+		Verified    bool         `json:"verified"`
+		Status      string       `json:"status"`
+		AlertMode   string       `json:"alert_mode"`
+		EscalateMin int          `json:"escalate_after_min"`
+		Rooms       []roomOut    `json:"rooms"`
+		Photos      []photoOut   `json:"photos"`
+		Staff       []staffOut   `json:"staff"`
+		Business    *businessOut `json:"business"`
 	}
 	var rules []byte
-	if err := s.pool.QueryRow(ctx, `SELECT id, name, type, city, area, address, phone, description, `+lat+`, `+lng+`, amenities, house_rules, pay_at_hotel, verified, status
+	if err := s.pool.QueryRow(ctx, `SELECT id, name, type, city, area, address, phone, description, `+lat+`, `+lng+`, amenities, house_rules, pay_at_hotel, verified, status, alert_mode, escalate_after_min
 		FROM properties WHERE id = $1`, id).Scan(&h.ID, &h.Name, &h.Type, &h.City, &h.Area, &h.Address, &h.Phone, &h.Description, &h.Lat, &h.Lng,
-		&h.Amenities, &rules, &h.PayAtHotel, &h.Verified, &h.Status); err != nil {
+		&h.Amenities, &rules, &h.PayAtHotel, &h.Verified, &h.Status, &h.AlertMode, &h.EscalateMin); err != nil {
 		return err
 	}
 	h.HouseRules = []string{}
@@ -252,7 +279,10 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 	}
 	pr.Close()
 
-	sr, err := s.pool.Query(ctx, `SELECT u.id, coalesce(u.email, u.phone), ps.role FROM property_staff ps JOIN users u ON u.id = ps.user_id
+	sr, err := s.pool.Query(ctx, `SELECT u.id, coalesce(u.email, u.phone), ps.role, ps.invited_at, ps.joined_at, ps.alerts_on,
+			to_char(ps.shift_start, 'HH24:MI'), to_char(ps.shift_end, 'HH24:MI'),
+			EXISTS (SELECT 1 FROM devices d WHERE d.user_id = u.id AND d.app = 'partner' AND d.push_token IS NOT NULL AND d.revoked_at IS NULL)
+		FROM property_staff ps JOIN users u ON u.id = ps.user_id
 		WHERE ps.property_id = $1 ORDER BY ps.role DESC, ps.created_at`, id)
 	if err != nil {
 		return err
@@ -261,10 +291,30 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 	h.Staff = []staffOut{}
 	for sr.Next() {
 		var so staffOut
-		if err := sr.Scan(&so.UserID, &so.Contact, &so.Role); err != nil {
+		var invited time.Time
+		var joined *time.Time
+		if err := sr.Scan(&so.UserID, &so.Contact, &so.Role, &invited, &joined, &so.AlertsOn, &so.ShiftStart, &so.ShiftEnd, &so.Reachable); err != nil {
 			return err
 		}
+		so.InvitedAt, so.Status = invited.UTC().Format(time.RFC3339), "invited"
+		if joined != nil {
+			t := joined.UTC().Format(time.RFC3339)
+			so.JoinedAt, so.Status = &t, "joined"
+		}
 		h.Staff = append(h.Staff, so)
+	}
+	sr.Close()
+
+	// The business record is for platform admins only (it holds a payout account).
+	if claimsFrom(r).Role == "admin" {
+		var bz businessOut
+		err := s.pool.QueryRow(ctx, `SELECT legal_name, license_number, tin, contact_name, contact_phone, contact_email, payout_method, payout_account_name, payout_last4
+			FROM hotel_business WHERE property_id = $1`, id).Scan(&bz.LegalName, &bz.License, &bz.TIN, &bz.ContactName, &bz.ContactTel, &bz.ContactMail, &bz.Method, &bz.AccountName, &bz.Last4)
+		if err == nil {
+			h.Business = &bz
+		} else if err != pgx.ErrNoRows {
+			return err
+		}
 	}
 	h.Meta = httpx.NowMeta()
 	respond(w, http.StatusOK, h)
@@ -318,6 +368,14 @@ func (s *Server) adminUpdateHotel(w http.ResponseWriter, r *http.Request) error 
 	rules, _ := json.Marshal(in.HouseRules)
 	err := s.tx(r.Context(), func(tx pgx.Tx) error {
 		if in.Status == "active" {
+			var current string
+			var hasBusiness bool
+			if err := tx.QueryRow(r.Context(), `SELECT status, EXISTS (SELECT 1 FROM hotel_business WHERE property_id = $1) FROM properties WHERE id = $1`, id).Scan(&current, &hasBusiness); err != nil {
+				return err
+			}
+			if current != "active" && !hasBusiness {
+				return fail(http.StatusConflict, codeInvalidState, "Add the business and payout details before publishing this hotel")
+			}
 			var ready bool
 			if err := tx.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM room_types rt JOIN rate_plans rp ON rp.room_type_id = rt.id
 				WHERE rt.property_id = $1 AND rt.total_rooms > 0 AND (now() AT TIME ZONE 'Africa/Addis_Ababa')::date BETWEEN rp.valid_from AND rp.valid_to)`, id).Scan(&ready); err != nil {
@@ -501,12 +559,12 @@ func (s *Server) adminSetPrice(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// ---- staff (platform admin only)
+// ---- staff
+
+// A platform admin adds and removes anyone. A hotel owner adds and removes only the receptionists of their own hotel: owners are
+// always chosen by the platform, so a hotel can never hand ownership (and the admin page) to someone BookDan has not approved.
 
 func (s *Server) adminAddStaff(w http.ResponseWriter, r *http.Request) error {
-	if err := requireAdmin(r); err != nil {
-		return err
-	}
 	id := chi.URLParam(r, "id")
 	if err := s.canManage(r, id); err != nil {
 		return err
@@ -530,12 +588,19 @@ func (s *Server) adminAddStaff(w http.ResponseWriter, r *http.Request) error {
 	if in.Role != "owner" && in.Role != "receptionist" {
 		return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "Role must be owner or receptionist")
 	}
+	isAdmin := claimsFrom(r).Role == "admin"
+	if !isAdmin && in.Role != "receptionist" {
+		return fail(http.StatusForbidden, codeForbidden, "Only a platform admin can add an owner")
+	}
 	col := "phone"
 	if ident.Type == "email" {
 		col = "email"
 	}
-	var uid string
+	var uid, hotel string
 	err = s.tx(r.Context(), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(r.Context(), `SELECT name FROM properties WHERE id = $1`, id).Scan(&hotel); err != nil {
+			return err
+		}
 		var role string
 		err := tx.QueryRow(r.Context(), `SELECT id, role FROM users WHERE `+col+` = $1`, ident.Value).Scan(&uid, &role)
 		switch {
@@ -547,8 +612,18 @@ func (s *Server) adminAddStaff(w http.ResponseWriter, r *http.Request) error {
 			return err
 		case role == "admin":
 			return fail(http.StatusConflict, codeInvalidState, "That person is a platform admin already")
-		case role == "guest":
-			// A guest account that becomes hotel staff.
+		}
+		// Whoever is already on this hotel keeps their role unless a platform admin changes it.
+		var existing string
+		err = tx.QueryRow(r.Context(), `SELECT role FROM property_staff WHERE property_id = $1 AND user_id = $2`, id, uid).Scan(&existing)
+		if err != nil && err != pgx.ErrNoRows {
+			return err
+		}
+		if err == nil && !isAdmin && existing == "owner" {
+			return fail(http.StatusForbidden, codeForbidden, "That person is an owner of this hotel")
+		}
+		// A guest account that becomes hotel staff; an owner somewhere stays an owner.
+		if role == "guest" {
 			if _, err := tx.Exec(r.Context(), `UPDATE users SET role = $2 WHERE id = $1`, uid, in.Role); err != nil {
 				return err
 			}
@@ -562,6 +637,10 @@ func (s *Server) adminAddStaff(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// Tell them (an email address only; a phone number has no inbox).
+	if ident.Type == "email" {
+		s.sendMail(r.Context(), ident.Value, s.staffInvitedEmail(in.Role, hotel, ident.Value))
+	}
 	respond(w, http.StatusOK, struct {
 		httpx.Meta
 		UserID string `json:"user_id"`
@@ -570,30 +649,163 @@ func (s *Server) adminAddStaff(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) adminRemoveStaff(w http.ResponseWriter, r *http.Request) error {
-	if err := requireAdmin(r); err != nil {
-		return err
-	}
 	id, user := chi.URLParam(r, "id"), chi.URLParam(r, "user")
 	if err := s.canManage(r, id); err != nil {
 		return err
 	}
+	isAdmin := claimsFrom(r).Role == "admin"
 	err := s.tx(r.Context(), func(tx pgx.Tx) error {
-		tag, err := tx.Exec(r.Context(), `DELETE FROM property_staff WHERE property_id = $1 AND user_id = $2`, id, user)
-		if err != nil {
-			if isBadUUID(err) {
-				return errNotFound
-			}
-			return err
-		}
-		if tag.RowsAffected() == 0 {
+		var role string
+		err := tx.QueryRow(r.Context(), `SELECT role FROM property_staff WHERE property_id = $1 AND user_id = $2 FOR UPDATE`, id, user).Scan(&role)
+		if err == pgx.ErrNoRows || isBadUUID(err) {
 			return errNotFound
 		}
-		return s.adminAudit(r, tx, "admin_staff_removed", id, map[string]any{"user_id": user})
+		if err != nil {
+			return err
+		}
+		if !isAdmin && role == "owner" {
+			return fail(http.StatusForbidden, codeForbidden, "Only a platform admin can remove an owner")
+		}
+		if _, err := tx.Exec(r.Context(), `DELETE FROM property_staff WHERE property_id = $1 AND user_id = $2`, id, user); err != nil {
+			return err
+		}
+		// They stop receiving this hotel's alerts at once (their phone stays registered for any other hotel they work for).
+		return s.adminAudit(r, tx, "admin_staff_removed", id, map[string]any{"user_id": user, "role": role})
 	})
 	if err != nil {
 		return err
 	}
 	respond(w, http.StatusOK, httpx.NowMeta())
+	return nil
+}
+
+// ---- the business behind a hotel (platform admin only)
+
+type businessIn struct {
+	LegalName   string `json:"legal_name"`
+	License     string `json:"license_number"`
+	TIN         string `json:"tin"`
+	ContactName string `json:"contact_name"`
+	ContactTel  string `json:"contact_phone"`
+	ContactMail string `json:"contact_email"`
+	Method      string `json:"payout_method"`
+	AccountName string `json:"payout_account_name"`
+	// AccountNumber is where the hotel is paid. Leave it empty when editing to keep the number already saved.
+	AccountNumber string `json:"payout_account_number"`
+}
+
+var payoutMethods = map[string]bool{"telebirr": true, "cbe_birr": true, "bank_transfer": true}
+var accountNumberRE = regexp.MustCompile(`^[0-9A-Za-z+ -]{4,40}$`)
+
+func (s *Server) adminSetBusiness(w http.ResponseWriter, r *http.Request) error {
+	if err := requireAdmin(r); err != nil {
+		return err
+	}
+	id := chi.URLParam(r, "id")
+	if err := s.canManage(r, id); err != nil {
+		return err
+	}
+	var in businessIn
+	if err := decode(r, &in); err != nil {
+		return err
+	}
+	bad := func(msg string) error { return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, msg) }
+	var ok bool
+	if in.LegalName, ok = trimLen(in.LegalName, 2, 150); !ok {
+		return bad("Legal name of the business is required")
+	}
+	if in.License, ok = trimLen(in.License, 2, 60); !ok {
+		return bad("The trade licence number is required")
+	}
+	if in.TIN, ok = trimLen(in.TIN, 0, 30); !ok {
+		return bad("The tax number is too long")
+	}
+	if in.ContactName, ok = trimLen(in.ContactName, 2, 80); !ok {
+		return bad("A contact person is required")
+	}
+	if !phoneAnyRE.MatchString(strings.TrimSpace(in.ContactTel)) {
+		return bad("Enter the contact person's phone number")
+	}
+	in.ContactTel = strings.TrimSpace(in.ContactTel)
+	in.ContactMail = strings.ToLower(strings.TrimSpace(in.ContactMail))
+	if _, _, err := (identity{Type: "email", Value: in.ContactMail}).clean(); err != nil {
+		return bad("Enter the contact person's email address")
+	}
+	if !payoutMethods[in.Method] {
+		return bad("Payout method must be telebirr, cbe_birr or bank_transfer")
+	}
+	if in.AccountName, ok = trimLen(in.AccountName, 2, 100); !ok {
+		return bad("The name on the payout account is required")
+	}
+	number := strings.TrimSpace(in.AccountNumber)
+	if number != "" && !accountNumberRE.MatchString(number) {
+		return bad("The payout account number looks wrong")
+	}
+	err := s.tx(r.Context(), func(tx pgx.Tx) error {
+		var exists bool
+		if err := tx.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM hotel_business WHERE property_id = $1)`, id).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			if number == "" {
+				return bad("The payout account number is required")
+			}
+			if _, err := tx.Exec(r.Context(), `INSERT INTO hotel_business (property_id, legal_name, license_number, tin, contact_name, contact_phone, contact_email,
+				payout_method, payout_account_name, payout_enc, payout_last4) VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9, $10, $11)`,
+				id, in.LegalName, in.License, in.TIN, in.ContactName, in.ContactTel, in.ContactMail, in.Method, in.AccountName,
+				s.keys.Seal(number), last4(strings.ReplaceAll(number, " ", ""))); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Exec(r.Context(), `UPDATE hotel_business SET legal_name = $2, license_number = $3, tin = NULLIF($4, ''), contact_name = $5,
+				contact_phone = $6, contact_email = $7, payout_method = $8, payout_account_name = $9 WHERE property_id = $1`,
+				id, in.LegalName, in.License, in.TIN, in.ContactName, in.ContactTel, in.ContactMail, in.Method, in.AccountName); err != nil {
+				return err
+			}
+			if number != "" {
+				if _, err := tx.Exec(r.Context(), `UPDATE hotel_business SET payout_enc = $2, payout_last4 = $3 WHERE property_id = $1`,
+					id, s.keys.Seal(number), last4(strings.ReplaceAll(number, " ", ""))); err != nil {
+					return err
+				}
+			}
+		}
+		// The audit entry says the record changed, never what the account number is.
+		return s.adminAudit(r, tx, "admin_business_saved", id, map[string]any{"payout_changed": number != ""})
+	})
+	if err != nil {
+		return err
+	}
+	respond(w, http.StatusOK, httpx.NowMeta())
+	return nil
+}
+
+// adminRevealPayout shows the full payout account number of a hotel (to make a payment). Every call is written to the audit log.
+func (s *Server) adminRevealPayout(w http.ResponseWriter, r *http.Request) error {
+	if err := requireAdmin(r); err != nil {
+		return err
+	}
+	id := chi.URLParam(r, "id")
+	if err := s.canManage(r, id); err != nil {
+		return err
+	}
+	var enc []byte
+	if err := s.pool.QueryRow(r.Context(), `SELECT payout_enc FROM hotel_business WHERE property_id = $1`, id).Scan(&enc); err != nil {
+		if err == pgx.ErrNoRows {
+			return errNotFound
+		}
+		return err
+	}
+	number, err := s.keys.Open(enc)
+	if err != nil {
+		return err
+	}
+	if err := s.tx(r.Context(), func(tx pgx.Tx) error { return s.adminAudit(r, tx, "admin_payout_revealed", id, nil) }); err != nil {
+		return err
+	}
+	respond(w, http.StatusOK, struct {
+		httpx.Meta
+		AccountNumber string `json:"account_number"`
+	}{httpx.NowMeta(), number})
 	return nil
 }
 

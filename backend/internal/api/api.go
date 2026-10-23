@@ -129,6 +129,9 @@ func (s *Server) Routes(root chi.Router) {
 			r.Get("/bookings", s.h(s.partnerBookings))
 			r.Post("/bookings/{id}/accept", s.h(s.partnerAccept))
 			r.Post("/bookings/{id}/decline", s.h(s.partnerDecline))
+			r.Post("/bookings/{id}/check-in", s.h(s.partnerCheckin))
+			r.Post("/checkin/lookup", s.h(s.partnerCheckinLookup))
+			r.Get("/earnings", s.h(s.partnerEarnings))
 			r.Post("/bookings/{id}/guest/reveal", s.h(s.partnerReveal))
 		})
 

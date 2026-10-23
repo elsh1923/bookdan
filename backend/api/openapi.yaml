@@ -171,14 +171,41 @@ paths:
     get:
       summary: Changes since a cursor (bookings, rooms, cancelled codes)
       responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
-  /partner/checkin:
+  /partner/checkin/lookup:
     post:
-      summary: Check a guest in by QR token, or booking code plus PIN
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
-  /partner/statements:
+      summary: Find the booking behind a guest voucher and say whether it can be checked in (changes nothing)
+      description: |
+        Body: { token } (the text of the voucher QR code, signature checked here) or { reference, pin }. Returns { state, booking } with state ready,
+        checked_in, too_early, ended, cancelled, waiting or not_ready. Errors: INVALID_VOUCHER, VOUCHER_EXPIRED, WRONG_HOTEL, INVALID_PIN, PIN_LOCKED
+        (5 wrong PINs lock the booking for 30 minutes; the QR still works).
+      responses: { "200": { description: Found } }
+  /partner/bookings/{id}/check-in:
+    post:
+      summary: Mark the guest as arrived (harmless to repeat)
+      description: Allowed from the check-in date until 06:00 on the check-out date (Addis Ababa time) for a confirmed booking. INVALID_STATE otherwise.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: The booking, now CHECKED_IN } }
+  /partner/earnings:
     get:
-      summary: Deposit, commission, VAT and net payout from the ledger
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      summary: What the owner's hotels earned and were paid (owners only; FORBIDDEN for receptionists)
+      description: |
+        Per hotel: ready_santim (guest checked in or stay over), upcoming_santim (stay still to come, not payable), paid_santim, to_pay_santim
+        (ready minus paid), then one line per online-paid booking (gross, commission, VAT, net) and the payouts so far.
+      responses: { "200": { description: Earnings } }
+  /admin/payouts:
+    get:
+      summary: Platform admin. Every hotel's money position and its payout account
+      responses: { "200": { description: Hotels with ready, upcoming, paid and to-pay amounts } }
+  /admin/hotels/{id}/payouts:
+    get:
+      summary: Platform admin. Payout history of a hotel
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Payouts, newest first } }
+    post:
+      summary: Platform admin. Record a transfer that was made to the hotel
+      description: Body { amount_santim, reference, note? }. At most what is ready to pay (INVALID_STATE otherwise) and the hotel needs its business record. Writes a balanced ledger transaction and an audit entry, and emails the owners.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Recorded } }
   /webhooks/payments/{provider}:
     post:
       summary: A payment gateway reports a result (signed)

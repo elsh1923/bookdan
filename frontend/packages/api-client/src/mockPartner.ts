@@ -3,9 +3,12 @@ import {
   PartnerBookingListSchema,
   PartnerBookingSchema,
   addDays,
+  decodeVoucherPayload,
+  EarningsSchema,
   idLast4,
   priceStay,
   todayAddis,
+  type CheckinState,
   type IdType,
   type PartnerBooking,
 } from '@bookdan/domain';
@@ -60,6 +63,8 @@ interface Row {
   paid_at: number | null;
   deadline: number | null;
   decline_reason: string | null;
+  checked_in_at?: number | null;
+  pay_at_hotel?: boolean;
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -154,8 +159,21 @@ export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi 
       paid_at: r.paid_at ? new Date(r.paid_at).toISOString() : null,
       hotel_deadline_at: r.deadline ? new Date(r.deadline).toISOString() : null,
       decline_reason: r.decline_reason,
+      checked_in_at: r.checked_in_at ? new Date(r.checked_in_at).toISOString() : null,
+      balance_due_santim: r.pay_at_hotel ? r.total_santim : 0,
       server_time: new Date(now).toISOString(),
     });
+  }
+
+  function checkinState(r: Row): CheckinState {
+    const v = view(r);
+    if (v.status === 'CHECKED_IN' || v.status === 'COMPLETED') return 'checked_in';
+    if (v.status === 'PAID_AWAITING_HOTEL') return 'waiting';
+    if (v.status !== 'CONFIRMED') return 'cancelled';
+    const today = todayAddis();
+    if (today < v.check_in) return 'too_early';
+    if (today >= v.check_out) return 'ended';
+    return 'ready';
   }
 
   const find = (id: string): Row => {
@@ -213,6 +231,62 @@ export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi 
       r.status = 'DECLINED_REFUNDED';
       r.decline_reason = parsed.data;
       await persist();
+      return view(r);
+    },
+
+    async lookupCheckin(query) {
+      await gate();
+      // Demo: the PIN of every demo booking is 1234. A voucher QR from the mock guest app carries the booking reference.
+      let ref: string | undefined;
+      if ('token' in query) {
+        ref = decodeVoucherPayload(query.token)?.code;
+        if (!ref) throw new ApiError('INVALID_VOUCHER', 'This is not a BookDan voucher, or it was changed.');
+      } else {
+        if (!/^[0-9]{4}$/.test(query.pin.trim())) throw new ApiError('INVALID_PIN', 'The PIN is 4 digits.');
+        ref = query.reference.trim().toUpperCase();
+        if (query.pin.trim() !== '1234') throw new ApiError('INVALID_PIN', 'Wrong PIN.');
+      }
+      const r = [...rows.values()].find((x) => x.reference === ref);
+      if (!r) throw new ApiError('INVALID_PIN', 'Check the reference and the PIN.');
+      return { state: checkinState(r), booking: view(r), server_time: new Date().toISOString() };
+    },
+
+    async getEarnings() {
+      await gate();
+      auth.identityOf();
+      // Demo: a 10% BookDan fee plus 15% VAT on the fee, on every booking the hotel confirmed.
+      const today = todayAddis();
+      const items = [...rows.values()]
+        .filter((r) => r.status === 'CONFIRMED' || r.status === 'CHECKED_IN' || r.status === 'COMPLETED')
+        .map((r) => {
+          const gross = r.total_santim;
+          const commission = Math.round(gross * 0.1);
+          const vat = Math.round(commission * 0.15);
+          const checkOut = addDays(r.check_in, r.nights);
+          const ready = r.status !== 'CONFIRMED' || checkOut <= today;
+          return {
+            booking_id: r.id, reference: r.reference, guest_name: r.guest.name, check_in: r.check_in, check_out: checkOut, status: r.status,
+            gross_santim: gross, commission_santim: commission, vat_santim: vat, net_santim: gross - commission - vat, ready,
+          };
+        });
+      const sum = (ready: boolean) => items.filter((i) => i.ready === ready).reduce((a, i) => a + i.net_santim, 0);
+      return EarningsSchema.parse({
+        hotels: [{ id: HOTEL.id, name: HOTEL.name, currency: 'ETB', ready_santim: sum(true), upcoming_santim: sum(false), paid_santim: 0, to_pay_santim: sum(true), last_paid_at: null, items, payouts: [] }],
+        server_time: new Date().toISOString(),
+      });
+    },
+
+    async checkInGuest(id) {
+      await gate();
+      const r = find(id);
+      const state = checkinState(r);
+      if (state === 'ready') {
+        r.status = 'CHECKED_IN';
+        r.checked_in_at = Date.now();
+        await persist();
+      } else if (state !== 'checked_in') {
+        throw new ApiError('INVALID_STATE', 'This booking cannot be checked in.');
+      }
       return view(r);
     },
 

@@ -6,8 +6,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { isAwaitingAnswer, type DeclineReason } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
+import { Button, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../src/api';
+import { checkinErrorKey } from '../../src/checkin';
 import { AwaitingCard, BookingRow } from '../../src/BookingCards';
 import { DeclineSheet } from '../../src/DeclineSheet';
 import { GuestProfileCard } from '../../src/GuestProfileCard';
@@ -22,6 +24,23 @@ export default function BookingScreen() {
   const inbox = useInbox();
   const { busyId, errors, answer, refresh } = useAnswers();
   const [declining, setDeclining] = useState(false);
+  const qc = useQueryClient();
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [checkinError, setCheckinError] = useState<string | null>(null);
+
+  // For a guest who arrives without the voucher: the receptionist checks them in from the booking. The server decides if it is allowed.
+  async function checkIn(bookingId: string) {
+    setCheckingIn(true);
+    setCheckinError(null);
+    try {
+      await api.checkInGuest(bookingId);
+      await qc.invalidateQueries({ queryKey: ['inbox'] });
+    } catch (e) {
+      setCheckinError(t(checkinErrorKey(e)));
+    } finally {
+      setCheckingIn(false);
+    }
+  }
 
   const booking = inbox.data?.items.find((b) => b.id === id);
   const back = () => (router.canGoBack() ? router.back() : router.replace('/'));
@@ -60,7 +79,14 @@ export default function BookingScreen() {
       />
     );
   } else {
-    body = <BookingRow b={booking} />;
+    body = (
+      <View>
+        <BookingRow b={booking} />
+        {booking.status === 'CONFIRMED' ? <Button title={t('partner.checkin_confirm')} icon="log-in-outline" onPress={() => checkIn(booking.id)} loading={checkingIn} /> : null}
+        {booking.checked_in_at ? <T variant="small" color={colors.success}>{t('partner.checkin_done')}</T> : null}
+        {checkinError ? <T variant="small" color={colors.danger} style={{ marginTop: spacing.sm }}>{checkinError}</T> : null}
+      </View>
+    );
   }
 
   return (

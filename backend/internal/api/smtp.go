@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"mime"
 	"net"
 	"net/mail"
 	"net/smtp"
@@ -49,29 +51,41 @@ func (s *smtpSender) Send(ctx context.Context, channel, to, code string) error {
 	if err != nil || rcpt.Address != to || strings.ContainsAny(to, "\r\n") {
 		return errors.New("refusing to send to an invalid address")
 	}
-	return s.deliver(ctx, rcpt.Address, s.message(rcpt.Address, code))
+	subject, text, html := otpEmailParts(code)
+	return s.deliver(ctx, rcpt.Address, s.message(rcpt.Address, subject, text, html))
 }
 
-// message builds the email: plain text and a simple HTML version, with the code in the subject so it shows in a notification.
-func (s *smtpSender) message(to, code string) []byte {
+// SendMail sends any email (invitations, application decisions...), plain text plus HTML.
+func (s *smtpSender) SendMail(ctx context.Context, to, subject, text, html string) error {
+	rcpt, err := mail.ParseAddress(to)
+	if err != nil || rcpt.Address != to || strings.ContainsAny(to, "\r\n") {
+		return errors.New("refusing to send to an invalid address")
+	}
+	return s.deliver(ctx, rcpt.Address, s.message(rcpt.Address, subject, text, html))
+}
+
+// message builds the email: plain text and an HTML version. Subject and body are encoded so any language (Amharic hotel names) arrives intact.
+func (s *smtpSender) message(to, subject, text, html string) []byte {
 	id := make([]byte, 12)
 	_, _ = rand.Read(id)
 	boundary := "bd-" + hex.EncodeToString(id)
-	subject, text, html := otpEmailParts(code)
 
 	var b strings.Builder
 	h := func(k, v string) { b.WriteString(k + ": " + v + "\r\n") }
 	h("From", s.from.String())
 	h("To", to)
-	h("Subject", subject)
+	h("Subject", mime.QEncoding.Encode("utf-8", strings.NewReplacer("\r", " ", "\n", " ").Replace(subject)))
 	h("Date", time.Now().UTC().Format(time.RFC1123Z))
 	h("Message-ID", "<"+hex.EncodeToString(id)+"@bookdan>")
 	h("MIME-Version", "1.0")
 	h("Auto-Submitted", "auto-generated")
 	h("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
 	b.WriteString("\r\n")
-	b.WriteString("--" + boundary + "\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + text + "\r\n")
-	b.WriteString("--" + boundary + "\r\nContent-Type: text/html; charset=utf-8\r\n\r\n" + html + "\r\n")
+	part := func(contentType, body string) {
+		b.WriteString("--" + boundary + "\r\nContent-Type: " + contentType + "; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" + wrap76(base64.StdEncoding.EncodeToString([]byte(body))) + "\r\n")
+	}
+	part("text/plain", text)
+	part("text/html", html)
 	b.WriteString("--" + boundary + "--\r\n")
 	return []byte(b.String())
 }
@@ -150,4 +164,15 @@ func otpEmailParts(code string) (subject, text, html string) {
 <p style="font-size:34px;font-weight:700;letter-spacing:6px;background:#eaf1ff;border-radius:12px;padding:14px;text-align:center;margin:12px 0">%s</p>
 <p style="color:#4b5b76;font-size:14px">It works for 5 minutes. If you did not ask for it, you can ignore this email: nobody can sign in without the code.</p></div>`, code)
 	return subject, text, html
+}
+
+// wrap76 breaks a base64 string into lines of at most 76 characters, as email requires.
+func wrap76(s string) string {
+	var b strings.Builder
+	for len(s) > 76 {
+		b.WriteString(s[:76] + "\r\n")
+		s = s[76:]
+	}
+	b.WriteString(s)
+	return b.String()
 }

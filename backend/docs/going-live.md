@@ -63,6 +63,16 @@ Test the settings from your computer before deploying: `$env:EMAIL_TEST_TO="you@
 
 While `DEMO_MODE=true`, real addresses get a real random code by email, and addresses on `DEMO_ACCOUNT_DOMAINS` (default `bookdan.test`, `example.com`, `example.org`) keep the fixed code `123456` with nothing sent, so the demo hotel owner still works. Phone numbers keep the demo code until an SMS provider exists. If the mail server fails, the app is told (`SEND_FAILED`). Gmail allows roughly 500 messages a day.
 
+### How a hotel gets on BookDan (registered by the platform admin)
+
+1. **Platform admin** opens `/admin` and chooses **Add a hotel** (starts as a draft).
+2. Admin adds the hotel's **rooms and prices**, then the **Business** tab: legal name, trade licence, tax number, contact person, and where BookDan pays the hotel. The payout account number is stored encrypted and only its last four digits are shown; showing it in full is recorded in the audit log. A hotel cannot be published without these details.
+3. Admin adds the **owner** under **Staff** with their email. The owner gets an **invitation email** (which hotel, how to install the BookDan Partner app, to sign in with that email). Set `PARTNER_APP_URL` to the app download link so the email includes it.
+4. The owner opens the hotel app, enters the email and the emailed code. Only people added by the admin get in; anyone else is told the email is not registered with a hotel. Their entry shows **Joined** in the Staff tab (until then **Invited**).
+5. **Owners add their own receptionists** in the admin page (they get the same invitation). Owners cannot add or remove owners, and cannot touch other hotels or the business record. Removing someone stops their alerts at once.
+6. **Booking alerts** (admin page, tab Booking alerts, owners and admins): choose who is alerted first, set each person's shift and switch alerts off if needed. A request that nobody answers escalates to the owners, then a reminder push and email go out 5 minutes before it is declined and refunded. A person with "No phone" next to their name has not signed in to the hotel app yet. SMS or phone-call backup is not built (needs an Ethiopian SMS provider).
+6. The owner can use the admin page for photos, rooms and prices only when `ADMIN_OWNERS=true` and sign-in codes are real (demo accounts are always refused there). A platform admin publishes the hotel when it is ready.
+
 ### The admin page (hotels, rooms, prices, photos, staff)
 
 Open `/admin` on the server (for example `https://bookdan.onrender.com/admin`). Set two variables on the server to turn it on:
@@ -101,7 +111,7 @@ Every rule is covered by tests that run on a real PostgreSQL (`go test ./...`).
 | 4 | **Hosting** | Build the image (`docker build -t bookdan-api backend`) and run it on any host that gives you https (Render, Fly.io, Railway, a VPS). Set `APP_ENV=production`, `PUBLIC_URL=https://…`, `DATABASE_URL`, and the secrets (generate with `openssl rand -base64 32`). Run `/migrate up` before each release. |
 | 5 | **Point the apps at production** | In each app's `eas.json` build profile add `"env": { "EXPO_PUBLIC_API_MODE": "http", "EXPO_PUBLIC_API_URL": "https://your-api" }`, then build again (`eas build`). An update alone cannot change which server a build talks to unless the value is also set when you run `eas update`. |
 | 6 | **Confirm the money rules** | `pricing_config` holds placeholders (no service charge, 15% VAT, full payment online, no commission). Production refuses to price stays until you set the real values and `confirmed = true` (`design.md`, open decisions). |
-| 7 | **Hotels and staff** | There is no admin portal yet. Add a hotel, its rooms and rates, and its staff (`users` plus `property_staff`) with SQL or the seed file. A hotel owner then signs in to the partner app with that phone or email. |
+| 7 | **Hotels and staff** | Built: see "How a hotel gets on BookDan" below. |
 | 8 | **ID retention** | `purge_id_numbers(date)` erases stored ID numbers but nothing runs it on a schedule. Decide the retention period (DECISION 5), then schedule it. |
 | 9 | **Abuse limits** | Sign-in codes are limited per identifier. Add per-IP limits at the host or a proxy before launch. |
 | 10 | **Not built yet** | Hotel offline tools (rooms chart, walk-ins, QR check-in scanning, statements), reviews, cancellation by the guest, a map view. |

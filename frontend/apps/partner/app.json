@@ -3,7 +3,7 @@
     "name": "BookDan Partner",
     "slug": "bookdan-partner",
     "scheme": "hotelpartner",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -30,6 +30,13 @@
       "expo-localization",
       "expo-font",
       "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "BookDan Partner uses the camera to scan the QR code on a guest’s voucher at check-in.",
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-notifications",
         {

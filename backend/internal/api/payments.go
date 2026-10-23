@@ -306,29 +306,7 @@ func (s *Server) runRefunds(ctx context.Context) {
 
 // ---- alert to the hotel
 
-func (s *Server) notifyHotel(ctx context.Context, bookingID string) {
-	rows, err := s.pool.Query(ctx, `SELECT d.push_token, b.guest_name, b.code
-		FROM bookings b JOIN property_staff ps ON ps.property_id = b.property_id
-		JOIN devices d ON d.user_id = ps.user_id AND d.app = 'partner' AND d.push_token IS NOT NULL AND d.revoked_at IS NULL
-		WHERE b.id = $1`, bookingID)
-	if err != nil {
-		slog.Error("notify hotel", "err", err)
-		return
-	}
-	defer rows.Close()
-	var tokens []string
-	var guest, code string
-	for rows.Next() {
-		var t string
-		if rows.Scan(&t, &guest, &code) == nil {
-			tokens = append(tokens, t)
-		}
-	}
-	if len(tokens) == 0 {
-		return
-	}
-	s.push(ctx, tokens, "New booking request", guest+" · "+code, map[string]string{"booking_id": bookingID, "type": "new_booking", "channel": "booking_alerts"})
-}
+// notifyHotel, escalate and remind live in alerts.go.
 
 // push sends an alert and forgets any phone the push service says is gone. Failures are logged, never returned: an alert
 // that cannot be sent must not undo the booking that caused it.

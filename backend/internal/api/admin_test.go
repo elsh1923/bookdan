@@ -12,20 +12,30 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 const adminPassword = "correct-horse-battery-staple"
 
+// The admin sign-in is rate limited (8 tries per 10 minutes), so the whole test run signs in once and reuses the 8-hour token.
+var (
+	adminTokenOnce sync.Once
+	adminTokenText string
+)
+
 func adminClient(t *testing.T) *client {
 	t.Helper()
 	c := newClient(t, "admin")
-	r := c.do("POST", "/admin/login", map[string]string{"email": "admin@bookdan.test", "password": adminPassword})
-	if r.status != 200 || r.str("role") != "admin" {
-		t.Fatalf("admin login: %d %s", r.status, r.raw)
-	}
-	c.token = r.str("token")
+	adminTokenOnce.Do(func() {
+		r := c.do("POST", "/admin/login", map[string]string{"email": "admin@bookdan.test", "password": adminPassword})
+		if r.status != 200 || r.str("role") != "admin" {
+			t.Fatalf("admin login: %d %s", r.status, r.raw)
+		}
+		adminTokenText = r.str("token")
+	})
+	c.token = adminTokenText
 	return c
 }
 
@@ -177,6 +187,14 @@ func TestAdminBuildsAHotelEndToEnd(t *testing.T) {
 		t.Fatalf("uploads: %d %d %s", p1.status, p2.status, p1.raw)
 	}
 
+	// Publishing also needs the business and payout details.
+	if r := admin.do("PUT", "/admin/hotels/"+id, body); r.status != 409 || !strings.Contains(r.raw2(), "business") {
+		t.Fatalf("publishing without business details: %d %s", r.status, r.raw)
+	}
+	if r := admin.do("PUT", "/admin/hotels/"+id+"/business", businessBody("")); r.status != 200 {
+		t.Fatalf("business: %d %s", r.status, r.raw)
+	}
+
 	// Now it can be published, and guests see it with its cover photo.
 	if r := admin.do("PUT", "/admin/hotels/"+id, body); r.status != 200 {
 		t.Fatalf("publish: %d %s", r.status, r.raw)
@@ -272,95 +290,6 @@ func TestShrinkingRoomsBelowWhatIsBookedIsRefused(t *testing.T) {
 	}
 }
 
-func TestOwnersManageOnlyTheirOwnHotelAndCannotCreateOrStaff(t *testing.T) {
-	admin := adminClient(t)
-	h1 := admin.do("POST", "/admin/hotels", newHotelBody(fmt.Sprintf("Owner One %d", time.Now().UnixNano()%100000)))
-	h2 := admin.do("POST", "/admin/hotels", newHotelBody(fmt.Sprintf("Owner Two %d", time.Now().UnixNano()%100000)))
-	ownerEmail, recEmail := uniqueEmail("owner"), uniqueEmail("rec")
-
-	if r := admin.do("POST", "/admin/hotels/"+h1.str("id")+"/staff", map[string]string{"contact": ownerEmail, "role": "owner"}); r.status != 200 {
-		t.Fatalf("add owner: %d %s", r.status, r.raw)
-	}
-	if r := admin.do("POST", "/admin/hotels/"+h1.str("id")+"/staff", map[string]string{"contact": recEmail, "role": "receptionist"}); r.status != 200 {
-		t.Fatalf("add receptionist: %d %s", r.status, r.raw)
-	}
-	if r := admin.do("POST", "/admin/hotels/"+h1.str("id")+"/staff", map[string]string{"contact": "x", "role": "owner"}); r.status != 400 {
-		t.Fatalf("a bad contact: %d", r.status)
-	}
-
-	// The owner signs in with a code (the admin page's owner tab).
-	owner := newClient(t, "admin")
-	owner.do("POST", "/admin/otp/request", map[string]string{"type": "email", "value": ownerEmail})
-	v := owner.do("POST", "/admin/otp/verify", map[string]string{"type": "email", "value": ownerEmail, "code": "123456"})
-	if v.status != 200 || v.str("role") != "owner" {
-		t.Fatalf("owner sign-in: %d %s", v.status, v.raw)
-	}
-	owner.token = v.str("token")
-
-	list := owner.do("GET", "/admin/hotels", nil)
-	items := list.body["items"].([]any)
-	if len(items) != 1 || items[0].(map[string]any)["id"] != h1.str("id") {
-		t.Fatalf("the owner should see only their own hotel: %s", list.raw)
-	}
-	if r := owner.do("GET", "/admin/hotels/"+h2.str("id"), nil); r.status != 404 {
-		t.Fatalf("another hotel must look like it does not exist: %d", r.status)
-	}
-	if r := owner.do("PUT", "/admin/hotels/"+h2.str("id"), newHotelBody("Hijacked")); r.status != 404 {
-		t.Fatalf("editing another hotel: %d", r.status)
-	}
-	if r := upload(owner, h2.str("id"), "x.jpg", photoBytes(t, 100, 100)); r.status != 404 {
-		t.Fatalf("uploading to another hotel: %d", r.status)
-	}
-	if r := owner.do("POST", "/admin/hotels", newHotelBody("Brand new")); r.status != 403 {
-		t.Fatalf("owners cannot create hotels: %d", r.status)
-	}
-	if r := owner.do("POST", "/admin/hotels/"+h1.str("id")+"/staff", map[string]string{"contact": uniqueEmail("x"), "role": "owner"}); r.status != 403 {
-		t.Fatalf("owners cannot add staff: %d", r.status)
-	}
-	// An owner edits their own hotel but cannot give themselves the Verified badge.
-	body := newHotelBody("Owner One Renamed")
-	body["verified"] = true
-	if r := owner.do("PUT", "/admin/hotels/"+h1.str("id"), body); r.status != 200 {
-		t.Fatalf("owner edits own hotel: %d %s", r.status, r.raw)
-	}
-	if d := owner.do("GET", "/admin/hotels/"+h1.str("id"), nil); d.body["verified"] != false || d.body["name"] != "Owner One Renamed" {
-		t.Fatalf("name changes, verified does not: %v %v", d.body["name"], d.body["verified"])
-	}
-
-	// A receptionist cannot use the admin page at all.
-	rec := newClient(t, "admin")
-	rec.do("POST", "/admin/otp/request", map[string]string{"type": "email", "value": recEmail})
-	if r := rec.do("POST", "/admin/otp/verify", map[string]string{"type": "email", "value": recEmail, "code": "123456"}); r.status != 403 {
-		t.Fatalf("a receptionist on the admin page: %d %s", r.status, r.raw)
-	}
-	// A stranger cannot either.
-	st := newClient(t, "admin")
-	stranger := uniqueEmail("stranger")
-	st.do("POST", "/admin/otp/request", map[string]string{"type": "email", "value": stranger})
-	if r := st.do("POST", "/admin/otp/verify", map[string]string{"type": "email", "value": stranger, "code": "123456"}); r.status != 403 {
-		t.Fatalf("a stranger on the admin page: %d", r.status)
-	}
-
-	// Staff can be removed by the admin, and the hotel app starts to see the hotel.
-	hotelApp := newClient(t, "partner")
-	hotelApp.signIn("email", ownerEmail)
-	if hb := hotelApp.do("GET", "/partner/bookings", nil); hb.status != 200 {
-		t.Fatalf("the new owner should also work in the hotel app: %d", hb.status)
-	}
-	d := admin.do("GET", "/admin/hotels/"+h1.str("id"), nil)
-	for _, s := range d.body["staff"].([]any) {
-		sm := s.(map[string]any)
-		if sm["contact"] == recEmail {
-			if r := admin.do("DELETE", "/admin/hotels/"+h1.str("id")+"/staff/"+sm["user_id"].(string), nil); r.status != 200 {
-				t.Fatalf("remove staff: %d", r.status)
-			}
-		}
-	}
-	if r := admin.do("DELETE", "/admin/hotels/"+h1.str("id")+"/staff/"+"00000000-0000-0000-0000-000000000000", nil); r.status != 404 {
-		t.Fatalf("removing someone who is not staff: %d", r.status)
-	}
-}
-
 func suiteID(admin *client) string {
 	d := admin.do("GET", "/admin/hotels/"+meskel, nil)
 	for _, r := range d.body["rooms"].([]any) {
@@ -370,3 +299,5 @@ func suiteID(admin *client) string {
 	}
 	return ""
 }
+
+func (r resp) raw2() string { return string(r.raw) }

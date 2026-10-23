@@ -76,6 +76,18 @@ func (logPusher) Notify(_ context.Context, tokens []string, title, body string, 
 	return nil, nil
 }
 
+// Mailer sends an ordinary email (not a sign-in code): invitations, application decisions, notices to the admins.
+type Mailer interface {
+	SendMail(ctx context.Context, to, subject, text, html string) error
+}
+
+type logMailer struct{}
+
+func (logMailer) SendMail(_ context.Context, to, subject, _, _ string) error {
+	slog.Info("email (development stand-in, nothing was sent)", "to", to, "subject", subject)
+	return nil
+}
+
 // routedSender sends each sign-in code over its own channel: SMS by the SMS provider, email by the email provider.
 type routedSender struct{ sms, email OTPSender }
 
@@ -89,6 +101,7 @@ func (r routedSender) Send(ctx context.Context, channel, to, code string) error 
 // Providers bundles the integrations.
 type Providers struct {
 	OTP     OTPSender
+	Mail    Mailer
 	Gateway Gateway
 	Push    Pusher
 	// EmailReal is true when sign-in codes really go out by email. Then real addresses get random codes even in demo mode.
@@ -97,7 +110,7 @@ type Providers struct {
 
 // DevProviders returns the stand-ins.
 func DevProviders(cfg config.Config) Providers {
-	return Providers{OTP: logSender{}, Gateway: devGateway{publicURL: cfg.PublicURL}, Push: logPusher{}}
+	return Providers{OTP: logSender{}, Mail: logMailer{}, Gateway: devGateway{publicURL: cfg.PublicURL}, Push: logPusher{}}
 }
 
 // ProvidersFor selects integrations by name. Real ones are added here as they are built.
@@ -116,6 +129,7 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 			return p, err
 		}
 		p.OTP = routedSender{sms: logSender{}, email: smtpSender}
+		p.Mail = smtpSender
 		p.EmailReal = true
 	case "brevo":
 		brevo, err := newBrevoSender(cfg.BrevoAPIKey, cfg.EmailFrom)
@@ -123,6 +137,7 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 			return p, err
 		}
 		p.OTP = routedSender{sms: logSender{}, email: brevo}
+		p.Mail = brevo
 		p.EmailReal = true
 	default:
 		return p, errors.New("EMAIL_PROVIDER " + cfg.EmailProvider + " is not built yet (use log, smtp or brevo)")
