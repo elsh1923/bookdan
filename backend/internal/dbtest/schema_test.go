@@ -569,7 +569,7 @@ func TestDemoSeedLoadsAndIsSafeToRunTwice(t *testing.T) {
 		{"nights of availability", `SELECT count(*) FROM app.inventory WHERE room_type_id::text LIKE 'b0000000-%'`, 16 * 180},
 		{"rate plans", `SELECT count(*) FROM app.rate_plans WHERE room_type_id::text LIKE 'b0000000-%'`, 16},
 		{"landmarks", `SELECT count(*) FROM app.landmarks`, 6},
-		{"hotel owners", `SELECT count(*) FROM app.property_staff`, 1},
+		{"hotel owner links (the demo owner works for every demo hotel)", `SELECT count(*) FROM app.property_staff`, 8},
 	} {
 		if got := count(c.query); got != c.want {
 			t.Errorf("%s: want %d, got %d (the second run must not add duplicates)", c.what, c.want, got)

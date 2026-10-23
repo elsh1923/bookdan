@@ -32,6 +32,7 @@ function StayLine({ b }: { b: PartnerBooking }) {
   const months = useMonths();
   return (
     <>
+      {b.property_name ? <T variant="label" color={colors.primaryInk}>{b.property_name.toUpperCase()}</T> : null}
       <T color={colors.inkSoft}>
         {b.rooms > 1 ? `${b.rooms} × ` : ''}{b.room_name} · {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {t('common.night', { count: b.nights })}
       </T>

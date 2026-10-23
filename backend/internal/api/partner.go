@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -14,14 +15,28 @@ import (
 
 var declineReasons = map[string]bool{"fully_booked": true, "room_unavailable": true, "maintenance": true, "other": true}
 
-// staffProperty returns the hotel this staff member works for. (One hotel per account for now.)
-func (s *Server) staffProperty(ctx context.Context, userID string) (id, name string, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT p.id, p.name FROM property_staff ps JOIN properties p ON p.id = ps.property_id
-		WHERE ps.user_id = $1 ORDER BY ps.created_at LIMIT 1`, userID).Scan(&id, &name)
-	if err == pgx.ErrNoRows {
-		return "", "", fail(http.StatusForbidden, codeNotStaff, "This account is not registered with a hotel")
+// staffHotels returns every hotel this staff member works for (an owner can have several), oldest assignment first.
+func (s *Server) staffHotels(ctx context.Context, userID string) (ids, names []string, err error) {
+	rows, err := s.pool.Query(ctx, `SELECT p.id, p.name FROM property_staff ps JOIN properties p ON p.id = ps.property_id
+		WHERE ps.user_id = $1 ORDER BY ps.created_at, p.name`, userID)
+	if err != nil {
+		return nil, nil, err
 	}
-	return id, name, err
+	defer rows.Close()
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, nil, err
+		}
+		ids, names = append(ids, id), append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil, fail(http.StatusForbidden, codeNotStaff, "This account is not registered with a hotel")
+	}
+	return ids, names, nil
 }
 
 type partnerGuest struct {
@@ -35,37 +50,45 @@ type partnerGuest struct {
 
 type partnerBooking struct {
 	httpx.Meta
-	ID            string       `json:"id"`
-	Reference     string       `json:"reference"`
-	Status        string       `json:"status"`
-	GuestName     string       `json:"guest_name"`
-	Guest         partnerGuest `json:"guest"`
-	RoomName      string       `json:"room_name"`
-	CheckIn       string       `json:"check_in"`
-	CheckOut      string       `json:"check_out"`
-	Nights        int          `json:"nights"`
-	Guests        int          `json:"guests"`
-	Rooms         int          `json:"rooms"`
-	Total         int64        `json:"total_santim"`
-	Currency      string       `json:"currency"`
-	PaidAt        *string      `json:"paid_at"`
-	HotelDeadline *string      `json:"hotel_deadline_at"`
-	DeclineReason *string      `json:"decline_reason"`
+	ID        string       `json:"id"`
+	Reference string       `json:"reference"`
+	Status    string       `json:"status"`
+	GuestName string       `json:"guest_name"`
+	Guest     partnerGuest `json:"guest"`
+	RoomName  string       `json:"room_name"`
+	// PropertyName is set only when the account works for more than one hotel, so each booking says which one it is for.
+	PropertyName  string  `json:"property_name,omitempty"`
+	CheckIn       string  `json:"check_in"`
+	CheckOut      string  `json:"check_out"`
+	Nights        int     `json:"nights"`
+	Guests        int     `json:"guests"`
+	Rooms         int     `json:"rooms"`
+	Total         int64   `json:"total_santim"`
+	Currency      string  `json:"currency"`
+	PaidAt        *string `json:"paid_at"`
+	HotelDeadline *string `json:"hotel_deadline_at"`
+	DeclineReason *string `json:"decline_reason"`
 }
 
 // A hotel never sees a room that is only held: the guest has not paid or asked yet.
 const partnerSelect = `
 	SELECT b.id, b.code, b.status, b.guest_name, g.full_name, g.contact, g.nationality, g.id_type, g.id_last4, g.purged_at IS NOT NULL,
-	       rt.name, b.check_in, b.check_out, b.guests, b.rooms, b.total_santim, b.currency, b.paid_at, b.hotel_deadline_at, b.decline_reason
-	FROM bookings b JOIN booking_guests g ON g.booking_id = b.id JOIN room_types rt ON rt.id = b.room_type_id`
+	       rt.name, b.check_in, b.check_out, b.guests, b.rooms, b.total_santim, b.currency, b.paid_at, b.hotel_deadline_at, b.decline_reason,
+	       p.name
+	FROM bookings b JOIN booking_guests g ON g.booking_id = b.id JOIN room_types rt ON rt.id = b.room_type_id
+	JOIN properties p ON p.id = b.property_id`
 
-func scanPartner(row pgx.Row) (partnerBooking, error) {
+func scanPartner(row pgx.Row, multiHotel bool) (partnerBooking, error) {
 	var b partnerBooking
 	var in, out time.Time
 	var paid, deadline *time.Time
+	var hotel string
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.GuestName, &b.Guest.FullName, &b.Guest.Contact, &b.Guest.Nationality, &b.Guest.IDType,
-		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason); err != nil {
+		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel); err != nil {
 		return b, err
+	}
+	if multiHotel {
+		b.PropertyName = hotel
 	}
 	b.CheckIn, b.CheckOut, b.Meta = pgDate(in), pgDate(out), httpx.NowMeta()
 	b.Nights = nightsBetween(b.CheckIn, b.CheckOut)
@@ -82,21 +105,26 @@ func scanPartner(row pgx.Row) (partnerBooking, error) {
 
 func (s *Server) partnerBookings(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	propID, propName, err := s.staffProperty(ctx, claimsFrom(r).Sub)
+	propIDs, propNames, err := s.staffHotels(ctx, claimsFrom(r).Sub)
 	if err != nil {
 		return err
 	}
+	multi := len(propIDs) > 1
+	propID, propName := propIDs[0], propNames[0]
+	if multi {
+		propName = fmt.Sprintf("%d hotels", len(propIDs))
+	}
 	s.sweep(ctx) // so a missed deadline is already closed when the hotel looks
-	rows, err := s.pool.Query(ctx, partnerSelect+` WHERE b.property_id = $1 AND b.status <> 'HELD'
+	rows, err := s.pool.Query(ctx, partnerSelect+` WHERE b.property_id = ANY($1::uuid[]) AND b.status <> 'HELD'
 		AND (b.check_out >= (now() AT TIME ZONE 'Africa/Addis_Ababa')::date - 14 OR b.status = 'PAID_AWAITING_HOTEL')
-		ORDER BY b.created_at DESC LIMIT 200`, propID)
+		ORDER BY b.created_at DESC LIMIT 200`, propIDs)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	items := []partnerBooking{}
 	for rows.Next() {
-		b, err := scanPartner(rows)
+		b, err := scanPartner(rows, multi)
 		if err != nil {
 			return err
 		}
@@ -122,7 +150,7 @@ func (s *Server) partnerBookings(w http.ResponseWriter, r *http.Request) error {
 // answer is the shared body of accept and decline: lock the booking, check it is this hotel's and still waiting, change it.
 func (s *Server) answer(w http.ResponseWriter, r *http.Request, accept bool, reason string) error {
 	ctx, id, uid := r.Context(), chi.URLParam(r, "id"), claimsFrom(r).Sub
-	propID, _, err := s.staffProperty(ctx, uid)
+	propIDs, _, err := s.staffHotels(ctx, uid)
 	if err != nil {
 		return err
 	}
@@ -134,7 +162,7 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, accept bool, rea
 		var total int64
 		var deadline *time.Time
 		err := tx.QueryRow(ctx, `SELECT status, room_type_id, check_in, check_out, rooms, total_santim, currency, hotel_deadline_at
-			FROM bookings WHERE id = $1 AND property_id = $2 FOR UPDATE`, id, propID).Scan(&status, &roomType, &in, &out, &rooms, &total, &cur, &deadline)
+			FROM bookings WHERE id = $1 AND property_id = ANY($2::uuid[]) FOR UPDATE`, id, propIDs).Scan(&status, &roomType, &in, &out, &rooms, &total, &cur, &deadline)
 		if err == pgx.ErrNoRows || isBadUUID(err) {
 			return errNotFound
 		}
@@ -159,7 +187,7 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, accept bool, rea
 	if err != nil {
 		return err
 	}
-	b, err := scanPartner(s.pool.QueryRow(ctx, partnerSelect+` WHERE b.id = $1`, id))
+	b, err := scanPartner(s.pool.QueryRow(ctx, partnerSelect+` WHERE b.id = $1`, id), len(propIDs) > 1)
 	if err != nil {
 		return err
 	}
@@ -253,14 +281,14 @@ func (s *Server) decline(ctx context.Context, tx pgx.Tx, id, roomType, in, out s
 // partnerReveal returns the full ID number of the guest on one booking. Every call is written to the audit log.
 func (s *Server) partnerReveal(w http.ResponseWriter, r *http.Request) error {
 	ctx, id := r.Context(), chi.URLParam(r, "id")
-	propID, _, err := s.staffProperty(ctx, claimsFrom(r).Sub)
+	propIDs, _, err := s.staffHotels(ctx, claimsFrom(r).Sub)
 	if err != nil {
 		return err
 	}
 	var enc []byte
 	var purged bool
 	err = s.pool.QueryRow(ctx, `SELECT g.id_number_enc, g.purged_at IS NOT NULL FROM booking_guests g
-		JOIN bookings b ON b.id = g.booking_id WHERE g.booking_id = $1 AND b.property_id = $2 AND b.status <> 'HELD'`, id, propID).Scan(&enc, &purged)
+		JOIN bookings b ON b.id = g.booking_id WHERE g.booking_id = $1 AND b.property_id = ANY($2::uuid[]) AND b.status <> 'HELD'`, id, propIDs).Scan(&enc, &purged)
 	if err == pgx.ErrNoRows || isBadUUID(err) {
 		return errNotFound
 	}
@@ -275,7 +303,7 @@ func (s *Server) partnerReveal(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if err := s.tx(ctx, func(tx pgx.Tx) error {
-		return s.audit(r, tx, "guest_id_revealed", map[string]any{"booking_id": id, "property_id": propID})
+		return s.audit(r, tx, "guest_id_revealed", map[string]any{"booking_id": id})
 	}); err != nil {
 		return err
 	}

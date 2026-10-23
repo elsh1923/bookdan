@@ -88,7 +88,9 @@ WHERE NOT EXISTS (SELECT 1 FROM landmarks x WHERE x.name = v.name);
 -- A demo hotel owner for the first hotel, so the partner app has someone to sign in as once real sign-in exists.
 INSERT INTO users (id, email, display_name, role) VALUES ('c0000000-0000-0000-0000-000000000001', 'owner@bookdan.test', 'Demo Owner', 'owner')
 ON CONFLICT (id) DO NOTHING;
-INSERT INTO property_staff (property_id, user_id, role) VALUES ('a0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001', 'owner')
+-- The demo owner works for every demo hotel, so whichever hotel a tester books, the hotel app receives the request.
+INSERT INTO property_staff (property_id, user_id, role)
+SELECT p.id, 'c0000000-0000-0000-0000-000000000001', 'owner' FROM properties p
 ON CONFLICT DO NOTHING;
 
 COMMIT;

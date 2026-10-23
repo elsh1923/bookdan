@@ -15,6 +15,8 @@ export const PartnerBookingSchema = z.object({
   guest_name: z.string(),
   /** The guest's profile as it was when they requested the room, including the masked ID. */
   guest: BookingGuestSchema,
+  /** Present only when the account works for several hotels: which one this booking is for. */
+  property_name: z.string().optional(),
   room_name: z.string(),
   check_in: z.string(),
   check_out: z.string(),
