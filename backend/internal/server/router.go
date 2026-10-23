@@ -41,7 +41,7 @@ func New(cfg config.Config, db Pinger, mount func(chi.Router), mountRoot ...func
 			for _, route := range []struct{ method, path string }{
 				{"POST", "/auth/otp/request"}, {"POST", "/auth/otp/verify"}, {"POST", "/auth/refresh"}, {"POST", "/auth/logout"},
 				{"GET", "/search"}, {"GET", "/properties/{id}"}, {"POST", "/quotes"}, {"POST", "/bookings"}, {"GET", "/bookings"},
-				{"GET", "/bookings/{id}"}, {"POST", "/bookings/{id}/pay"}, {"GET", "/bookings/{id}/voucher"},
+				{"GET", "/bookings/{id}"}, {"POST", "/bookings/{id}/pay"}, {"POST", "/bookings/{id}/cancel"}, {"POST", "/bookings/{id}/review"}, {"GET", "/bookings/{id}/voucher"},
 				{"GET", "/me/profile"}, {"PUT", "/me/profile"}, {"DELETE", "/me/profile"},
 				{"PUT", "/partner/devices/push-token"}, {"POST", "/partner/bookings/{id}/guest/reveal"}, {"GET", "/partner/bookings"},
 				{"POST", "/partner/bookings/{id}/accept"}, {"POST", "/partner/bookings/{id}/decline"},

@@ -264,7 +264,7 @@ func (s *Server) paymentWebhook(w http.ResponseWriter, r *http.Request) error {
 // had ended when the payment arrived. A failed refund stays owed and is tried again by the sweeper.
 func (s *Server) runRefunds(ctx context.Context) {
 	rows, err := s.pool.Query(ctx, `SELECT p.id FROM payments p JOIN bookings b ON b.id = p.booking_id
-		WHERE p.status = 'succeeded' AND b.status IN ('DECLINED_REFUNDED', 'CANCELLED_REFUNDED', 'EXPIRED') LIMIT 50`)
+		WHERE p.status = 'succeeded' AND (b.status IN ('DECLINED_REFUNDED', 'EXPIRED') OR (b.status = 'CANCELLED_REFUNDED' AND coalesce(b.refund_santim, 0) > 0)) LIMIT 50`)
 	if err != nil {
 		slog.Error("refunds: list", "err", err)
 		return

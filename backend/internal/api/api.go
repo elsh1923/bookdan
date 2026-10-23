@@ -33,25 +33,28 @@ const (
 
 // Stable error codes (the apps translate these).
 const (
-	codeInvalidPhone   = "INVALID_PHONE"
-	codeInvalidEmail   = "INVALID_EMAIL"
-	codeInvalidOTP     = "INVALID_OTP"
-	codeTooMany        = "TOO_MANY_REQUESTS"
-	codeSendFailed     = "SEND_FAILED"
-	codeSoldOut        = "SOLD_OUT"
-	codeQuoteExpired   = "QUOTE_EXPIRED"
-	codeHoldExpired    = "HOLD_EXPIRED"
-	codeIdemMismatch   = "IDEMPOTENCY_MISMATCH"
-	codeVoucherNotYet  = "VOUCHER_NOT_READY"
-	codePaymentFailed  = "PAYMENT_FAILED"
-	codeDeadlinePassed = "DEADLINE_PASSED"
-	codeInvalidState   = "INVALID_STATE"
-	codeInvalidID      = "INVALID_ID"
-	codeGone           = "GONE"
-	codeProfileMissing = "PROFILE_INCOMPLETE"
-	codeForbidden      = "FORBIDDEN"
-	codeNotStaff       = "NOT_STAFF"
-	codePricingPending = "PRICING_NOT_CONFIRMED"
+	codeInvalidPhone    = "INVALID_PHONE"
+	codeInvalidEmail    = "INVALID_EMAIL"
+	codeInvalidOTP      = "INVALID_OTP"
+	codeTooMany         = "TOO_MANY_REQUESTS"
+	codeSendFailed      = "SEND_FAILED"
+	codeCancelTooLate   = "CANCEL_TOO_LATE"
+	codeReviewNotReady  = "REVIEW_NOT_READY"
+	codeAlreadyReviewed = "ALREADY_REVIEWED"
+	codeSoldOut         = "SOLD_OUT"
+	codeQuoteExpired    = "QUOTE_EXPIRED"
+	codeHoldExpired     = "HOLD_EXPIRED"
+	codeIdemMismatch    = "IDEMPOTENCY_MISMATCH"
+	codeVoucherNotYet   = "VOUCHER_NOT_READY"
+	codePaymentFailed   = "PAYMENT_FAILED"
+	codeDeadlinePassed  = "DEADLINE_PASSED"
+	codeInvalidState    = "INVALID_STATE"
+	codeInvalidID       = "INVALID_ID"
+	codeGone            = "GONE"
+	codeProfileMissing  = "PROFILE_INCOMPLETE"
+	codeForbidden       = "FORBIDDEN"
+	codeNotStaff        = "NOT_STAFF"
+	codePricingPending  = "PRICING_NOT_CONFIRMED"
 )
 
 type apiError struct {
@@ -111,6 +114,8 @@ func (s *Server) Routes(root chi.Router) {
 			r.Get("/bookings", s.h(s.listBookings))
 			r.Get("/bookings/{id}", s.h(s.getBooking))
 			r.Post("/bookings/{id}/pay", s.h(s.payBooking))
+			r.Post("/bookings/{id}/cancel", s.h(s.cancelBooking))
+			r.Post("/bookings/{id}/review", s.h(s.submitReview))
 			r.Get("/bookings/{id}/voucher", s.h(s.voucher))
 			r.Put("/me/devices/push-token", s.h(s.registerPushToken("guest")))
 			r.Get("/me/profile", s.h(s.getProfile))

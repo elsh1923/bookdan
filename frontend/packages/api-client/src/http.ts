@@ -152,6 +152,8 @@ export function createHttpApi(options: HttpOptions): Api {
     registerPushToken: async (r) => {
       await request('PUT', '/me/devices/push-token', null, r);
     },
+    cancelBooking: (id) => request('POST', `/bookings/${encodeURIComponent(id)}/cancel`, BookingSchema),
+    submitReview: (id, review) => request('POST', `/bookings/${encodeURIComponent(id)}/review`, BookingSchema, review),
     getVoucher: (id) => request('GET', `/bookings/${encodeURIComponent(id)}/voucher`, VoucherSchema),
     // No demo controls: those exist only on the mock.
   };

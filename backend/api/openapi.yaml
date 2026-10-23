@@ -92,6 +92,18 @@ paths:
       summary: Start payment; returns a payment_url (mock gateway in the demo)
       parameters: [{ $ref: "#/components/parameters/Id" }]
       responses: { "200": { description: OK } }
+  /bookings/{id}/cancel:
+    post:
+      summary: Cancel a booking that is waiting for the hotel or confirmed
+      description: |
+        Refund rule: everything back while the hotel has not answered; after it confirmed, everything back until 48 hours before check-in (12:00 Addis time), nothing after. The booking response says in advance what applies: can_cancel, refund_if_cancelled_santim, full_refund_until. Errors: INVALID_STATE, CANCEL_TOO_LATE (the stay has started). Returns the booking with refund_santim.
+      responses: { "200": { description: Booking (cancelled) } }
+  /bookings/{id}/review:
+    post:
+      summary: Review a finished stay (once per booking)
+      description: |
+        Body: { rating 1-5, text up to 1000 characters }. Errors: REVIEW_NOT_READY (before check-out), ALREADY_REVIEWED. Returns the booking with review.
+      responses: { "200": { description: Booking (with the review) } }
   /bookings/{id}/voucher:
     get:
       summary: Signed voucher token and PIN (PIN shown once)

@@ -242,21 +242,36 @@ type bookingOut struct {
 	PayAtHotel    bool    `json:"pay_at_hotel"`
 	Payment       string  `json:"payment"` // none | pending | failed
 	HoldExpiresAt *string `json:"hold_expires_at"`
+	// Cancellation: whether it is possible now, what the guest would get back, and until when a confirmed booking is refunded in full.
+	CanCancel         bool    `json:"can_cancel"`
+	RefundIfCancelled int64   `json:"refund_if_cancelled_santim"`
+	FullRefundUntil   *string `json:"full_refund_until"`
+	RefundSantim      *int64  `json:"refund_santim"` // what a cancellation refunded (0 when too late for a refund)
+	// Review: whether the guest may write one now, and the one they wrote.
+	CanReview bool       `json:"can_review"`
+	Review    *reviewOut `json:"review"`
 }
 
 const bookingSelect = `
 	SELECT b.id, b.code, b.status, b.property_id, p.name, p.phone, p.address, rt.name, b.check_in, b.check_out, b.guests, b.rooms,
 	       b.guest_name, b.total_santim, b.currency, b.payment_method, p.pay_at_hotel, b.hold_expires_at,
 	       COALESCE((SELECT CASE pay.status WHEN 'pending' THEN 'pending' WHEN 'failed' THEN 'failed' ELSE 'none' END
-	                 FROM payments pay WHERE pay.booking_id = b.id ORDER BY pay.created_at DESC LIMIT 1), 'none')
-	FROM bookings b JOIN properties p ON p.id = b.property_id JOIN room_types rt ON rt.id = b.room_type_id`
+	                 FROM payments pay WHERE pay.booking_id = b.id ORDER BY pay.created_at DESC LIMIT 1), 'none'),
+	       COALESCE((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status = 'succeeded'), 0)::bigint,
+	       b.refund_santim, rv.rating, rv.text
+	FROM bookings b JOIN properties p ON p.id = b.property_id JOIN room_types rt ON rt.id = b.room_type_id
+	LEFT JOIN reviews rv ON rv.booking_id = b.id`
 
 func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	var b bookingOut
 	var in, out time.Time
 	var hold *time.Time
+	var paid int64
+	var reviewRating *int
+	var reviewText *string
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.PropertyID, &b.PropertyName, &b.PropertyPhone, &b.Address, &b.RoomName,
-		&in, &out, &b.Guests, &b.Rooms, &b.GuestName, &b.Total, &b.Currency, &b.PaymentMethod, &b.PayAtHotel, &hold, &b.Payment); err != nil {
+		&in, &out, &b.Guests, &b.Rooms, &b.GuestName, &b.Total, &b.Currency, &b.PaymentMethod, &b.PayAtHotel, &hold, &b.Payment,
+		&paid, &b.RefundSantim, &reviewRating, &reviewText); err != nil {
 		return b, err
 	}
 	b.CheckIn, b.CheckOut = pgDate(in), pgDate(out)
@@ -276,6 +291,27 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	}
 	if b.Status != "HELD" {
 		b.Payment = "none"
+	}
+	// What cancelling would do right now (the server decides; the app only shows it).
+	checkInAt, until := cancelWindow(in)
+	if open := s.now().Before(checkInAt); open && (b.Status == "PAID_AWAITING_HOTEL" || b.Status == "CONFIRMED") {
+		b.CanCancel = true
+		if b.Status == "PAID_AWAITING_HOTEL" || !s.now().After(until) {
+			b.RefundIfCancelled = paid
+		}
+		if b.Status == "CONFIRMED" && paid > 0 {
+			u := until.UTC().Format(time.RFC3339)
+			b.FullRefundUntil = &u
+		}
+	}
+	if reviewRating != nil {
+		text := ""
+		if reviewText != nil {
+			text = *reviewText
+		}
+		b.Review = &reviewOut{*reviewRating, text}
+	} else if (b.Status == "CONFIRMED" || b.Status == "CHECKED_IN" || b.Status == "COMPLETED") && b.CheckOut <= s.addisToday() {
+		b.CanReview = true
 	}
 	return b, nil
 }

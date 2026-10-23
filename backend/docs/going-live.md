@@ -49,7 +49,9 @@ The tests also run on a database with PostGIS: `TEST_DATABASE_URL=postgres://…
 
 ### Real sign-in codes by email
 
-Set these on the server (Render, Environment):
+**On Render's free plan use Brevo** (`EMAIL_PROVIDER=brevo`): Render blocks the mail ports (25, 465, 587) there, so Gmail by SMTP times out. Brevo is called over HTTPS, which is never blocked, and its free plan is 300 emails a day with no card. Setup: Brevo, Senders, add and verify the sender address; SMTP & API, API keys, create a **restricted** key that can send transactional email; set `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY` and `EMAIL_FROM` (a verified sender) on the server. Test from your computer: `$env:EMAIL_TEST_TO="you@gmail.com"; go test ./internal/api -run TestBrevoLive -v`.
+
+**Gmail by SMTP** (`EMAIL_PROVIDER=smtp`) works from your computer and on paid Render plans. Set these on the server:
 
 - `EMAIL_PROVIDER=smtp`
 - `SMTP_USER`: the sending address, for example a Gmail account made for BookDan

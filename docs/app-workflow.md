@@ -65,7 +65,7 @@ Home / Search ──> Hotel page ──> Checkout (3 steps) ──> Booking scre
 | **Map view** | Placeholder screen | Not built |
 | **Hotel page** | Details, rooms with live "rooms left", house rules, reviews list, call button | Done |
 | **Photos** | Uploaded in the admin page, resized, shown in search and on the hotel page; a hotel without photos still shows a coloured placeholder | **Done** |
-| **Write a review** | Reviews are read-only (the table and rating view exist) | Not built |
+| **Write a review** | Built: after check-out, 1 to 5 stars and an optional comment (up to 1000 characters), one per booking, shown with the guest's first name and counted in the hotel's rating | **Done** |
 | **My details and ID** | Name, ID type, ID number (encrypted in the database, only last four returned), nationality. Required before booking. Can be removed. | Done |
 | **Quote** | Prices every night, 1–9 rooms of one type, adds VAT. Valid 10 minutes. | Done (rates are placeholders, see §5) |
 | **Hold** | Takes every room on every night or none. 15 minutes. Safe to retry (idempotency key). Freezes a copy of the guest's profile for the hotel. | Done |
@@ -75,7 +75,7 @@ Home / Search ──> Hotel page ──> Checkout (3 steps) ──> Booking scre
 | **Hotel answer** | Accept → Confirmed. Decline or no answer in 15 min → guest refunded automatically. | Done (refund money movement is a stand-in) |
 | **Voucher** | Signed QR (Ed25519) + 4-digit PIN, saved on the phone for offline use, valid until the day after check-out | Done |
 | **Notification to the guest** when the hotel answers | Built: confirmed, declined, or no answer in 15 minutes. Needs Firebase and a new build to actually arrive (`docs/push-notifications-setup.md`) | **Built, needs Firebase** |
-| **Cancel a confirmed booking** (guest) and refund rules | Not built (refund policy is an open decision) |
+| **Cancel a booking** (guest) | Built. Before the hotel answers: full refund. After it confirmed: full refund until 48 hours before check-in (12:00 Addis time), none after; not possible once the stay has started. The app shows the exact outcome before confirming. The hotel gets an alert. A refund also reverses the hotel's share in the ledger. | **Done** |
 | **Receipt / confirmation email or SMS** | Not built |
 | Languages | English and Amharic (Amharic needs a native review). Oromo and Tigrinya not built. | Partial |
 
@@ -137,7 +137,7 @@ Sign in ──> Inbox ──────────────> Booking screen
 
 **C. Product features**
 10. Hotel offline tools: rooms chart, walk-ins, QR check-in, statements.
-11. Guest: cancel and rebook, write reviews, map view, wishlists on the server, more languages.
+11. Guest: map view, wishlists on the server, more languages. (A hotel replying to reviews, and removing abusive reviews from the admin page, are not built.)
 12. iPhone builds (Apple Developer account, TestFlight).
 
 **D. Before the public launch: iPhone**

@@ -146,7 +146,21 @@ export function createMockApi(opts: MockOptions = {}): Api {
     if (status === 'HELD' && now - r.created >= r.holdMs) status = 'EXPIRED';
     if (status === 'PAID_AWAITING_HOTEL' && r.paid_at && now - r.paid_at >= CONFIRM_AFTER_MS) status = 'CONFIRMED';
     r.b = { ...r.b, status };
-    return BookingSchema.parse({ ...r.b, server_time: new Date(now).toISOString() });
+    // The cancellation rules, as the server applies them: free until 48 hours before check-in (12:00 Addis time), nothing after.
+    const paid = r.b.payment_method && r.b.payment_method !== 'pay_at_hotel' && (status === 'PAID_AWAITING_HOTEL' || status === 'CONFIRMED') ? r.b.total_santim : 0;
+    const checkInAt = Date.parse(`${r.b.check_in}T12:00:00+03:00`);
+    const until = checkInAt - 48 * 3_600_000;
+    const cancellable = (status === 'PAID_AWAITING_HOTEL' || status === 'CONFIRMED') && now < checkInAt;
+    const refund = status === 'PAID_AWAITING_HOTEL' || now <= until ? paid : 0;
+    return BookingSchema.parse({
+      ...r.b,
+      can_cancel: cancellable,
+      refund_if_cancelled_santim: cancellable ? refund : 0,
+      full_refund_until: status === 'CONFIRMED' && paid > 0 ? new Date(until).toISOString() : null,
+      // Demo shortcut: a real review waits for check-out; in the demo a confirmed booking can be reviewed straight away.
+      can_review: (status === 'CONFIRMED' || status === 'CHECKED_IN' || status === 'COMPLETED') && !r.b.review,
+      server_time: new Date(now).toISOString(),
+    });
   }
 
   const settle = (r: Row, method: PaymentMethod) => {
@@ -225,6 +239,25 @@ export function createMockApi(opts: MockOptions = {}): Api {
       profiles.set(owner, row);
       await persist();
       return toProfile(row);
+    },
+
+    async cancelBooking(id) {
+      await gate();
+      const r = owned(id);
+      const v = view(r);
+      if (!v.can_cancel) throw new ApiError(v.status === 'CONFIRMED' || v.status === 'PAID_AWAITING_HOTEL' ? 'CANCEL_TOO_LATE' : 'INVALID_STATE', 'This booking cannot be cancelled');
+      r.b = { ...r.b, status: 'CANCELLED_REFUNDED', refund_santim: v.refund_if_cancelled_santim };
+      await persist();
+      return view(r);
+    },
+
+    async submitReview(id, review) {
+      await gate();
+      const r = owned(id);
+      if (!view(r).can_review) throw new ApiError(r.b.review ? 'ALREADY_REVIEWED' : 'REVIEW_NOT_READY', 'This stay cannot be reviewed now');
+      r.b = { ...r.b, review: { rating: review.rating, text: review.text } };
+      await persist();
+      return view(r);
     },
 
     async registerPushToken() {

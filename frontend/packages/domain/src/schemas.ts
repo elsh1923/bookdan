@@ -131,6 +131,15 @@ export const BookingSchema = z.object({
   pay_at_hotel: z.boolean(),
   payment: PaymentProgressSchema, // none, pending (waiting for the gateway), failed (try again while held)
   hold_expires_at: z.string().nullable(),
+  /** The server says whether the guest can cancel now, what they would get back, and until when a confirmed booking is refunded in full. */
+  can_cancel: z.boolean().default(false),
+  refund_if_cancelled_santim: z.number().int().default(0),
+  full_refund_until: z.string().nullable().default(null),
+  /** What a cancellation refunded (0 when it came too late for a refund); null if the booking was not cancelled. */
+  refund_santim: z.number().int().nullable().default(null),
+  /** Whether the guest may review this stay now (after check-out), and the review they wrote. */
+  can_review: z.boolean().default(false),
+  review: z.object({ rating: z.number().int(), text: z.string() }).nullable().default(null),
   server_time: z.string(),
 });
 

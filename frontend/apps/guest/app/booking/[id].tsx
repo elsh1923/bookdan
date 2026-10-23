@@ -9,7 +9,9 @@ import { formatCountdown, holdRemainingMs, shouldResumeOnLaunch, type Booking, t
 import { useTranslation } from '@bookdan/i18n';
 import { Badge, Button, EmptyState, Pop, Reveal, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
+import { CancelCard } from '../../src/CancelCard';
 import { NotifyMeCard } from '../../src/NotifyMeCard';
+import { ReviewCard } from '../../src/ReviewCard';
 import { callPhone } from '../../src/links';
 import { clearPendingPayment, openGateway, savePendingPayment } from '../../src/payment';
 import { price, shortDate } from '../../src/format';
@@ -86,6 +88,11 @@ export default function BookingScreen() {
     if (query.data && !shouldResumeOnLaunch(query.data)) clearPendingPayment().catch(() => undefined);
   }, [query.data]);
 
+  // After cancelling or reviewing: show the server's answer at once and refresh the list of bookings.
+  const onBookingChanged = (updated: Booking) => {
+    qc.setQueryData(['booking', id], updated);
+    qc.invalidateQueries({ queryKey: ['bookings'] });
+  };
   const goBookings = () => router.replace('/bookings');
   const header = (
     <View style={{ paddingHorizontal: spacing.lg }}>
@@ -145,7 +152,7 @@ export default function BookingScreen() {
       case 'COMPLETED': return { icon: 'checkmark-circle', color: colors.success, title: t('booking.confirmed_title'), body: t('booking.confirmed_body') };
       case 'EXPIRED': return { icon: 'time-outline', color: colors.muted, title: t('booking.expired_title'), body: t('booking.expired_body') };
       case 'DECLINED_REFUNDED': return { icon: 'arrow-undo-outline', color: colors.danger, title: t('booking.declined_title'), body: t('booking.declined_body') };
-      case 'CANCELLED_REFUNDED': return { icon: 'arrow-undo-outline', color: colors.muted, title: t('booking.cancelled_title'), body: '' };
+      case 'CANCELLED_REFUNDED': return { icon: 'arrow-undo-outline', color: colors.muted, title: t('booking.cancelled_title'), body: b.refund_santim ? t('booking.cancelled_refunded', { amount: price(b.refund_santim, b.currency) }) : b.payment_method === 'pay_at_hotel' ? t('booking.cancelled_nothing_paid') : t('booking.cancelled_no_refund') };
       default: return { icon: 'ellipse-outline', color: colors.muted, title: t(`status.${b.status}`), body: '' };
     }
   })();
@@ -227,6 +234,9 @@ export default function BookingScreen() {
           <View style={{ height: 1, backgroundColor: colors.line, marginVertical: spacing.sm }} />
           <Line label={t('booking.total')} value={total} />
         </Reveal>
+
+        {b.can_cancel ? <CancelCard booking={b} months={months} onChanged={onBookingChanged} /> : null}
+        <ReviewCard booking={b} onChanged={onBookingChanged} />
 
         {expired ? <Button title={t('booking.try_again')} onPress={() => router.replace('/')} style={{ marginTop: spacing.xl }} /> : null}
         {confirmed ? (

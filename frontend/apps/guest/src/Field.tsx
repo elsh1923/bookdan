@@ -5,6 +5,7 @@ export function Field({
   label,
   hint,
   error,
+  style,
   ...input
 }: TextInputProps & { label: string; hint?: string; error?: string | null }) {
   return (
@@ -14,7 +15,7 @@ export function Field({
         accessibilityLabel={label}
         placeholderTextColor={colors.muted}
         {...input}
-        style={{
+        style={[{
           minHeight: MIN_TOUCH,
           marginTop: spacing.xs,
           paddingHorizontal: spacing.lg,
@@ -25,7 +26,7 @@ export function Field({
           fontFamily: fonts.regular,
           fontSize: 16,
           color: colors.ink,
-        }}
+        }, style]}
       />
       {error ? <T variant="small" color={colors.danger} style={{ marginTop: spacing.xs }}>✕ {error}</T> : null}
       {!error && hint ? <T variant="small" color={colors.muted} style={{ marginTop: spacing.xs }}>{hint}</T> : null}

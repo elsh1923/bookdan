@@ -98,6 +98,14 @@ export interface Api extends AuthApi {
   deleteProfile(): Promise<void>;
   /** Registers this phone for booking updates (the hotel confirmed or declined). Re-sent whenever the token changes. */
   registerPushToken(registration: PushRegistration): Promise<void>;
+  /**
+   * Cancels a booking that is waiting for the hotel or confirmed. The server applies the refund rule: everything back while the hotel
+   * has not answered, and after it confirmed everything back until 48 hours before check-in, nothing after. Fails with CANCEL_TOO_LATE
+   * once the stay has started and INVALID_STATE for a booking that cannot be cancelled. Returns the updated booking.
+   */
+  cancelBooking(id: string): Promise<Booking>;
+  /** Reviews a finished stay (1 to 5 stars, optional text). Fails with REVIEW_NOT_READY before check-out and ALREADY_REVIEWED. */
+  submitReview(id: string, review: { rating: number; text: string }): Promise<Booking>;
   /** Signed voucher for a confirmed booking. Fails with VOUCHER_NOT_READY before confirmation. */
   getVoucher(bookingId: string): Promise<Voucher>;
 

@@ -308,8 +308,8 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		Text   string  `json:"text"`
 		Date   string  `json:"date"`
 	}
-	revRows, err := s.pool.Query(ctx, `SELECT r.id, coalesce(nullif(u.display_name, ''), 'Guest'), r.rating, r.text, r.created_at
-		FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.property_id = $1 ORDER BY r.created_at DESC LIMIT 20`, id)
+	revRows, err := s.pool.Query(ctx, `SELECT r.id, coalesce(nullif(split_part(gp.full_name, ' ', 1), ''), nullif(u.display_name, ''), 'Guest'), r.rating, r.text, r.created_at
+		FROM reviews r JOIN users u ON u.id = r.user_id LEFT JOIN guest_profiles gp ON gp.user_id = r.user_id WHERE r.property_id = $1 ORDER BY r.created_at DESC LIMIT 20`, id)
 	if err != nil {
 		return err
 	}

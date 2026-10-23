@@ -218,6 +218,11 @@ test('only a well-formed new-booking push is accepted', () => {
   }
 });
 
+test('a cancellation alert opens the booking like a new request does', () => {
+  assert.deepEqual(parseBookingAlert({ type: 'booking_cancelled', booking_id: 'b9' }), { type: 'booking_cancelled', booking_id: 'b9' });
+  assert.equal(parseBookingAlert({ type: 'booking_cancelled' }), null);
+});
+
 test('only a well-formed booking-update push is accepted', () => {
   assert.deepEqual(parseBookingUpdate({ type: 'booking_update', booking_id: 'b1', status: 'confirmed' }), { type: 'booking_update', booking_id: 'b1', status: 'confirmed' });
   for (const bad of [null, {}, { type: 'booking_update', booking_id: 'b1' }, { type: 'booking_update', booking_id: 'b1', status: 'paid' }, { type: 'new_booking', booking_id: 'b1', status: 'confirmed' }, { type: 'booking_update', booking_id: '', status: 'declined' }]) {
