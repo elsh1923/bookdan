@@ -7,13 +7,13 @@ import { api, isMockApi } from '../../src/api';
 import { AlertsChecklist } from '../../src/AlertsChecklist';
 import { useAuth } from '../../src/auth';
 import { useInbox } from '../../src/queries';
+import { endSession } from '../../src/session';
 import { usePrefs } from '../../src/store';
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const identity = useAuth((s) => s.identity);
-  const signOut = useAuth((s) => s.signOut);
   const setLanguage = usePrefs((s) => s.setLanguage);
   const inbox = useInbox();
 
@@ -38,7 +38,7 @@ export default function Settings() {
 
         <View style={{ marginTop: spacing.xl }}>
           {identity ? <T color={colors.inkSoft}>{t('partner.signed_in_as', { who: identity.value })}</T> : null}
-          <Button variant="secondary" icon="log-out-outline" title={t('partner.sign_out')} onPress={signOut} style={{ marginTop: spacing.sm }} />
+          <Button variant="secondary" icon="log-out-outline" title={t('partner.sign_out')} onPress={() => { endSession(); }} style={{ marginTop: spacing.sm }} />
         </View>
 
         {isMockApi && api.demo ? (

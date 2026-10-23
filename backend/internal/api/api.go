@@ -37,6 +37,7 @@ const (
 	codeInvalidEmail   = "INVALID_EMAIL"
 	codeInvalidOTP     = "INVALID_OTP"
 	codeTooMany        = "TOO_MANY_REQUESTS"
+	codeSendFailed     = "SEND_FAILED"
 	codeSoldOut        = "SOLD_OUT"
 	codeQuoteExpired   = "QUOTE_EXPIRED"
 	codeHoldExpired    = "HOLD_EXPIRED"
@@ -76,6 +77,8 @@ type Server struct {
 	// postgis decides how coordinates are read (PostGIS columns, or the plain-text columns of the test database).
 	postgis bool
 	now     func() time.Time
+	// adminLimit slows down guessing of the admin password.
+	adminLimit loginLimiter
 }
 
 // New builds the API. It checks once whether PostGIS is installed.
@@ -90,10 +93,12 @@ func New(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, keys *Keys,
 // Routes registers every /v1 endpoint that this package serves on r.
 func (s *Server) Routes(root chi.Router) {
 	root.Group(func(r chi.Router) {
+		s.adminRoutes(r)
 
 		r.Post("/auth/otp/request", s.h(s.requestOTP))
 		r.Post("/auth/otp/verify", s.h(s.verifyOTP))
 		r.Post("/auth/refresh", s.h(s.refresh))
+		r.Post("/auth/logout", s.h(s.logout))
 		r.Get("/keys/voucher", s.h(s.voucherKey))
 
 		r.Get("/search", s.h(s.search))

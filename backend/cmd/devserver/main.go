@@ -36,6 +36,10 @@ func main() {
 	}
 	cfg.DemoMode = true
 	cfg.PaymentProvider, cfg.OTPProvider, cfg.PushProvider = "dev", "log", "log"
+	// The admin page at /admin: a fixed password and admin email for local use only.
+	if cfg.AdminPassword == "" {
+		cfg.AdminPassword, cfg.AdminEmails, cfg.AdminOwners = "local-admin-password", []string{"admin@bookdan.test"}, true
+	}
 
 	home, _ := os.UserHomeDir()
 	slog.Info("starting a private PostgreSQL (the first run downloads it, about 60 MB)")
@@ -64,10 +68,10 @@ func main() {
 	}
 	go a.RunWorkers(ctx)
 
-	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: server.New(cfg, pool, func(r chi.Router) { a.Routes(r) }), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: server.New(cfg, pool, func(r chi.Router) { a.Routes(r) }, a.AdminPage), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		slog.Info("BookDan API is ready", "url", "http://localhost"+cfg.HTTPAddr+"/v1/healthz",
-			"guest_sign_in", "any email or +2519… number, code 123456", "hotel_sign_in", "owner@bookdan.test, code 123456")
+			"guest_sign_in", "any email or +2519… number, code 123456", "hotel_sign_in", "owner@bookdan.test, code 123456", "admin_page", "http://localhost"+cfg.HTTPAddr+"/admin (admin@bookdan.test / local-admin-password)")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server", "err", err)
 			cancel()

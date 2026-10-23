@@ -47,6 +47,40 @@ go run ./cmd/api
 The tests also run on a database with PostGIS: `TEST_DATABASE_URL=postgres://… go test ./...`. The PostGIS code path
 (`ST_DWithin`, `ST_X/ST_Y`) has **not** been exercised yet because this computer has no PostGIS: run the tests that way once.
 
+### Real sign-in codes by email
+
+Set these on the server (Render, Environment):
+
+- `EMAIL_PROVIDER=smtp`
+- `SMTP_USER`: the sending address, for example a Gmail account made for BookDan
+- `SMTP_PASSWORD`: for Gmail an **app password** (turn on 2-step verification, then Google Account, Security, App passwords). Never the normal password.
+- `EMAIL_FROM`: for example `BookDan <yourbookdan@gmail.com>` (Gmail only sends as the signed-in address)
+- `SMTP_HOST` (default `smtp.gmail.com`) and `SMTP_PORT` (default `587`; `465` works too). Brevo, Mailgun and Amazon SES work with their own SMTP details.
+
+Test the settings from your computer before deploying: `$env:EMAIL_TEST_TO="you@gmail.com"; go test ./internal/api -run TestSMTPLive -v` (reads `backend/.env`).
+
+While `DEMO_MODE=true`, real addresses get a real random code by email, and addresses on `DEMO_ACCOUNT_DOMAINS` (default `bookdan.test`, `example.com`, `example.org`) keep the fixed code `123456` with nothing sent, so the demo hotel owner still works. Phone numbers keep the demo code until an SMS provider exists. If the mail server fails, the app is told (`SEND_FAILED`). Gmail allows roughly 500 messages a day.
+
+### The admin page (hotels, rooms, prices, photos, staff)
+
+Open `/admin` on the server (for example `https://bookdan.onrender.com/admin`). Set two variables on the server to turn it on:
+
+- `ADMIN_EMAILS`: the platform admins, comma separated.
+- `ADMIN_PASSWORD`: at least 16 random characters. Platform admins sign in with their email and this password (8 tries per 10 minutes).
+
+Platform admins manage every hotel: details, rooms and prices, photos and staff. Hotel owners can manage only their own hotels (details, rooms, prices, photos) if you set `ADMIN_OWNERS=true`, but **only turn that on when sign-in codes are real**, because with the fixed demo code anyone could sign in as an owner. Receptionists cannot use the page. A hotel starts as a draft and can be published once it has a room with a price. Photos are resized on upload (1600 px and a 640 px thumbnail) and stored in the database. `PUBLIC_URL` must be the real https address so photo links work in the apps. Every change is written to the audit log.
+
+### Reset the demo data (before an investor demo)
+
+The database refuses to delete money and booking history one row at a time, so test bookings cannot be removed individually. To start clean:
+
+```bash
+go run ./cmd/migrate reset          # shows what would be lost, changes nothing
+go run ./cmd/migrate reset --yes    # rebuilds the tables and reloads the 8 demo hotels and owner@bookdan.test
+```
+
+It refuses to run when `APP_ENV=production` or when any payment came from a real gateway. Phones are signed out afterwards.
+
 ## 3. What is real
 
 Sign-in (SMS/email code, rotating refresh tokens that revoke a stolen session), search and hotel details with live availability,
@@ -59,7 +93,7 @@ Every rule is covered by tests that run on a real PostgreSQL (`go test ./...`).
 
 | # | Item | What to do |
 |---|------|------------|
-| 1 | **Sign-in codes** | Write an `OTPSender` in `internal/api/providers.go` for an SMS provider that reaches Ethiopian numbers and an email provider. Set `OTP_PROVIDER`. Until then production refuses to start. |
+| 1 | **Sign-in codes** | **Email: built** (`EMAIL_PROVIDER=smtp`, see below). **SMS: still to build:** write an `OTPSender` in `internal/api/providers.go` for an SMS provider that reaches Ethiopian numbers and set `OTP_PROVIDER`. Until then phone numbers use the fixed demo code and production refuses to start. |
 | 2 | **Payments** | Open merchant accounts (Telebirr, Chapa). Write a `Gateway` (create the payment page, refund). Point each gateway's callback at `POST /v1/webhooks/payments/{provider}` and sign it as described in `api/openapi.yaml` (or adapt the check to the gateway's own signature). Set `PAYMENT_PROVIDER` and `PAYMENT_WEBHOOK_SECRET`. |
 | 3 | **Push messages** | Built (hotel alerts and guest updates). You need a Firebase project, the key as `FCM_SERVICE_ACCOUNT_B64` with `PUSH_PROVIDER=fcm` on the server, `google-services.json` for both apps, and a new build of each: see `docs/push-notifications-setup.md`. |
 | 4 | **Hosting** | Build the image (`docker build -t bookdan-api backend`) and run it on any host that gives you https (Render, Fly.io, Railway, a VPS). Set `APP_ENV=production`, `PUBLIC_URL=https://…`, `DATABASE_URL`, and the secrets (generate with `openssl rand -base64 32`). Run `/migrate up` before each release. |

@@ -18,7 +18,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: migrate up | down | status | seed")
+		fmt.Fprintln(os.Stderr, "usage: migrate up | down | status | seed | reset [--yes]")
 		os.Exit(2)
 	}
 	cfg := config.Load()
@@ -62,10 +62,62 @@ func main() {
 		if err == nil {
 			log.Println("demo data loaded (safe to run again)")
 		}
+	case "reset":
+		err = reset(ctx, conn, cfg, len(os.Args) > 2 && os.Args[2] == "--yes")
 	default:
 		log.Fatalf("unknown command %q", cmd)
 	}
 	if err != nil {
 		log.Fatalf("migrate %s: %v", os.Args[1], err)
 	}
+}
+
+// reset puts a DEMO database back to a clean start: every table is rebuilt and the demo hotels and demo owner are loaded again.
+// The database refuses to delete money and booking history one row at a time (that is the point of it), so wiping test
+// bookings means rebuilding. Without --yes it only shows what would be lost.
+func reset(ctx context.Context, conn *sql.DB, cfg config.Config, confirmed bool) error {
+	if cfg.IsProduction() {
+		return fmt.Errorf("refusing to reset when APP_ENV=production")
+	}
+	counts := []struct{ label, query string }{
+		{"users", "SELECT count(*) FROM app.users"},
+		{"saved guest profiles (with encrypted IDs)", "SELECT count(*) FROM app.guest_profiles"},
+		{"bookings", "SELECT count(*) FROM app.bookings"},
+		{"payments", "SELECT count(*) FROM app.payments"},
+		{"ledger transactions", "SELECT count(*) FROM app.ledger_transactions"},
+		{"phones registered for alerts", "SELECT count(*) FROM app.devices"},
+		{"audit log entries", "SELECT count(*) FROM app.audit_log"},
+	}
+	fmt.Println("This will DELETE everything in the database and reload the demo hotels:")
+	for _, c := range counts {
+		var n int
+		if err := conn.QueryRowContext(ctx, c.query).Scan(&n); err != nil {
+			return fmt.Errorf("count %s: %w", c.label, err)
+		}
+		fmt.Printf("  %-44s %d\n", c.label, n)
+	}
+	// Money that really moved must never be wiped by a convenience command.
+	var real int
+	if err := conn.QueryRowContext(ctx, "SELECT count(*) FROM app.payments WHERE provider <> 'mock'").Scan(&real); err != nil {
+		return err
+	}
+	if real > 0 {
+		return fmt.Errorf("refusing to reset: %d payment(s) came from a real gateway", real)
+	}
+	if !confirmed {
+		fmt.Println("\nNothing was changed. To do it, run: go run ./cmd/migrate reset --yes")
+		return nil
+	}
+	if _, err := conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS app CASCADE; DROP TABLE IF EXISTS public.goose_db_version"); err != nil {
+		return fmt.Errorf("drop: %w", err)
+	}
+	if err := goose.UpContext(ctx, conn, "migrations"); err != nil {
+		return fmt.Errorf("rebuild: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, db.DevSeed); err != nil {
+		return fmt.Errorf("demo data: %w", err)
+	}
+	fmt.Println("\nDone: a clean database with the 8 demo hotels and the demo owner (owner@bookdan.test).")
+	fmt.Println("Phones will need to sign in again. If the live server acts oddly afterwards, restart it on Render.")
+	return nil
 }

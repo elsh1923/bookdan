@@ -36,6 +36,9 @@ export function createMockAuth(opts: { accessTtlMs?: number; gate: () => Promise
       // A phone and an email can never collide, so each identity owns its own data in the mock.
       return { ...issue(identity.value), identity };
     },
+    async logout() {
+      // nothing to end on the mock server
+    },
     async refresh(refreshToken) {
       await opts.gate();
       const m = refreshToken.match(/^ref_(\d+)_(.+)$/);

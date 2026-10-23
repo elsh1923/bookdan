@@ -8,6 +8,7 @@ func safeProduction() Config {
 		Env: "production", DatabaseURL: "postgres://x", PublicURL: "https://api.example.com",
 		JWTSecret: "0123456789abcdef0123456789abcdef", IDKey: "k", VoucherSeedB64: "s", PaymentWebhookSecret: "w",
 		OTPProvider: "sms", PaymentProvider: "telebirr", PushProvider: "fcm", FCMServiceAccountB64: "key",
+		EmailProvider: "smtp", SMTPUser: "u@x.com", SMTPPassword: "p", EmailFrom: "BookDan <u@x.com>",
 	}
 }
 
@@ -30,6 +31,10 @@ func TestValidate(t *testing.T) {
 	noKey.IDKey = ""
 	noFCMKey := safeProduction()
 	noFCMKey.FCMServiceAccountB64 = ""
+	logEmail := safeProduction()
+	logEmail.EmailProvider = "log"
+	noSMTPPass := safeProduction()
+	noSMTPPass.SMTPPassword = ""
 
 	cases := []struct {
 		name    string
@@ -48,6 +53,8 @@ func TestValidate(t *testing.T) {
 		{"production that only logs push alerts is refused", logPush, true},
 		{"production without the ID encryption key is refused", noKey, true},
 		{"production with fcm but no Firebase key is refused", noFCMKey, true},
+		{"production that only logs emailed codes is refused", logEmail, true},
+		{"production with smtp but no password is refused", noSMTPPass, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

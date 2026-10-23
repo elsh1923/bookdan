@@ -1,0 +1,53 @@
+:root{--blue:#2563eb;--blue-ink:#1d4ed8;--blue-soft:#eaf1ff;--ink:#0f1b33;--soft:#4b5b76;--muted:#7b8aa3;--line:#e2e8f3;--fill:#f3f6fb;--ok:#1e7f4f;--ok-soft:#e1f4ea;--warn:#b26a00;--warn-soft:#fff1d6;--bad:#c0392b;--bad-soft:#fbe9e7;--radius:12px}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--fill)}
+h1,h2,h3{margin:0;line-height:1.25}
+h1{font-size:26px;font-family:Georgia,"Times New Roman",serif}
+h2{font-size:19px}h3{font-size:16px}
+.muted{color:var(--muted)}.soft{color:var(--soft)}.center{text-align:center}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 24px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header.top .brand{font:700 20px Georgia,serif;color:var(--blue-ink)}
+header.top .who{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--soft)}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 64px}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-top:16px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.row.between{justify-content:space-between}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+label{display:block;font-size:13px;font-weight:600;color:var(--soft);margin-bottom:4px}
+input,select,textarea{width:100%;font:inherit;color:var(--ink);padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:0;border-color:transparent}
+textarea{min-height:90px;resize:vertical}
+.field{margin-top:12px}
+.field .hint{font-size:12px;color:var(--muted);margin-top:4px}
+button,.btn{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 16px;cursor:pointer;background:var(--blue);color:#fff}
+button:hover{background:var(--blue-ink)}
+button.secondary{background:#fff;color:var(--blue-ink);border:1.5px solid var(--blue)}
+button.secondary:hover{background:var(--blue-soft)}
+button.danger{background:#fff;color:var(--bad);border:1.5px solid var(--bad)}
+button.danger:hover{background:var(--bad-soft)}
+button.ghost{background:transparent;color:var(--blue-ink);padding:6px 10px}
+button.ghost:hover{background:var(--blue-soft)}
+button:disabled{opacity:.5;cursor:default}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-top:16px;overflow-x:auto}
+.tabs button{background:transparent;color:var(--soft);border-radius:10px 10px 0 0;padding:10px 16px;border-bottom:3px solid transparent}
+.tabs button.on{color:var(--blue-ink);border-bottom-color:var(--blue)}
+.chip{display:inline-block;font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;background:var(--fill);color:var(--soft)}
+.chip.active{background:var(--ok-soft);color:var(--ok)}.chip.draft{background:var(--warn-soft);color:var(--warn)}.chip.hidden{background:var(--line);color:var(--soft)}
+.msg{margin-top:12px;padding:10px 14px;border-radius:10px;font-size:14px}
+.msg.ok{background:var(--ok-soft);color:var(--ok)}.msg.err{background:var(--bad-soft);color:var(--bad)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 8px}
+td{padding:8px;border-top:1px solid var(--line);vertical-align:middle}
+td input{padding:8px 10px}
+.hotel{cursor:pointer;transition:box-shadow .15s}
+.hotel:hover{box-shadow:0 6px 20px rgba(15,27,51,.1)}
+.photos{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-top:12px}
+.photo{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.photo img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--fill)}
+.photo .bar{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;gap:4px}
+.photo .cover{font-size:12px;font-weight:700;color:var(--ok)}
+.check{display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink);margin:0}
+.check input{width:auto}
+.login{max-width:420px;margin:12vh auto 0}
+.checks{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px}
+@media (max-width:640px){header.top{padding:12px 16px}main{padding:16px 12px 48px}.card{padding:14px}}

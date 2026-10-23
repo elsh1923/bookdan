@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"regexp"
@@ -74,8 +75,11 @@ func (s *Server) requestOTP(w http.ResponseWriter, r *http.Request) error {
 		return fail(http.StatusTooManyRequests, codeTooMany, "Too many codes requested. Try again in a few minutes.")
 	}
 
+	// In demo mode, an address or number that cannot receive a real message keeps the fixed demo code. Everything else gets a
+	// random one that is really sent.
+	fixed := s.fixedCode(id, channel)
 	code := demoOTP
-	if !s.cfg.DemoMode {
+	if !fixed {
 		n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
 		if err != nil {
 			return err
@@ -87,11 +91,34 @@ func (s *Server) requestOTP(w http.ResponseWriter, r *http.Request) error {
 		channel, id.Value, s.keys.HashSecret("otp:"+id.Value, code), fmt.Sprintf("%d seconds", int(otpTTL.Seconds())), clientIP(r)); err != nil {
 		return err
 	}
-	if err := s.p.OTP.Send(ctx, channel, id.Value, code); err != nil {
-		return fmt.Errorf("send otp: %w", err)
+	if fixed {
+		slog.Info("demo sign-in code (nothing was sent)", "channel", channel, "to", id.Value, "code", code)
+	} else if err := s.p.OTP.Send(ctx, channel, id.Value, code); err != nil {
+		// The code exists but cannot reach the person: tell the app so it can say so, and log why.
+		slog.Error("sending the sign-in code failed", "channel", channel, "err", err)
+		return fail(http.StatusBadGateway, codeSendFailed, "We could not send the code. Try again in a minute.")
 	}
 	respond(w, http.StatusOK, httpx.NowMeta())
 	return nil
+}
+
+// fixedCode reports whether this sign-in uses the public demo code 123456 instead of a real one: only in demo mode, and only for
+// phone numbers (no SMS provider yet), when email is not really sent, or for demo-domain addresses with no inbox.
+func (s *Server) fixedCode(id identity, channel string) bool {
+	if !s.cfg.DemoMode {
+		return false
+	}
+	if channel != "email" || !s.p.EmailReal {
+		return true
+	}
+	at := strings.LastIndex(id.Value, "@")
+	domain := id.Value[at+1:]
+	for _, d := range s.cfg.DemoAccountDomains {
+		if domain == d {
+			return true
+		}
+	}
+	return false
 }
 
 func clientIP(r *http.Request) string {
@@ -141,24 +168,7 @@ func (s *Server) verifyOTP(w http.ResponseWriter, r *http.Request) error {
 
 	var out tokensOut
 	err = s.tx(ctx, func(tx pgx.Tx) error {
-		// The newest live challenge for this identity. Every attempt counts, so a code cannot be guessed.
-		var cid string
-		var hash []byte
-		var attempts, maxAttempts int
-		err := tx.QueryRow(ctx, `SELECT id, code_hash, attempts, max_attempts FROM otp_challenges
-			WHERE identifier = $1 AND consumed_at IS NULL AND expires_at > now()
-			ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, id.Value).Scan(&cid, &hash, &attempts, &maxAttempts)
-		if err == pgx.ErrNoRows || (err == nil && attempts >= maxAttempts) {
-			return fail(http.StatusUnauthorized, codeInvalidOTP, "That code is wrong or has expired")
-		}
-		if err != nil {
-			return err
-		}
-		if !hmac.Equal(hash, s.keys.HashSecret("otp:"+id.Value, strings.TrimSpace(in.Code))) {
-			// Count the failed attempt even though this request fails: it is saved by a separate statement below.
-			return &wrongCode{cid}
-		}
-		if _, err := tx.Exec(ctx, `UPDATE otp_challenges SET consumed_at = now() WHERE id = $1`, cid); err != nil {
+		if err := s.checkOTP(ctx, tx, id, in.Code); err != nil {
 			return err
 		}
 
@@ -191,6 +201,28 @@ func (s *Server) verifyOTP(w http.ResponseWriter, r *http.Request) error {
 	}
 	respond(w, http.StatusOK, out)
 	return nil
+}
+
+// checkOTP verifies a sign-in code against the newest live challenge for the identity and spends it. Every attempt counts, so a
+// code cannot be guessed. A wrong code returns *wrongCode: the caller records the failed attempt outside its transaction.
+func (s *Server) checkOTP(ctx context.Context, tx pgx.Tx, id identity, code string) error {
+	var cid string
+	var hash []byte
+	var attempts, maxAttempts int
+	err := tx.QueryRow(ctx, `SELECT id, code_hash, attempts, max_attempts FROM otp_challenges
+		WHERE identifier = $1 AND consumed_at IS NULL AND expires_at > now()
+		ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, id.Value).Scan(&cid, &hash, &attempts, &maxAttempts)
+	if err == pgx.ErrNoRows || (err == nil && attempts >= maxAttempts) {
+		return fail(http.StatusUnauthorized, codeInvalidOTP, "That code is wrong or has expired")
+	}
+	if err != nil {
+		return err
+	}
+	if !hmac.Equal(hash, s.keys.HashSecret("otp:"+id.Value, strings.TrimSpace(code))) {
+		return &wrongCode{cid}
+	}
+	_, err = tx.Exec(ctx, `UPDATE otp_challenges SET consumed_at = now() WHERE id = $1`, cid)
+	return err
 }
 
 type wrongCode struct{ id string }
@@ -301,6 +333,42 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	respond(w, http.StatusOK, out)
+	return nil
+}
+
+// logout ends a session on the server: every refresh token of that sign-in is revoked, and the phone stops receiving alerts.
+// It answers the same whatever the token (a stale or unknown one included), so it cannot be used to probe for valid tokens.
+// An access token already issued works until it expires (at most 15 minutes).
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
+	var in struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := decode(r, &in); err != nil {
+		return err
+	}
+	if in.RefreshToken != "" {
+		hash := s.keys.HashSecret("refresh", in.RefreshToken)
+		err := s.tx(r.Context(), func(tx pgx.Tx) error {
+			var family, device string
+			err := tx.QueryRow(r.Context(), `SELECT family_id, device_pk FROM refresh_tokens WHERE token_hash = $1`, hash).Scan(&family, &device)
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(r.Context(), `UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL`, family); err != nil {
+				return err
+			}
+			// The phone must not keep ringing for an account that signed out of it.
+			_, err = tx.Exec(r.Context(), `UPDATE devices SET push_token = NULL WHERE id = $1`, device)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+	}
+	respond(w, http.StatusOK, httpx.NowMeta())
 	return nil
 }
 

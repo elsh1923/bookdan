@@ -41,8 +41,9 @@ App                         API                                   Database
 | Code request/verify, limits, hashing, device registration | Done |
 | Rotating refresh tokens with theft detection, silent refresh | Done |
 | Guest vs hotel-staff separation | Done |
-| **Sending the code by SMS / email** | **Stand-in** (fixed code `123456` in demo mode) |
-| Sign out revokes the session **on the server** | **Not built** (sign-out is on the phone only; the refresh token stays valid until it expires) |
+| **Sending the code by email** | **Built** (SMTP: Gmail app password, Brevo, Mailgun, SES). Real addresses get a real random code; demo addresses keep `123456`. | **Done** |
+| **Sending the code by SMS** | **Stand-in** (fixed code `123456` while no SMS provider is connected) |
+| Sign out revokes the session **on the server** (refresh tokens ended, the phone stops getting alerts; an access token already issued lasts up to 15 minutes) | Done |
 | Per-IP rate limits on code requests | Not built (limits are per identifier) |
 | Linking one person's phone and email accounts | Not built |
 | Suspend a user / revoke a device from an admin screen | Not built (the database supports it) |
@@ -63,7 +64,7 @@ Home / Search ──> Hotel page ──> Checkout (3 steps) ──> Booking scre
 | **Search** | By name, area, city, or *near a landmark* (PostGIS, 3 km); filters by type and amenities; party size and number of rooms; shows price and "available". 12 per page. | Done |
 | **Map view** | Placeholder screen | Not built |
 | **Hotel page** | Details, rooms with live "rooms left", house rules, reviews list, call button | Done |
-| **Photos** | Hotels show a coloured placeholder. There is no photo upload or storage. | **Not built** |
+| **Photos** | Uploaded in the admin page, resized, shown in search and on the hotel page; a hotel without photos still shows a coloured placeholder | **Done** |
 | **Write a review** | Reviews are read-only (the table and rating view exist) | Not built |
 | **My details and ID** | Name, ID type, ID number (encrypted in the database, only last four returned), nationality. Required before booking. Can be removed. | Done |
 | **Quote** | Prices every night, 1–9 rooms of one type, adds VAT. Valid 10 minutes. | Done (rates are placeholders, see §5) |
@@ -102,7 +103,7 @@ Sign in ──> Inbox ──────────────> Booking screen
 | **Ringing alert for a new request** | App and server both built (FCM sender tested against a fake Firebase). Needs your Firebase key and a new build. | **Built, needs Firebase** |
 | **Rooms chart, walk-ins, check-in by scanning the guest's QR, offline sync** | Routes exist and return "not built" | **Not built** |
 | **Earnings / statements / payouts** | The ledger records everything; no screen or payout process | Not built |
-| **Hotel onboarding** (add hotel, rooms, rates, staff, photos) | No admin portal. Done by SQL today. | **Not built** |
+| **Hotel onboarding** (add hotel, rooms, rates, staff, photos) | Built: the admin page at `/admin` (platform admin by password; hotel owners for their own hotel once sign-in codes are real) | **Done** |
 | Multiple hotels per account, roles (owner vs reception) | One hotel per account; roles stored, not used yet | Partial |
 
 ---
@@ -122,7 +123,7 @@ Sign in ──> Inbox ──────────────> Booking screen
 ## 5. What is left, in the order I would do it
 
 **A. To take real money and real users (needs outside accounts)**
-1. SMS provider for Ethiopian numbers + email provider → real sign-in codes.
+1. SMS provider for Ethiopian numbers → real sign-in codes by phone (email codes are built, they only need your sending account).
 2. Telebirr and Chapa merchant accounts → real payments and real refunds.
 3. Firebase project, keys and new builds → ringing alerts for hotels and updates for guests (code is done).
 4. Switch the server from `APP_ENV=staging` to `production` (it refuses until 1–3 are real).
@@ -131,10 +132,16 @@ Sign in ──> Inbox ──────────────> Booking screen
 
 **B. To run a business**
 7. Admin/onboarding tool for hotels, rooms, rates, staff and photos (photo storage too).
-8. Server-side sign-out, per-IP limits, account deletion, push to guests, receipts.
+8. Per-IP limits, account deletion, receipts.
 9. Monitoring and alerts (Sentry), database backups, a staging copy of the server.
 
 **C. Product features**
 10. Hotel offline tools: rooms chart, walk-ins, QR check-in, statements.
 11. Guest: cancel and rebook, write reviews, map view, wishlists on the server, more languages.
 12. iPhone builds (Apple Developer account, TestFlight).
+
+**D. Before the public launch: iPhone**
+13. Apple Developer account (about $99 a year), iPhone builds and TestFlight for testers.
+14. Push on iPhone: an Apple push key in Firebase, and the app changes for iOS tokens (today push is Android only).
+15. Hotel alerts on iPhone cannot override silent mode or Do Not Disturb without Apple's critical-alerts permission, so hotels should use Android phones or get a backup alert (SMS or phone call).
+16. One test round on a real iPhone for layout issues (keyboard, notch, bottom bar, back gesture).

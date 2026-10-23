@@ -31,11 +31,12 @@ import (
 )
 
 var (
-	pool *pgxpool.Pool
-	srv  *httptest.Server
-	app  *api.Server
-	keys *api.Keys
-	push = &recorder{}
+	pool   *pgxpool.Pool
+	srv    *httptest.Server
+	app    *api.Server
+	keys   *api.Keys
+	push   = &recorder{}
+	mailer = &otpRecorder{}
 )
 
 const (
@@ -63,17 +64,20 @@ func TestMain(m *testing.M) {
 		stop()
 		os.Exit(1)
 	}
-	cfg := config.Config{Env: "test", DemoMode: true, PublicURL: "http://example.test", PaymentProvider: "dev", PaymentWebhookSecret: "whsec"}
+	cfg := config.Config{Env: "test", DemoMode: true, PublicURL: "http://example.test", PaymentProvider: "dev", PaymentWebhookSecret: "whsec",
+		AdminPassword: "correct-horse-battery-staple", AdminEmails: []string{"admin@bookdan.test"}, AdminOwners: true,
+		DemoAccountDomains: []string{"bookdan.test", "example.com", "example.org"}}
 	keys, _ = api.NewKeys(cfg)
 	providers := api.DevProviders(cfg)
-	providers.Push = push // records every alert so tests can read them
+	providers.Push = push                                                       // records every alert so tests can read them
+	providers.OTP, providers.EmailReal = api.RoutedSender(mailer, mailer), true // sign-in codes go to a recorder, as with real email
 	app, err = api.New(ctx, cfg, pool, keys, providers)
 	if err != nil {
 		fmt.Println("api:", err)
 		stop()
 		os.Exit(1)
 	}
-	srv = httptest.NewServer(server.New(cfg, pool, func(r chi.Router) { app.Routes(r) }))
+	srv = httptest.NewServer(server.New(cfg, pool, func(r chi.Router) { app.Routes(r) }, app.AdminPage))
 	code := m.Run()
 	srv.Close()
 	pool.Close()

@@ -60,6 +60,8 @@ export interface AuthApi {
   verifyOtp(identity: Identity, code: string): Promise<Tokens & { identity: Identity }>;
   /** Trades a refresh token for a new access token. Fails with UNAUTHENTICATED when it is no longer valid. */
   refresh(refreshToken: string): Promise<Tokens>;
+  /** Ends the session on the server (all its refresh tokens, and alerts to this phone). Best effort: the app signs out locally anyway. */
+  logout(refreshToken: string): Promise<void>;
 }
 
 /**

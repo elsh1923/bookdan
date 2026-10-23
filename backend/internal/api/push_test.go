@@ -136,3 +136,29 @@ func TestPhonesThatFirebaseForgetsAreRemoved(t *testing.T) {
 		t.Fatalf("an unregistered token should be forgotten, %d remain", n)
 	}
 }
+
+func TestSigningOutEndsTheSessionAndSilencesThePhone(t *testing.T) {
+	hotel := hotelFor(t)
+	token := fmt.Sprintf("signout-phone-%d", time.Now().UnixNano())
+	registerToken(hotel, "/partner/devices/push-token", token)
+
+	// Signing out revokes the refresh token: it can no longer be exchanged for a new session.
+	if r := hotel.do("POST", "/auth/logout", map[string]string{"refresh_token": hotel.refresh}); r.status != 200 {
+		t.Fatalf("logout: %d %s", r.status, r.raw)
+	}
+	if r := hotel.do("POST", "/auth/refresh", map[string]string{"refresh_token": hotel.refresh}); r.status != 401 {
+		t.Fatalf("a refresh token must not work after sign-out: %d", r.status)
+	}
+	// The phone is forgotten: it no longer rings for this account.
+	var n int
+	pool.QueryRow(context.Background(), `SELECT count(*) FROM devices WHERE push_token = $1`, token).Scan(&n)
+	if n != 0 {
+		t.Fatalf("the signed-out phone must lose its alert registration")
+	}
+	// It answers the same for a repeat, an unknown token and an empty one, so it cannot be used to probe for valid tokens.
+	for _, body := range []map[string]string{{"refresh_token": hotel.refresh}, {"refresh_token": "never-issued"}, {"refresh_token": ""}} {
+		if r := hotel.do("POST", "/auth/logout", body); r.status != 200 {
+			t.Fatalf("logout with %q: %d", body["refresh_token"], r.status)
+		}
+	}
+}

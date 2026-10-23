@@ -154,7 +154,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 	lat, lng := s.latLng("p.location")
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating, coalesce(pr.review_count, 0),
-		       `+lat+`, `+lng+`
+		       `+lat+`, `+lng+`, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id ORDER BY pp.position, pp.created_at LIMIT 1)
 		FROM properties p LEFT JOIN property_ratings pr ON pr.property_id = p.id
 		WHERE p.status = 'active'
 		  AND ($1 = '' OR lower(p.name) LIKE '%' || $1 || '%' OR lower(p.area) LIKE '%' || $1 || '%' OR lower(p.city) LIKE '%' || $1 || '%'`+near+`)
@@ -171,8 +171,13 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 		var it searchItem
 		var verified bool
 		var rating *float64
-		if err := rows.Scan(&it.ID, &it.Name, &it.Area, &it.City, &it.Type, &verified, &it.Amenities, &rating, &it.ReviewCnt, &it.Lat, &it.Lng); err != nil {
+		var coverID *string
+		if err := rows.Scan(&it.ID, &it.Name, &it.Area, &it.City, &it.Type, &verified, &it.Amenities, &rating, &it.ReviewCnt, &it.Lat, &it.Lng, &coverID); err != nil {
 			return err
+		}
+		if coverID != nil {
+			u := s.photoURL(*coverID, "thumb") // the small copy: lists load fast on mobile data
+			it.PhotoURL = &u
 		}
 		it.Badge = "none"
 		if verified {
@@ -244,13 +249,14 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 	var verified bool
 	var rating *float64
 	var rules []byte
+	var coverID *string
 	err = s.pool.QueryRow(ctx, `
 		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating, coalesce(pr.review_count, 0),
-		       `+lat+`, `+lng+`, p.description, p.phone, p.address, p.house_rules
+		       `+lat+`, `+lng+`, p.description, p.phone, p.address, p.house_rules, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id ORDER BY pp.position, pp.created_at LIMIT 1)
 		FROM properties p LEFT JOIN property_ratings pr ON pr.property_id = p.id
 		WHERE p.id = $1 AND p.status = 'active'`, id).
 		Scan(&it.ID, &it.Name, &it.Area, &it.City, &it.Type, &verified, &it.Amenities, &rating, &it.ReviewCnt, &it.Lat, &it.Lng,
-			&it.description, &it.phone, &it.address, &rules)
+			&it.description, &it.phone, &it.address, &rules, &coverID)
 	if err == pgx.ErrNoRows || (err != nil && strings.Contains(err.Error(), "invalid input syntax for type uuid")) {
 		return errNotFound
 	}
@@ -262,6 +268,24 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		it.Badge = "verified"
 	}
 	it.Rating, it.Accent = rating, accentFor(it.ID)
+	if coverID != nil {
+		u := s.photoURL(*coverID, "thumb")
+		it.PhotoURL = &u
+	}
+	photos := []string{}
+	pr, err := s.pool.Query(ctx, `SELECT id FROM property_photos WHERE property_id = $1 ORDER BY position, created_at`, it.ID)
+	if err != nil {
+		return err
+	}
+	defer pr.Close()
+	for pr.Next() {
+		var pid string
+		if err := pr.Scan(&pid); err != nil {
+			return err
+		}
+		photos = append(photos, s.photoURL(pid, "main"))
+	}
+	pr.Close()
 	rts, err := s.roomsFor(ctx, s.pool, []string{it.ID}, checkIn, checkOut)
 	if err != nil {
 		return err
@@ -318,6 +342,6 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		Property  propertyOut `json:"property"`
 		RoomTypes []roomType  `json:"room_types"`
 		Reviews   []review    `json:"reviews"`
-	}{httpx.NowMeta(), propertyOut{it, it.description, it.phone, it.address, houseRules, []string{}}, rooms, reviews})
+	}{httpx.NowMeta(), propertyOut{it, it.description, it.phone, it.address, houseRules, photos}, rooms, reviews})
 	return nil
 }

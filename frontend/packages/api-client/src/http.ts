@@ -104,6 +104,9 @@ function createCore(o: HttpOptions) {
       const r = await request('POST', '/auth/refresh', z.object({ token: z.string(), refresh_token: z.string() }), { refresh_token: refreshToken });
       return { token: r.token, refresh_token: r.refresh_token };
     },
+    async logout(refreshToken) {
+      await request('POST', '/auth/logout', null, { refresh_token: refreshToken });
+    },
   };
   return { request, auth };
 }

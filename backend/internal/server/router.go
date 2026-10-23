@@ -21,9 +21,15 @@ type Pinger interface {
 }
 
 // New builds the router. mount registers the real endpoints (see internal/api); with nil, every contract route answers 501.
-func New(cfg config.Config, db Pinger, mount func(chi.Router)) http.Handler {
+func New(cfg config.Config, db Pinger, mount func(chi.Router), mountRoot ...func(chi.Router)) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, requestLog, middleware.Recoverer, cors(cfg))
+
+	for _, m := range mountRoot {
+		if m != nil {
+			m(r)
+		}
+	}
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/healthz", health(cfg))
@@ -33,7 +39,7 @@ func New(cfg config.Config, db Pinger, mount func(chi.Router)) http.Handler {
 			mount(r)
 		} else {
 			for _, route := range []struct{ method, path string }{
-				{"POST", "/auth/otp/request"}, {"POST", "/auth/otp/verify"}, {"POST", "/auth/refresh"},
+				{"POST", "/auth/otp/request"}, {"POST", "/auth/otp/verify"}, {"POST", "/auth/refresh"}, {"POST", "/auth/logout"},
 				{"GET", "/search"}, {"GET", "/properties/{id}"}, {"POST", "/quotes"}, {"POST", "/bookings"}, {"GET", "/bookings"},
 				{"GET", "/bookings/{id}"}, {"POST", "/bookings/{id}/pay"}, {"GET", "/bookings/{id}/voucher"},
 				{"GET", "/me/profile"}, {"PUT", "/me/profile"}, {"DELETE", "/me/profile"},

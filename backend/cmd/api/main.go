@@ -34,7 +34,7 @@ func main() {
 	// The database is optional in development so the API can start before it is set up;
 	// /v1/readyz reports 503 until it is reachable, and the endpoints answer 501 until then. Production requires it.
 	var pinger server.Pinger
-	var mount func(chi.Router)
+	var mount, mountRoot func(chi.Router)
 	workers := func(context.Context) {}
 	if cfg.DatabaseURL != "" {
 		pool, err := db.Open(context.Background(), cfg.DatabaseURL)
@@ -60,7 +60,7 @@ func main() {
 			slog.Error("api", "err", err)
 			os.Exit(1)
 		}
-		mount, workers = a.Routes, a.RunWorkers
+		mount, mountRoot, workers = a.Routes, a.AdminPage, a.RunWorkers
 		if cfg.PaymentProvider == "dev" {
 			slog.Warn("PAYMENT_PROVIDER=dev: payments use a fake test page; no real money moves")
 		}
@@ -74,7 +74,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.New(cfg, pinger, mount),
+		Handler:           server.New(cfg, pinger, mount, mountRoot),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

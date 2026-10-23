@@ -76,11 +76,23 @@ func (logPusher) Notify(_ context.Context, tokens []string, title, body string, 
 	return nil, nil
 }
 
+// routedSender sends each sign-in code over its own channel: SMS by the SMS provider, email by the email provider.
+type routedSender struct{ sms, email OTPSender }
+
+func (r routedSender) Send(ctx context.Context, channel, to, code string) error {
+	if channel == "email" {
+		return r.email.Send(ctx, channel, to, code)
+	}
+	return r.sms.Send(ctx, channel, to, code)
+}
+
 // Providers bundles the integrations.
 type Providers struct {
 	OTP     OTPSender
 	Gateway Gateway
 	Push    Pusher
+	// EmailReal is true when sign-in codes really go out by email. Then real addresses get random codes even in demo mode.
+	EmailReal bool
 }
 
 // DevProviders returns the stand-ins.
@@ -95,6 +107,18 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 	case "log", "":
 	default:
 		return p, errors.New("OTP_PROVIDER " + cfg.OTPProvider + " is not built yet")
+	}
+	switch cfg.EmailProvider {
+	case "log", "":
+	case "smtp":
+		smtpSender, err := newSMTPSender(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.EmailFrom)
+		if err != nil {
+			return p, err
+		}
+		p.OTP = routedSender{sms: logSender{}, email: smtpSender}
+		p.EmailReal = true
+	default:
+		return p, errors.New("EMAIL_PROVIDER " + cfg.EmailProvider + " is not built yet (use log or smtp)")
 	}
 	switch cfg.PaymentProvider {
 	case "dev", "":
@@ -114,3 +138,6 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 	}
 	return p, nil
 }
+
+// RoutedSender builds the sender that sends SMS codes with sms and email codes with email (used by tests and by ProvidersFor).
+func RoutedSender(sms, email OTPSender) OTPSender { return routedSender{sms: sms, email: email} }
