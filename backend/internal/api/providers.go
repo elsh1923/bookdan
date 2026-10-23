@@ -117,8 +117,15 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 		}
 		p.OTP = routedSender{sms: logSender{}, email: smtpSender}
 		p.EmailReal = true
+	case "brevo":
+		brevo, err := newBrevoSender(cfg.BrevoAPIKey, cfg.EmailFrom)
+		if err != nil {
+			return p, err
+		}
+		p.OTP = routedSender{sms: logSender{}, email: brevo}
+		p.EmailReal = true
 	default:
-		return p, errors.New("EMAIL_PROVIDER " + cfg.EmailProvider + " is not built yet (use log or smtp)")
+		return p, errors.New("EMAIL_PROVIDER " + cfg.EmailProvider + " is not built yet (use log, smtp or brevo)")
 	}
 	switch cfg.PaymentProvider {
 	case "dev", "":

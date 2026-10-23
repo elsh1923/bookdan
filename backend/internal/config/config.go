@@ -29,7 +29,8 @@ type Config struct {
 	// integration has been written (see internal/api/providers.go).
 	OTPProvider string // SMS sign-in codes: log | (an SMS provider, to be built)
 	// EmailProvider sends sign-in codes by email: log (prints them) or smtp (Gmail with an app password, Brevo, Mailgun, SES...).
-	EmailProvider string
+	EmailProvider string // log | smtp | brevo (a web API: works where the mail ports are blocked)
+	BrevoAPIKey   string
 	SMTPHost      string
 	SMTPPort      string
 	SMTPUser      string
@@ -68,6 +69,7 @@ func Load() Config {
 		PublicURL:            strings.TrimRight(get("PUBLIC_URL", "http://localhost:8080"), "/"),
 		OTPProvider:          get("OTP_PROVIDER", "log"),
 		EmailProvider:        get("EMAIL_PROVIDER", "log"),
+		BrevoAPIKey:          get("BREVO_API_KEY", ""),
 		SMTPHost:             get("SMTP_HOST", "smtp.gmail.com"),
 		SMTPPort:             get("SMTP_PORT", "587"),
 		SMTPUser:             get("SMTP_USER", ""),
@@ -116,10 +118,17 @@ func (c Config) Validate() error {
 	if c.OTPProvider == "log" {
 		problems = append(problems, "OTP_PROVIDER=log only prints SMS codes; build the SMS integration (internal/api/providers.go)")
 	}
-	if c.EmailProvider != "smtp" {
-		problems = append(problems, "EMAIL_PROVIDER must be smtp in production (with SMTP_USER, SMTP_PASSWORD, EMAIL_FROM)")
-	} else if c.SMTPUser == "" || c.SMTPPassword == "" || c.EmailFrom == "" {
-		problems = append(problems, "SMTP_USER, SMTP_PASSWORD and EMAIL_FROM are required when EMAIL_PROVIDER=smtp")
+	switch c.EmailProvider {
+	case "smtp":
+		if c.SMTPUser == "" || c.SMTPPassword == "" || c.EmailFrom == "" {
+			problems = append(problems, "SMTP_USER, SMTP_PASSWORD and EMAIL_FROM are required when EMAIL_PROVIDER=smtp")
+		}
+	case "brevo":
+		if c.BrevoAPIKey == "" || c.EmailFrom == "" {
+			problems = append(problems, "BREVO_API_KEY and EMAIL_FROM are required when EMAIL_PROVIDER=brevo")
+		}
+	default:
+		problems = append(problems, "EMAIL_PROVIDER must be smtp or brevo in production")
 	}
 	if c.PaymentProvider == "dev" {
 		problems = append(problems, "PAYMENT_PROVIDER=dev is a fake gateway; build the Telebirr/Chapa integration (internal/api/providers.go)")

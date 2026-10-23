@@ -43,7 +43,7 @@ export default function SignIn() {
       await api.requestOtp(id);
       setIdentity(id);
     } catch (e) {
-      setError(e instanceof ApiError && e.code === 'NETWORK' ? t('results.offline_body') : t('results.error_body'));
+      setError(e instanceof ApiError && e.code === 'NETWORK' ? t('results.offline_body') : e instanceof ApiError && e.code === 'SEND_FAILED' ? t('auth.send_failed') : e instanceof ApiError && e.code === 'TOO_MANY_REQUESTS' ? t('auth.too_many') : t('results.error_body'));
     } finally {
       setBusy(false);
     }

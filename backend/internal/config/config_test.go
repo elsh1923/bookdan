@@ -35,6 +35,10 @@ func TestValidate(t *testing.T) {
 	logEmail.EmailProvider = "log"
 	noSMTPPass := safeProduction()
 	noSMTPPass.SMTPPassword = ""
+	brevoOK := safeProduction()
+	brevoOK.EmailProvider, brevoOK.BrevoAPIKey = "brevo", "xkeysib-1"
+	brevoNoKey := safeProduction()
+	brevoNoKey.EmailProvider = "brevo"
 
 	cases := []struct {
 		name    string
@@ -55,6 +59,8 @@ func TestValidate(t *testing.T) {
 		{"production with fcm but no Firebase key is refused", noFCMKey, true},
 		{"production that only logs emailed codes is refused", logEmail, true},
 		{"production with smtp but no password is refused", noSMTPPass, true},
+		{"production with brevo and its key is allowed", brevoOK, false},
+		{"production with brevo but no key is refused", brevoNoKey, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

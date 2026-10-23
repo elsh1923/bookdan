@@ -122,6 +122,8 @@ const en = {
     error_title: 'Could not load your bookings',
   },
   auth: {
+    send_failed: 'We could not send the code. Please try again in a minute.',
+    too_many: 'Too many codes requested. Wait a few minutes and try again.',
     title: 'Sign in to book',
     subtitle: 'We text a code to your phone. No password needed.',
     subtitle_email: 'We email a code to you. No password needed.',

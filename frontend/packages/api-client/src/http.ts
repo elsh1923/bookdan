@@ -42,10 +42,11 @@ function createCore(o: HttpOptions) {
     schema: S | null,
     body?: unknown,
     headers: Record<string, string> = {},
+    timeoutMs?: number,
   ): Promise<z.infer<S>> {
     const deviceId = typeof o.deviceId === 'string' ? o.deviceId : await o.deviceId();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? 15_000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs ?? o.timeoutMs ?? 15_000);
     let res: Response;
     try {
       res = await doFetch(base + path, {
@@ -92,7 +93,8 @@ function createCore(o: HttpOptions) {
       token = t;
     },
     async requestOtp(identity: Identity) {
-      await request('POST', '/auth/otp/request', null, { type: identity.type, value: identity.value });
+      // Sending the email or SMS can take a few seconds: give it 30.
+      await request('POST', '/auth/otp/request', null, { type: identity.type, value: identity.value }, {}, 30_000);
     },
     async verifyOtp(identity, code) {
       const r = await request('POST', '/auth/otp/verify', z.object({ token: z.string(), refresh_token: z.string() }), {

@@ -38,7 +38,7 @@ func newSMTPSender(host, port, user, password, from string) (*smtpSender, error)
 	if err != nil {
 		return nil, fmt.Errorf("EMAIL_FROM is not a valid address (use: BookDan <you@example.com>): %w", err)
 	}
-	return &smtpSender{host: host, port: port, user: user, password: password, from: *addr, timeout: 15 * time.Second}, nil
+	return &smtpSender{host: host, port: port, user: user, password: password, from: *addr, timeout: 10 * time.Second}, nil
 }
 
 func (s *smtpSender) Send(ctx context.Context, channel, to, code string) error {
@@ -57,12 +57,7 @@ func (s *smtpSender) message(to, code string) []byte {
 	id := make([]byte, 12)
 	_, _ = rand.Read(id)
 	boundary := "bd-" + hex.EncodeToString(id)
-	subject := fmt.Sprintf("%s is your BookDan sign-in code", code)
-	text := fmt.Sprintf("Your BookDan sign-in code is %s\r\n\r\nIt works for 5 minutes. If you did not ask for it, you can ignore this email: nobody can sign in without the code.\r\n", code)
-	html := fmt.Sprintf(`<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:24px;color:#0f1b33">
-<h2 style="margin:0 0 8px">BookDan</h2><p>Your sign-in code is</p>
-<p style="font-size:34px;font-weight:700;letter-spacing:6px;background:#eaf1ff;border-radius:12px;padding:14px;text-align:center;margin:12px 0">%s</p>
-<p style="color:#4b5b76;font-size:14px">It works for 5 minutes. If you did not ask for it, you can ignore this email: nobody can sign in without the code.</p></div>`, code)
+	subject, text, html := otpEmailParts(code)
 
 	var b strings.Builder
 	h := func(k, v string) { b.WriteString(k + ": " + v + "\r\n") }
@@ -144,4 +139,15 @@ func isLoopback(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// otpEmailParts is the wording of the sign-in email: subject (with the code, so it shows in a notification), plain text and HTML.
+func otpEmailParts(code string) (subject, text, html string) {
+	subject = fmt.Sprintf("%s is your BookDan sign-in code", code)
+	text = fmt.Sprintf("Your BookDan sign-in code is %s\r\n\r\nIt works for 5 minutes. If you did not ask for it, you can ignore this email: nobody can sign in without the code.\r\n", code)
+	html = fmt.Sprintf(`<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:24px;color:#0f1b33">
+<h2 style="margin:0 0 8px">BookDan</h2><p>Your sign-in code is</p>
+<p style="font-size:34px;font-weight:700;letter-spacing:6px;background:#eaf1ff;border-radius:12px;padding:14px;text-align:center;margin:12px 0">%s</p>
+<p style="color:#4b5b76;font-size:14px">It works for 5 minutes. If you did not ask for it, you can ignore this email: nobody can sign in without the code.</p></div>`, code)
+	return subject, text, html
 }
