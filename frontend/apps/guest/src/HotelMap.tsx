@@ -24,11 +24,14 @@ export function mapHtml(pins: Pin[], me: { lat: number; lng: number } | null): s
   const data = JSON.stringify({ pins, me }).replace(/</g, '\\u003c');
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <style>html,body,#map{height:100%;margin:0;font-family:sans-serif}
 .pin{display:inline-block;width:max-content;background:#2563eb;color:#fff;font:700 12px sans-serif;padding:5px 9px;border-radius:14px;white-space:nowrap;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);transform:translate(-50%,-100%)}
+.cl{width:38px;height:38px;border-radius:50%;background:#0f1b33;color:#fff;font:700 14px sans-serif;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
 .me{width:14px;height:14px;border-radius:50%;background:#1d4ed8;border:3px solid #fff;box-shadow:0 0 0 2px #1d4ed8}</style></head>
 <body><div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
 var data = ${data};
 var map = L.map('map').setView([9.01, 38.76], 12);
@@ -38,9 +41,11 @@ function send(id) {
   if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(m); else parent.postMessage(m, '*');
 }
 var pts = [];
+var group = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48, iconCreateFunction: function (c) { return L.divIcon({ className: '', html: '<div class="cl">' + c.getChildCount() + '</div>', iconSize: [38, 38] }); } });
+map.addLayer(group);
 data.pins.forEach(function (p) {
   var d = document.createElement('div'); d.className = 'pin'; d.textContent = p.label;
-  L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html: d, iconSize: [0, 0] }) }).addTo(map).on('click', function () { send(p.id); });
+  group.addLayer(L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html: d, iconSize: [0, 0] }) }).on('click', function () { send(p.id); }));
   pts.push([p.lat, p.lng]);
 });
 if (data.me) {

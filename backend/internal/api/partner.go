@@ -74,13 +74,18 @@ type partnerBooking struct {
 	// The room option the guest booked: the hotel serves breakfast when meal is breakfast; a non-refundable booking is not given back on cancelling.
 	Meal       string `json:"meal"`
 	Refundable bool   `json:"refundable"`
+	// Who is travelling and what they asked for. A booking for someone else names the person staying (guest_name) and how to reach them.
+	Children        int    `json:"children"`
+	SpecialRequests string `json:"special_requests"`
+	BookedForOther  bool   `json:"booked_for_other"`
+	GuestPhone      string `json:"guest_phone"`
 }
 
 // A hotel never sees a room that is only held: the guest has not paid or asked yet.
 const partnerSelect = `
 	SELECT b.id, b.code, b.status, b.guest_name, g.full_name, g.contact, g.nationality, g.id_type, g.id_last4, g.purged_at IS NOT NULL,
 	       rt.name, b.check_in, b.check_out, b.guests, b.rooms, b.total_santim, b.currency, b.paid_at, b.hotel_deadline_at, b.decline_reason,
-	       p.name, b.checked_in_at, CASE WHEN b.payment_method = 'pay_at_hotel' THEN b.total_santim ELSE 0 END, b.meal, b.refundable
+	       p.name, b.checked_in_at, CASE WHEN b.payment_method = 'pay_at_hotel' THEN b.total_santim ELSE 0 END, b.meal, b.refundable, b.children, coalesce(b.special_requests, ''), b.booked_for_other, coalesce(b.guest_phone, '')
 	FROM bookings b JOIN booking_guests g ON g.booking_id = b.id JOIN room_types rt ON rt.id = b.room_type_id
 	JOIN properties p ON p.id = b.property_id`
 
@@ -90,7 +95,7 @@ func scanPartner(row pgx.Row, multiHotel bool) (partnerBooking, error) {
 	var paid, deadline, checkedIn *time.Time
 	var hotel string
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.GuestName, &b.Guest.FullName, &b.Guest.Contact, &b.Guest.Nationality, &b.Guest.IDType,
-		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel, &checkedIn, &b.BalanceDue, &b.Meal, &b.Refundable); err != nil {
+		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel, &checkedIn, &b.BalanceDue, &b.Meal, &b.Refundable, &b.Children, &b.SpecialRequests, &b.BookedForOther, &b.GuestPhone); err != nil {
 		return b, err
 	}
 	if multiHotel {
@@ -429,8 +434,14 @@ func (s *Server) Sweep(ctx context.Context) { s.sweep(ctx) }
 func (s *Server) RunWorkers(ctx context.Context) {
 	t := time.NewTicker(20 * time.Second)
 	defer t.Stop()
+	lastDay := ""
 	for {
 		s.sweep(ctx)
+		// The daily jobs run when the Addis Ababa date changes, and once when the server starts.
+		if today := s.addisToday(); today != lastDay {
+			lastDay = today
+			s.RunMaintenance(ctx)
+		}
 		select {
 		case <-ctx.Done():
 			return

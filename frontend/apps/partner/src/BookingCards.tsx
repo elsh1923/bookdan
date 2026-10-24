@@ -36,7 +36,19 @@ export function StayLine({ b }: { b: PartnerBooking }) {
       <T color={colors.inkSoft}>
         {b.rooms > 1 ? `${b.rooms} × ` : ''}{b.room_name} · {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {t('common.night', { count: b.nights })}
       </T>
-      <T variant="small" color={colors.muted}>{t('common.guest', { count: b.guests })} · {b.reference}</T>
+      <T variant="small" color={colors.muted}>{t('common.guest', { count: b.guests })}{b.children > 0 ? ` · ${t('partner.children_count', { count: b.children })}` : ''} · {b.reference}</T>
+      {b.booked_for_other ? (
+        <View style={{ marginTop: spacing.xs }}>
+          <Badge tone="warning" icon="👤" label={t('partner.booked_for_other')} />
+          {b.guest_phone ? <T variant="small" color={colors.inkSoft} style={{ marginTop: 2 }}>{t('partner.guest_phone', { phone: b.guest_phone })}</T> : null}
+        </View>
+      ) : null}
+      {b.special_requests ? (
+        <View style={{ marginTop: spacing.xs, padding: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.primarySoft }}>
+          <T variant="label" color={colors.primaryInk}>{t('partner.guest_asked')}</T>
+          <T variant="small">{b.special_requests}</T>
+        </View>
+      ) : null}
       {b.meal === 'breakfast' || !b.refundable ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs }}>
           {b.meal === 'breakfast' ? <Badge tone="success" icon="☕" label={t('partner.meal_breakfast')} /> : null}

@@ -1,7 +1,10 @@
 import {
   BookingSchema,
   CheckinLookupSchema,
+  SuggestResponseSchema,
   EarningsSchema,
+  RoomBlockListSchema,
+  RoomsChartSchema,
   GuestProfileSchema,
   PartnerBookingListSchema,
   PartnerBookingSchema,
@@ -125,6 +128,8 @@ function searchQuery(p: SearchParams): string {
   if (p.min_price) q.set('min_price', String(p.min_price));
   if (p.max_price) q.set('max_price', String(p.max_price));
   if (p.min_rating) q.set('min_rating', String(p.min_rating));
+  if (p.breakfast) q.set('breakfast', '1');
+  if (p.deals) q.set('deals', '1');
   if (p.lat != null && p.lng != null) {
     q.set('lat', String(p.lat));
     q.set('lng', String(p.lng));
@@ -145,8 +150,13 @@ export function createHttpApi(options: HttpOptions): Api {
     getProperty: (p) =>
       request('GET', `/properties/${encodeURIComponent(p.id)}?${new URLSearchParams({ check_in: p.check_in, check_out: p.check_out })}`, PropertyDetailSchema),
     createQuote: (p) => request('POST', '/quotes', QuoteSchema, p),
+    suggest: async (q) => (await request('GET', `/suggest?${new URLSearchParams({ q })}`, SuggestResponseSchema)).items,
     createHold: (p) =>
-      request('POST', '/bookings', BookingSchema, { quote_id: p.quote_id, guest_name: p.guest_name }, { 'Idempotency-Key': p.idempotency_key }),
+      request(
+        'POST', '/bookings', BookingSchema,
+        { quote_id: p.quote_id, guest_name: p.guest_name, special_requests: p.special_requests, booked_for_other: p.booked_for_other, guest_phone: p.guest_phone },
+        { 'Idempotency-Key': p.idempotency_key },
+      ),
     startPayment: (p) => request('POST', `/bookings/${encodeURIComponent(p.booking_id)}/pay`, PayResponse, { method: p.method }),
     getBooking: (id) => request('GET', `/bookings/${encodeURIComponent(id)}`, BookingSchema),
     listBookings: async () => (await request('GET', '/bookings', BookingList)).items,
@@ -182,6 +192,21 @@ export function createHttpPartnerApi(options: HttpOptions): PartnerApi {
     declineBooking: (id, reason) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/decline`, PartnerBookingSchema, { reason }),
     lookupCheckin: (query) => request('POST', '/partner/checkin/lookup', CheckinLookupSchema, query),
     getEarnings: () => request('GET', '/partner/earnings', EarningsSchema),
+    getRoomsChart: (o) => {
+      const q = new URLSearchParams();
+      if (o?.property_id) q.set('property_id', o.property_id);
+      if (o?.from) q.set('from', o.from);
+      if (o?.days) q.set('days', String(o.days));
+      return request('GET', `/partner/rooms?${q}`, RoomsChartSchema);
+    },
+    listRoomBlocks: async (property_id) => (await request('GET', `/partner/rooms/blocks?${new URLSearchParams(property_id ? { property_id } : {})}`, RoomBlockListSchema)).blocks,
+    createRoomBlock: async (input) => {
+      await request('POST', '/partner/rooms/blocks', null, input);
+    },
+    releaseRoomBlock: async (id) => {
+      await request('DELETE', `/partner/rooms/blocks/${encodeURIComponent(id)}`, null);
+    },
+    markNoShow: (id) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/no-show`, PartnerBookingSchema),
     checkInGuest: (id) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/check-in`, PartnerBookingSchema),
   };
 }

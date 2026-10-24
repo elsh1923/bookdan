@@ -112,7 +112,7 @@ Every rule is covered by tests that run on a real PostgreSQL (`go test ./...`).
 | 5 | **Point the apps at production** | In each app's `eas.json` build profile add `"env": { "EXPO_PUBLIC_API_MODE": "http", "EXPO_PUBLIC_API_URL": "https://your-api" }`, then build again (`eas build`). An update alone cannot change which server a build talks to unless the value is also set when you run `eas update`. |
 | 6 | **Confirm the money rules** | `pricing_config` holds placeholders (no service charge, 15% VAT, full payment online, no commission). Production refuses to price stays until you set the real values and `confirmed = true` (`design.md`, open decisions). |
 | 7 | **Hotels and staff** | Built: see "How a hotel gets on BookDan" below. |
-| 8 | **ID retention** | `purge_id_numbers(date)` erases stored ID numbers but nothing runs it on a schedule. Decide the retention period (DECISION 5), then schedule it. |
+| 8 | **ID retention** | Built: a daily job erases the full ID number `ID_RETENTION_DAYS` days after check-out (and 7 days after a booking that never became a stay). It is **off until you set `ID_RETENTION_DAYS`** on the server: decide the period with legal advice (DECISION 5), then set it. |
 | 9 | **Abuse limits** | Sign-in codes are limited per identifier. Add per-IP limits at the host or a proxy before launch. |
 | 10 | **Not built yet** | Hotel offline tools (rooms chart, walk-ins, QR check-in scanning, statements), reviews, cancellation by the guest, a map view. |
 

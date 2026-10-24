@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
-import { isAwaitingAnswer, type DeclineReason } from '@bookdan/domain';
+import { canMarkNoShow, isAwaitingAnswer, todayAddis, type DeclineReason } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Button, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
 import { useQueryClient } from '@tanstack/react-query';
@@ -26,7 +26,32 @@ export default function BookingScreen() {
   const [declining, setDeclining] = useState(false);
   const qc = useQueryClient();
   const [checkingIn, setCheckingIn] = useState(false);
+  const [markingNoShow, setMarkingNoShow] = useState(false);
   const [checkinError, setCheckinError] = useState<string | null>(null);
+
+  // The guest never came: the hotel keeps its share and the nights still to come go back on sale.
+  function noShow(bookingId: string) {
+    Alert.alert(t('partner.no_show_title'), t('partner.no_show_body'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('partner.no_show_button'),
+        style: 'destructive',
+        onPress: async () => {
+          setMarkingNoShow(true);
+          setCheckinError(null);
+          try {
+            await api.markNoShow(bookingId);
+            await qc.invalidateQueries({ queryKey: ['inbox'] });
+            qc.invalidateQueries({ queryKey: ['rooms-chart'] });
+          } catch (e) {
+            setCheckinError(t(checkinErrorKey(e)));
+          } finally {
+            setMarkingNoShow(false);
+          }
+        },
+      },
+    ]);
+  }
 
   // For a guest who arrives without the voucher: the receptionist checks them in from the booking. The server decides if it is allowed.
   async function checkIn(bookingId: string) {
@@ -83,6 +108,7 @@ export default function BookingScreen() {
       <View>
         <BookingRow b={booking} />
         {booking.status === 'CONFIRMED' ? <Button title={t('partner.checkin_confirm')} icon="log-in-outline" onPress={() => checkIn(booking.id)} loading={checkingIn} /> : null}
+        {canMarkNoShow(booking, todayAddis()) ? <Button variant="ghost" title={t('partner.no_show_button')} onPress={() => noShow(booking.id)} loading={markingNoShow} style={{ marginTop: spacing.sm }} /> : null}
         {booking.checked_in_at ? <T variant="small" color={colors.success}>{t('partner.checkin_done')}</T> : null}
         {checkinError ? <T variant="small" color={colors.danger} style={{ marginTop: spacing.sm }}>{checkinError}</T> : null}
       </View>

@@ -72,8 +72,12 @@ type hotelInput struct {
 	Verified    *bool    `json:"verified"`
 	Status      string   `json:"status"`
 	// CheckInTime and CheckOutTime are HH:MM (Addis Ababa time). Empty keeps the current ones (14:00 and 12:00 for a new hotel).
-	CheckInTime  string `json:"check_in_time"`
-	CheckOutTime string `json:"check_out_time"`
+	// The description in Amharic, and how to find the hotel in words (English and Amharic).
+	DescriptionAm string `json:"description_am"`
+	Directions    string `json:"directions"`
+	DirectionsAm  string `json:"directions_am"`
+	CheckInTime   string `json:"check_in_time"`
+	CheckOutTime  string `json:"check_out_time"`
 }
 
 func trimLen(v string, min, max int) (string, bool) {
@@ -136,6 +140,10 @@ func (in *hotelInput) validate(creating bool) error {
 	}
 	in.HouseRules = rules
 	in.CheckInTime, in.CheckOutTime = strings.TrimSpace(in.CheckInTime), strings.TrimSpace(in.CheckOutTime)
+	in.DescriptionAm, in.Directions, in.DirectionsAm = strings.TrimSpace(in.DescriptionAm), strings.TrimSpace(in.Directions), strings.TrimSpace(in.DirectionsAm)
+	if len(in.DescriptionAm) > 2000 || len(in.Directions) > 600 || len(in.DirectionsAm) > 600 {
+		return bad("The Amharic description is at most 2000 characters; directions at most 600")
+	}
 	for _, v := range []string{in.CheckInTime, in.CheckOutTime} {
 		if v != "" && !shiftRE.MatchString(v) {
 			return bad("Check-in and check-out times are HH:MM, for example 14:00")
@@ -221,35 +229,38 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 	lat, lng := s.latLng("location")
 	var h struct {
 		httpx.Meta
-		ID          string       `json:"id"`
-		Name        string       `json:"name"`
-		Type        string       `json:"type"`
-		City        string       `json:"city"`
-		Area        string       `json:"area"`
-		Address     string       `json:"address"`
-		Phone       string       `json:"phone"`
-		Description string       `json:"description"`
-		Lat         float64      `json:"lat"`
-		Lng         float64      `json:"lng"`
-		Amenities   []string     `json:"amenities"`
-		HouseRules  any          `json:"house_rules"`
-		PayAtHotel  bool         `json:"pay_at_hotel"`
-		Verified    bool         `json:"verified"`
-		Status      string       `json:"status"`
-		CheckIn     string       `json:"check_in_time"`
-		CheckOut    string       `json:"check_out_time"`
-		AlertMode   string       `json:"alert_mode"`
-		EscalateMin int          `json:"escalate_after_min"`
-		Rooms       []roomOut    `json:"rooms"`
-		Photos      []photoOut   `json:"photos"`
-		Staff       []staffOut   `json:"staff"`
-		Business    *businessOut `json:"business"`
+		ID            string       `json:"id"`
+		Name          string       `json:"name"`
+		Type          string       `json:"type"`
+		City          string       `json:"city"`
+		Area          string       `json:"area"`
+		Address       string       `json:"address"`
+		Phone         string       `json:"phone"`
+		Description   string       `json:"description"`
+		Lat           float64      `json:"lat"`
+		Lng           float64      `json:"lng"`
+		Amenities     []string     `json:"amenities"`
+		HouseRules    any          `json:"house_rules"`
+		PayAtHotel    bool         `json:"pay_at_hotel"`
+		Verified      bool         `json:"verified"`
+		Status        string       `json:"status"`
+		DescriptionAm string       `json:"description_am"`
+		Directions    string       `json:"directions"`
+		DirectionsAm  string       `json:"directions_am"`
+		CheckIn       string       `json:"check_in_time"`
+		CheckOut      string       `json:"check_out_time"`
+		AlertMode     string       `json:"alert_mode"`
+		EscalateMin   int          `json:"escalate_after_min"`
+		Rooms         []roomOut    `json:"rooms"`
+		Photos        []photoOut   `json:"photos"`
+		Staff         []staffOut   `json:"staff"`
+		Business      *businessOut `json:"business"`
 	}
 	var rules []byte
 	if err := s.pool.QueryRow(ctx, `SELECT id, name, type, city, area, address, phone, description, `+lat+`, `+lng+`, amenities, house_rules, pay_at_hotel, verified, status, alert_mode, escalate_after_min,
-		to_char(check_in_time, 'HH24:MI'), to_char(check_out_time, 'HH24:MI')
+		to_char(check_in_time, 'HH24:MI'), to_char(check_out_time, 'HH24:MI'), description_am, directions, directions_am
 		FROM properties WHERE id = $1`, id).Scan(&h.ID, &h.Name, &h.Type, &h.City, &h.Area, &h.Address, &h.Phone, &h.Description, &h.Lat, &h.Lng,
-		&h.Amenities, &rules, &h.PayAtHotel, &h.Verified, &h.Status, &h.AlertMode, &h.EscalateMin, &h.CheckIn, &h.CheckOut); err != nil {
+		&h.Amenities, &rules, &h.PayAtHotel, &h.Verified, &h.Status, &h.AlertMode, &h.EscalateMin, &h.CheckIn, &h.CheckOut, &h.DescriptionAm, &h.Directions, &h.DirectionsAm); err != nil {
 		return err
 	}
 	h.HouseRules = []string{}
@@ -375,6 +386,9 @@ func (s *Server) adminCreateHotel(w http.ResponseWriter, r *http.Request) error 
 			in.Name, in.Type, in.City, in.Area, in.Address, *in.Lng, *in.Lat, in.Phone, in.Description, in.PayAtHotel, in.Amenities, string(rules), in.Verified, in.CheckInTime, in.CheckOutTime).Scan(&id); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(r.Context(), `UPDATE properties SET description_am = $2, directions = $3, directions_am = $4 WHERE id = $1`, id, in.DescriptionAm, in.Directions, in.DirectionsAm); err != nil {
+			return err
+		}
 		return s.adminAudit(r, tx, "admin_hotel_created", id, map[string]any{"name": in.Name})
 	})
 	if err != nil {
@@ -429,6 +443,9 @@ func (s *Server) adminUpdateHotel(w http.ResponseWriter, r *http.Request) error 
 			phone = $9, description = $10, pay_at_hotel = $11, amenities = $12, house_rules = $13::jsonb, status = $14, verified = coalesce($15, verified),
 			check_in_time = coalesce(nullif($16, '')::time, check_in_time), check_out_time = coalesce(nullif($17, '')::time, check_out_time)
 			WHERE id = $1`, id, in.Name, in.Type, in.City, in.Area, in.Address, *in.Lng, *in.Lat, in.Phone, in.Description, in.PayAtHotel, in.Amenities, string(rules), in.Status, verified, in.CheckInTime, in.CheckOutTime); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(r.Context(), `UPDATE properties SET description_am = $2, directions = $3, directions_am = $4 WHERE id = $1`, id, in.DescriptionAm, in.Directions, in.DirectionsAm); err != nil {
 			return err
 		}
 		return s.adminAudit(r, tx, "admin_hotel_updated", id, map[string]any{"status": in.Status})

@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { maskId, newIdempotencyKey } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Animated, Button, EmptyState, FadeIn, Pop, ProgressFill, StepTransition, T, colors, radius, spacing } from '@bookdan/ui';
+import { Animated, Button, Chip, EmptyState, FadeIn, Pop, ProgressFill, StepTransition, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
 import { useAuth } from '../src/auth';
 import { usePrefs } from '../src/store';
@@ -63,10 +63,11 @@ export default function Checkout() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();
-  const p = useLocalSearchParams<{ id: string; room: string; in: string; out: string; guests: string; rooms?: string; meal?: string; refundable?: string }>();
+  const p = useLocalSearchParams<{ id: string; room: string; in: string; out: string; guests: string; rooms?: string; children?: string; meal?: string; refundable?: string }>();
   // The room option chosen on the hotel page (room only and refundable unless the guest picked otherwise).
   const meal: 'room_only' | 'breakfast' = p.meal === 'breakfast' ? 'breakfast' : 'room_only';
   const refundable = p.refundable !== 'false';
+  const childrenParam = Math.max(0, Number(p.children) || 0);
   const token = useAuth((s) => s.token);
 
   // The name is kept on the phone while typing, so a session that expires mid-checkout loses nothing.
@@ -79,11 +80,19 @@ export default function Checkout() {
   const [holdError, setHoldError] = useState<string | null>(null);
   const [coupon, setCoupon] = useState<string | null>(null); // the code the server accepted
   const [couponNote, setCouponNote] = useState<string | null>(null);
+  // What the guest tells the hotel: requests, and booking for someone else (then the person staying and how to reach them).
+  const [requests, setRequests] = useState('');
+  const [forOther, setForOther] = useState(false);
+  const [otherName, setOtherName] = useState('');
+  const [otherPhone, setOtherPhone] = useState('');
   // Created once per checkout attempt and reused if the request is retried, so a retry can never create a second hold.
   const attemptKey = useRef<string | null>(null);
 
+  // Each room needs an adult, so children can never be more than the guests beyond one per room.
+  const guestCount = Math.max(Number(p.guests) || 1, rooms);
+  const kids = Math.min(childrenParam, Math.max(0, guestCount - rooms));
   const quote = useQuote(
-    { property_id: p.id, room_type_id: p.room, check_in: p.in, check_out: p.out, guests: Math.max(Number(p.guests) || 1, rooms), rooms, meal, refundable, coupon_code: coupon ?? undefined },
+    { property_id: p.id, room_type_id: p.room, check_in: p.in, check_out: p.out, guests: guestCount, rooms, meal, refundable, coupon_code: coupon ?? undefined, children: kids },
     !!token,
   );
   // A coupon that stops working while the guest is on this screen (it ran out, or expired) is dropped and the guest is told.
@@ -101,7 +110,7 @@ export default function Checkout() {
   }, [profile.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!token) {
-    const next = `/checkout?id=${p.id}&room=${p.room}&in=${p.in}&out=${p.out}&guests=${p.guests ?? 1}&rooms=${rooms}&meal=${meal}&refundable=${refundable}`;
+    const next = `/checkout?id=${p.id}&room=${p.room}&in=${p.in}&out=${p.out}&guests=${p.guests ?? 1}&rooms=${rooms}&meal=${meal}&refundable=${refundable}&children=${kids}`;
     return <Redirect href={{ pathname: '/signin', params: { next } }} />;
   }
 
@@ -148,7 +157,7 @@ export default function Checkout() {
   // The server decides whether a code works (dates, uses, hotel, minimum): ask it for a price with the code and keep the code if it answers.
   async function applyCoupon(code: string): Promise<string | null> {
     try {
-      await api.createQuote({ property_id: p.id, room_type_id: p.room, check_in: p.in, check_out: p.out, guests: Math.max(Number(p.guests) || 1, rooms), rooms, meal, refundable, coupon_code: code });
+      await api.createQuote({ property_id: p.id, room_type_id: p.room, check_in: p.in, check_out: p.out, guests: guestCount, rooms, meal, refundable, coupon_code: code, children: kids });
       attemptKey.current = null; // a different price must never reuse the old retry key
       setCouponNote(null);
       setCoupon(code);
@@ -157,6 +166,28 @@ export default function Checkout() {
       return e instanceof ApiError && e.code === 'COUPON_INVALID' ? e.message : t('checkout.coupon_failed');
     }
   }
+  // The name the hotel sees for the stay: the guest's own, or the person they are booking for.
+  const stayName = forOther ? otherName.trim() : name.trim();
+  function checkDetails(): boolean {
+    if (stayName.length < 2) {
+      setNameError(t(forOther ? 'checkout.other_name_required' : 'checkout.name_required'));
+      return false;
+    }
+    if (forOther && otherPhone.trim() && !/^\+?[0-9 ()-]{7,20}$/.test(otherPhone.trim())) {
+      setNameError(t('checkout.other_phone_bad'));
+      return false;
+    }
+    return true;
+  }
+  // Changing anything the hotel receives makes it a different request, so the retry key must not be reused.
+  const edit = <V,>(set: (v: V) => void) => (v: V) => {
+    attemptKey.current = null;
+    set(v);
+  };
+  const addRequest = (label: string) => {
+    if (requests.includes(label)) return;
+    edit(setRequests)(((requests ? requests + ', ' : '') + label).slice(0, 400));
+  };
   const removeCoupon = () => {
     attemptKey.current = null;
     setCoupon(null);
@@ -168,7 +199,7 @@ export default function Checkout() {
   function next() {
     if (step === 1) {
       if (needsProfile) return router.push('/guest-details');
-      if (name.trim().length < 2) return setNameError(t('checkout.name_required'));
+      if (!checkDetails()) return;
       setNameError(null);
     }
     setStep(step + 1);
@@ -177,13 +208,16 @@ export default function Checkout() {
   async function hold() {
     if (switching) return;
     if (needsProfile) return router.push('/guest-details');
-    if (name.trim().length < 2) return setNameError(t('checkout.name_required'));
+    if (!checkDetails()) return;
     setNameError(null);
     setHoldError(null);
     setBusy(true);
     try {
       attemptKey.current ??= newIdempotencyKey();
-      const b = await api.createHold({ quote_id: q.id, guest_name: name.trim(), idempotency_key: attemptKey.current });
+      const b = await api.createHold({
+        quote_id: q.id, guest_name: stayName, idempotency_key: attemptKey.current,
+        special_requests: requests.trim() || undefined, booked_for_other: forOther || undefined, guest_phone: forOther && otherPhone.trim() ? otherPhone.trim() : undefined,
+      });
       attemptKey.current = null;
       setName('');
       qc.invalidateQueries({ queryKey: ['bookings'] });
@@ -217,7 +251,7 @@ export default function Checkout() {
                 line1={`${shortDate(q.check_in, months)} – ${shortDate(q.check_out, months)}`}
                 line2={t('common.night', { count: q.nights })}
               />
-              <StayTile icon="people-outline" title={t('search.guests')} line1={t('common.guest', { count: q.guests })} line2={t('common.room', { count: q.rooms })} />
+              <StayTile icon="people-outline" title={t('search.guests')} line1={t('common.guest', { count: q.guests })} line2={`${t('common.room', { count: q.rooms })}${q.children > 0 ? ` · ${t('search.children', { count: q.children })}` : ''}`} />
             </ScrollView>
           ) : null}
 
@@ -258,16 +292,18 @@ export default function Checkout() {
                     <Button icon="add-circle-outline" title={t('checkout.add_id')} onPress={() => router.push('/guest-details')} style={{ marginTop: spacing.md }} />
                   </View>
                 ) : null}
-                <Field
-                  label={t('checkout.guest_name')}
-                  hint={t('checkout.guest_name_hint')}
-                  value={name}
-                  onChangeText={setName}
-                  autoComplete="name"
-                  textContentType="name"
-                  autoCapitalize="words"
-                  error={nameError}
-                />
+                {!forOther ? (
+                  <Field
+                    label={t('checkout.guest_name')}
+                    hint={t('checkout.guest_name_hint')}
+                    value={name}
+                    onChangeText={edit(setName)}
+                    autoComplete="name"
+                    textContentType="name"
+                    autoCapitalize="words"
+                    error={nameError}
+                  />
+                ) : null}
                 {profile.data ? (
                   <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center', marginTop: spacing.md }}>
                     <Ionicons name="id-card-outline" size={18} color={colors.inkSoft} />
@@ -277,14 +313,38 @@ export default function Checkout() {
                     <Pressable onPress={() => router.push('/guest-details')} hitSlop={8}><T variant="small" color={colors.primaryInk}>{t('checkout.edit_id')}</T></Pressable>
                   </View>
                 ) : null}
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: forOther }}
+                  onPress={() => edit(setForOther)(!forOther)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, minHeight: 48 }}
+                >
+                  <Ionicons name={forOther ? 'checkbox' : 'square-outline'} size={24} color={forOther ? colors.primary : colors.muted} />
+                  <T style={{ flex: 1 }}>{t('checkout.for_other')}</T>
+                </Pressable>
+                {forOther ? (
+                  <>
+                    <Field label={t('checkout.other_name')} value={otherName} onChangeText={edit(setOtherName)} autoCapitalize="words" error={nameError} />
+                    <Field label={t('checkout.other_phone')} value={otherPhone} onChangeText={edit(setOtherPhone)} keyboardType="phone-pad" hint={t('checkout.other_note')} />
+                  </>
+                ) : null}
+
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xl }}>
+                  {(['req_late', 'req_early', 'req_high', 'req_quiet', 'req_pickup', 'req_extra_bed'] as const).map((k) => (
+                    <Chip key={k} label={t(`checkout.${k}`)} selected={requests.includes(t(`checkout.${k}`))} onPress={() => addRequest(t(`checkout.${k}`))} />
+                  ))}
+                </View>
+                <Field label={t('checkout.requests_title')} hint={t('checkout.requests_hint')} value={requests} onChangeText={edit(setRequests)} multiline maxLength={400} style={{ minHeight: 88, textAlignVertical: 'top', paddingTop: spacing.md }} />
               </>
             ) : (
               <>
                 {step === 2 ? (
                   <View style={{ marginTop: spacing.lg, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }}>
-                    <T variant="label" color={colors.muted}>{t('checkout.guest_name').toUpperCase()}</T>
-                    <T variant="h3">{name.trim()}</T>
+                    <T variant="label" color={colors.muted}>{t(forOther ? 'checkout.staying' : 'checkout.guest_name').toUpperCase()}</T>
+                    <T variant="h3">{stayName}</T>
+                    {forOther && otherPhone.trim() ? <T variant="small" color={colors.inkSoft}>{otherPhone.trim()}</T> : null}
                     {profile.data ? <T variant="small" color={colors.inkSoft}>{t(`idType.${profile.data.id_type}`)} {maskId(profile.data.id_last4)}</T> : null}
+                    {requests.trim() ? <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('checkout.your_requests')}: {requests.trim()}</T> : null}
                   </View>
                 ) : null}
 

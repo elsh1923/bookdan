@@ -65,7 +65,7 @@ func TestMain(m *testing.M) {
 		stop()
 		os.Exit(1)
 	}
-	cfg := config.Config{Env: "test", DemoMode: true, PublicURL: "http://example.test", PaymentProvider: "dev", PaymentWebhookSecret: "whsec",
+	cfg := config.Config{Env: "test", DemoMode: true, IDRetentionDays: 30, PublicURL: "http://example.test", PaymentProvider: "dev", PaymentWebhookSecret: "whsec",
 		AdminPassword: "correct-horse-battery-staple", AdminEmails: []string{"admin@bookdan.test"}, AdminOwners: true,
 		DemoAccountDomains: []string{"bookdan.test", "example.com", "example.org"}}
 	keys, _ = api.NewKeys(cfg)

@@ -118,6 +118,7 @@ func (s *Server) priceStay(ctx context.Context, q interface {
 
 type quoteOut struct {
 	httpx.Meta
+	Children       int    `json:"children"`
 	ID             string `json:"id"`
 	PropertyID     string `json:"property_id"`
 	PropertyName   string `json:"property_name"`
@@ -155,6 +156,7 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 		Meal       string `json:"meal"`
 		Refundable *bool  `json:"refundable"`
 		CouponCode string `json:"coupon_code"`
+		Children   int    `json:"children"`
 	}
 	if err := decode(r, &in); err != nil {
 		return err
@@ -178,6 +180,8 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 		return bad("Choose between 1 and 9 rooms")
 	case in.Guests < in.Rooms:
 		return bad("Each room needs at least one guest")
+	case in.Children < 0 || in.Children > in.Guests-in.Rooms:
+		return bad("Each room needs at least one adult")
 	}
 	ctx := r.Context()
 
@@ -234,13 +238,18 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 		price.Base, price.Service, price.VAT, price.Total, price.Deposit, price.Balance, price.Nights, "600 seconds", opt.Meal, opt.Refundable, couponID, price.Discount).Scan(&id); err != nil {
 		return err
 	}
+	if in.Children > 0 {
+		if _, err := s.pool.Exec(ctx, `UPDATE quotes SET children = $2 WHERE id = $1`, id, in.Children); err != nil {
+			return err
+		}
+	}
 	respond(w, http.StatusOK, quoteOut{
 		Meta: httpx.NowMeta(), ID: id, PropertyID: in.PropertyID, PropertyName: propName, RoomTypeID: in.RoomTypeID, RoomName: roomName,
 		CheckIn: in.CheckIn, CheckOut: in.CheckOut, Nights: len(price.Nights), Guests: in.Guests, Rooms: in.Rooms, RoomsAvailable: left,
 		Nightly: price.Nightly, Subtotal: price.Base + price.Service, VAT: price.VAT, Total: price.Total, Currency: price.Currency,
 		// A booking with a coupon is paid online: nobody could fund the discount on money collected at the hotel.
 		PayAtHotel: payAtHotel && coupon == nil,
-		Meal:       opt.Meal, Refundable: opt.Refundable, CouponCode: couponCode, Discount: price.Discount, ListTotal: price.Total + price.Discount,
+		Meal:       opt.Meal, Refundable: opt.Refundable, CouponCode: couponCode, Discount: price.Discount, ListTotal: price.Total + price.Discount, Children: in.Children,
 	})
 	return nil
 }
@@ -272,26 +281,30 @@ func asPg(err error, target **pgconn.PgError) bool {
 
 type bookingOut struct {
 	httpx.Meta
-	ID            string  `json:"id"`
-	Reference     string  `json:"reference"`
-	Status        string  `json:"status"`
-	PropertyID    string  `json:"property_id"`
-	PropertyName  string  `json:"property_name"`
-	PropertyPhone string  `json:"property_phone"`
-	Address       string  `json:"address"`
-	RoomName      string  `json:"room_name"`
-	CheckIn       string  `json:"check_in"`
-	CheckOut      string  `json:"check_out"`
-	Nights        int     `json:"nights"`
-	Guests        int     `json:"guests"`
-	Rooms         int     `json:"rooms"`
-	GuestName     string  `json:"guest_name"`
-	Total         int64   `json:"total_santim"`
-	Currency      string  `json:"currency"`
-	PaymentMethod *string `json:"payment_method"`
-	PayAtHotel    bool    `json:"pay_at_hotel"`
-	Payment       string  `json:"payment"` // none | pending | failed
-	HoldExpiresAt *string `json:"hold_expires_at"`
+	Children        int     `json:"children"`
+	SpecialRequests *string `json:"special_requests"`
+	BookedForOther  bool    `json:"booked_for_other"`
+	GuestPhone      *string `json:"guest_phone"`
+	ID              string  `json:"id"`
+	Reference       string  `json:"reference"`
+	Status          string  `json:"status"`
+	PropertyID      string  `json:"property_id"`
+	PropertyName    string  `json:"property_name"`
+	PropertyPhone   string  `json:"property_phone"`
+	Address         string  `json:"address"`
+	RoomName        string  `json:"room_name"`
+	CheckIn         string  `json:"check_in"`
+	CheckOut        string  `json:"check_out"`
+	Nights          int     `json:"nights"`
+	Guests          int     `json:"guests"`
+	Rooms           int     `json:"rooms"`
+	GuestName       string  `json:"guest_name"`
+	Total           int64   `json:"total_santim"`
+	Currency        string  `json:"currency"`
+	PaymentMethod   *string `json:"payment_method"`
+	PayAtHotel      bool    `json:"pay_at_hotel"`
+	Payment         string  `json:"payment"` // none | pending | failed
+	HoldExpiresAt   *string `json:"hold_expires_at"`
 	// Cancellation: whether it is possible now, what the guest would get back, and until when a confirmed booking is refunded in full.
 	CanCancel         bool    `json:"can_cancel"`
 	RefundIfCancelled int64   `json:"refund_if_cancelled_santim"`
@@ -324,7 +337,7 @@ const bookingSelect = `
 	                 FROM payments pay WHERE pay.booking_id = b.id ORDER BY pay.created_at DESC LIMIT 1), 'none'),
 	       COALESCE((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status = 'succeeded'), 0)::bigint,
 	       b.refund_santim, rv.rating, rv.text, to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI'),
-	       b.meal, b.refundable, cp.code, b.discount_santim
+	       b.meal, b.refundable, cp.code, b.discount_santim, b.children, b.special_requests, b.booked_for_other, b.guest_phone
 	FROM bookings b JOIN properties p ON p.id = b.property_id JOIN room_types rt ON rt.id = b.room_type_id
 	LEFT JOIN reviews rv ON rv.booking_id = b.id LEFT JOIN coupons cp ON cp.id = b.coupon_id`
 
@@ -338,7 +351,7 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.PropertyID, &b.PropertyName, &b.PropertyPhone, &b.Address, &b.RoomName,
 		&in, &out, &b.Guests, &b.Rooms, &b.GuestName, &b.Total, &b.Currency, &b.PaymentMethod, &b.PayAtHotel, &hold, &b.Payment,
 		&paid, &b.RefundSantim, &reviewRating, &reviewText, &b.CheckInTime, &b.CheckOutTime,
-		&b.Meal, &b.Refundable, &b.CouponCode, &b.DiscountSantim); err != nil {
+		&b.Meal, &b.Refundable, &b.CouponCode, &b.DiscountSantim, &b.Children, &b.SpecialRequests, &b.BookedForOther, &b.GuestPhone); err != nil {
 		return b, err
 	}
 	b.CheckIn, b.CheckOut = pgDate(in), pgDate(out)
@@ -481,9 +494,12 @@ func newCode() string {
 
 func (s *Server) createBooking(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		QuoteID        string `json:"quote_id"`
-		GuestName      string `json:"guest_name"`
-		IdempotencyKey string `json:"idempotency_key"`
+		QuoteID         string `json:"quote_id"`
+		GuestName       string `json:"guest_name"`
+		IdempotencyKey  string `json:"idempotency_key"`
+		SpecialRequests string `json:"special_requests"`
+		BookedForOther  bool   `json:"booked_for_other"`
+		GuestPhone      string `json:"guest_phone"`
 	}
 	if err := decode(r, &in); err != nil {
 		return err
@@ -496,8 +512,12 @@ func (s *Server) createBooking(w http.ResponseWriter, r *http.Request) error {
 	if len(key) < 8 || len(key) > 255 || len(name) < 2 || len(name) > 120 || in.QuoteID == "" {
 		return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "quote_id, guest_name and an idempotency key are required")
 	}
+	in.SpecialRequests, in.GuestPhone = strings.TrimSpace(in.SpecialRequests), strings.TrimSpace(in.GuestPhone)
+	if len(in.SpecialRequests) > 400 || (in.GuestPhone != "" && (!phoneAnyRE.MatchString(in.GuestPhone) || len(in.GuestPhone) > 30)) {
+		return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "Special requests are at most 400 characters; give the guest's phone number as digits")
+	}
 	uid := claimsFrom(r).Sub
-	hash := sha256.Sum256([]byte(in.QuoteID + "|" + name))
+	hash := sha256.Sum256([]byte(in.QuoteID + "|" + name + "|" + in.SpecialRequests + "|" + b2s(in.BookedForOther) + "|" + in.GuestPhone))
 	ctx := r.Context()
 
 	var bookingID string
@@ -598,6 +618,11 @@ func (s *Server) createBooking(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		if err != nil {
+			return err
+		}
+		// Who is travelling and what they ask the hotel for.
+		if _, err := tx.Exec(ctx, `UPDATE bookings SET children = (SELECT children FROM quotes WHERE id = $2), special_requests = NULLIF($3, ''), booked_for_other = $4, guest_phone = NULLIF($5, '') WHERE id = $1`,
+			bookingID, in.QuoteID, in.SpecialRequests, in.BookedForOther, in.GuestPhone); err != nil {
 			return err
 		}
 		if q.couponID != nil {

@@ -52,6 +52,19 @@ export function PropertyCard({ item, onPress }: { item: SearchItem; onPress: () 
             </View>
           ) : null}
 
+          {item.breakfast || item.nonrefundable ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm }}>
+              {item.breakfast ? <View style={{ borderWidth: 1, borderColor: colors.line, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3 }}><T variant="label" color={colors.inkSoft}>{t('results.tag_breakfast')}</T></View> : null}
+              {item.nonrefundable ? <View style={{ borderWidth: 1, borderColor: colors.line, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3 }}><T variant="label" color={colors.inkSoft}>{t('results.tag_deals')}</T></View> : null}
+            </View>
+          ) : null}
+          {item.reply_minutes != null ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs }}>
+              <Ionicons name="flash-outline" size={14} color={colors.success} />
+              <T variant="small" color={colors.success}>{t('results.replies_in', { min: item.reply_minutes })}</T>
+            </View>
+          ) : null}
+
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.md }}>
             <View style={{ flexShrink: 1 }}>
               {item.available ? (

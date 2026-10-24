@@ -40,19 +40,19 @@ func New(cfg config.Config, db Pinger, mount func(chi.Router), mountRoot ...func
 		} else {
 			for _, route := range []struct{ method, path string }{
 				{"POST", "/auth/otp/request"}, {"POST", "/auth/otp/verify"}, {"POST", "/auth/refresh"}, {"POST", "/auth/logout"},
-				{"GET", "/search"}, {"GET", "/properties/{id}"}, {"POST", "/quotes"}, {"POST", "/bookings"}, {"GET", "/bookings"},
+				{"GET", "/search"}, {"GET", "/suggest"}, {"GET", "/properties/{id}"}, {"POST", "/quotes"}, {"POST", "/bookings"}, {"GET", "/bookings"},
 				{"GET", "/bookings/{id}"}, {"POST", "/bookings/{id}/pay"}, {"POST", "/bookings/{id}/cancel"}, {"POST", "/bookings/{id}/review"}, {"GET", "/bookings/{id}/voucher"},
 				{"GET", "/me/profile"}, {"PUT", "/me/profile"}, {"DELETE", "/me/profile"},
 				{"PUT", "/partner/devices/push-token"}, {"POST", "/partner/bookings/{id}/guest/reveal"}, {"GET", "/partner/bookings"},
 				{"POST", "/partner/bookings/{id}/accept"}, {"POST", "/partner/bookings/{id}/decline"},
-				{"POST", "/partner/bookings/{id}/check-in"}, {"POST", "/partner/checkin/lookup"}, {"GET", "/partner/earnings"},
+				{"POST", "/partner/bookings/{id}/check-in"}, {"POST", "/partner/bookings/{id}/no-show"}, {"POST", "/partner/checkin/lookup"}, {"GET", "/partner/earnings"},
+				{"GET", "/partner/rooms"}, {"GET", "/partner/rooms/blocks"}, {"POST", "/partner/rooms/blocks"}, {"DELETE", "/partner/rooms/blocks/{id}"},
 			} {
 				r.MethodFunc(route.method, route.path, notImplemented)
 			}
 		}
 
-		// Not built yet: the hotel's offline tools (rooms chart, sync).
-		r.Get("/partner/rooms", notImplemented)
+		// Not built yet: the hotel's offline sync.
 		r.Post("/partner/sync/push", notImplemented)
 		r.Get("/partner/sync/pull", notImplemented)
 	})

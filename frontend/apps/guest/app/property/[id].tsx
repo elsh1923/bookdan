@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { nightsBetween, type Amenity, type RoomOption, type RoomType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
@@ -32,6 +32,7 @@ const AMENITY_ICON: Record<Amenity, keyof typeof Ionicons.glyphMap> = {
   airport_shuttle: 'airplane-outline',
   laundry: 'shirt-outline',
   front_desk_24h: 'time-outline',
+  water_tank: 'water',
 };
 const LOW_STOCK = 3; // "Only 3 left" appears at this many rooms or fewer
 
@@ -98,9 +99,10 @@ export default function PropertyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const p = useLocalSearchParams<{ id: string; in: string; out: string; guests?: string; rooms?: string }>();
+  const p = useLocalSearchParams<{ id: string; in: string; out: string; guests?: string; children?: string; rooms?: string }>();
   const query = useProperty(p.id, p.in, p.out);
   const [showVerified, setShowVerified] = useState(false);
+  const [allAmenities, setAllAmenities] = useState(false);
   const scroller = useRef<ScrollView>(null);
   const [ys, setYs] = useState<Record<Section | 'rooms', number>>({ overview: 0, amenities: 0, reviews: 0, rules: 0, rooms: 0 });
   const [tab, setTab] = useState<Section>('overview');
@@ -169,6 +171,14 @@ export default function PropertyScreen() {
           {back}
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel={t('property.share')}
+            onPress={() => Share.share({ message: t('property.share_message', { name: prop.name, area: `${prop.area}, ${prop.city}`, rating: prop.rating ? `★ ${prop.rating.toFixed(1)} · ${prop.review_count} ${t('property.tab_reviews').toLowerCase()}\n` : '' }) }).catch(() => undefined)}
+            style={[circle, { position: 'absolute', top: insets.top + 8, right: spacing.lg + 52 }]}
+          >
+            <Ionicons name="share-social-outline" size={22} color={colors.ink} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel={t('wishlist.save')}
             accessibilityState={{ selected: saved }}
             onPress={() => { if (!saved) heart.bounce(); toggleSaved(prop.id); }}
@@ -196,6 +206,12 @@ export default function PropertyScreen() {
             <Pressable onPress={() => goTo('reviews')} accessibilityRole="button" style={{ marginTop: spacing.md }}>
               <RatingBadge rating={prop.rating} count={prop.review_count} />
             </Pressable>
+            {prop.reply_minutes != null ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs }}>
+                <Ionicons name="flash-outline" size={16} color={colors.success} />
+                <T variant="small" color={colors.success}>{t('results.replies_in', { min: prop.reply_minutes })}</T>
+              </View>
+            ) : null}
 
             {/* Where it is, with a map link and the closest landmark */}
             <Pressable
@@ -238,7 +254,16 @@ export default function PropertyScreen() {
           </ScrollView>
 
           <T variant="displaySm">{t('property.about')}</T>
-          <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{prop.description}</T>
+          <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{i18n.language === 'am' && prop.description_am ? prop.description_am : prop.description}</T>
+          {(i18n.language === 'am' && prop.directions_am ? prop.directions_am : prop.directions) ? (
+            <View style={{ marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.primarySoft }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                <Ionicons name="walk-outline" size={18} color={colors.primaryInk} />
+                <T variant="h3" color={colors.primaryInk}>{t('property.directions_title')}</T>
+              </View>
+              <T color={colors.ink} style={{ marginTop: spacing.xs }}>{i18n.language === 'am' && prop.directions_am ? prop.directions_am : prop.directions}</T>
+            </View>
+          ) : null}
           <Button
             variant="secondary"
             icon="call-outline"
@@ -257,7 +282,7 @@ export default function PropertyScreen() {
                   room={r}
                   nights={nights}
                   rooms={roomCount}
-                  onSelect={(o) => router.push({ pathname: '/checkout', params: { id: prop.id, room: r.id, in: p.in, out: p.out, guests: p.guests ?? '1', rooms: p.rooms ?? '1', meal: o.meal, refundable: String(o.refundable) } })}
+                  onSelect={(o) => router.push({ pathname: '/checkout', params: { id: prop.id, room: r.id, in: p.in, out: p.out, guests: p.guests ?? '1', children: p.children ?? '0', rooms: p.rooms ?? '1', meal: o.meal, refundable: String(o.refundable) } })}
                 />
               </Reveal>
             ))}
@@ -267,7 +292,7 @@ export default function PropertyScreen() {
             <T variant="displaySm" style={{ marginTop: spacing.xl }}>{t('property.tab_amenities')}</T>
             {/* Amenity icons, each with a caption (never icon alone) */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.md }}>
-              {prop.amenities.map((a) => (
+              {(allAmenities ? prop.amenities : prop.amenities.slice(0, 8)).map((a) => (
                 <View key={a} style={{ alignItems: 'center', width: 72 }}>
                   <View style={{ width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name={AMENITY_ICON[a]} size={22} color={colors.primaryInk} />
@@ -276,6 +301,11 @@ export default function PropertyScreen() {
                 </View>
               ))}
             </View>
+            {prop.amenities.length > 8 ? (
+              <Pressable accessibilityRole="button" onPress={() => setAllAmenities(!allAmenities)} style={{ minHeight: 44, justifyContent: 'center', marginTop: spacing.sm }}>
+                <T color={colors.primaryInk}>{allAmenities ? t('property.amenities_less') : t('property.amenities_all', { count: prop.amenities.length })}</T>
+              </Pressable>
+            ) : null}
           </View>
 
           <T variant="displaySm" style={{ marginTop: spacing.xl }}>{t('property.nearby')}</T>
@@ -346,7 +376,7 @@ export default function PropertyScreen() {
               onPress={() => {
                 // One room type: go straight to checkout. Several: show them so the guest chooses.
                 if (room_types.length === 1) {
-                  router.push({ pathname: '/checkout', params: { id: prop.id, room: cheapestRoom.id, in: p.in, out: p.out, guests: p.guests ?? '1', rooms: p.rooms ?? '1' } });
+                  router.push({ pathname: '/checkout', params: { id: prop.id, room: cheapestRoom.id, in: p.in, out: p.out, guests: p.guests ?? '1', children: p.children ?? '0', rooms: p.rooms ?? '1' } });
                 } else {
                   scroller.current?.scrollTo({ y: Math.max(sheetTop + ys.rooms - 8, 0), animated: true });
                 }

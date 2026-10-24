@@ -5,6 +5,8 @@ import {
   addDays,
   decodeVoucherPayload,
   EarningsSchema,
+  RoomBlockListSchema,
+  RoomsChartSchema,
   idLast4,
   priceStay,
   todayAddis,
@@ -19,6 +21,8 @@ import { ApiError, type PartnerApi, type PushRegistration } from './types';
 const HOTEL = { id: 'p-addis-1', name: 'Meskel Square Palace Hotel' };
 const ANSWER_WINDOW_MS = 15 * 60_000; // the hotel has 15 minutes after the guest pays
 const ROOMS: [string, number][] = [['Standard Double', 3200], ['Deluxe King', 4800], ['Family Suite', 7200]];
+const TOTAL_ROOMS: Record<string, number> = { 'Standard Double': 5, 'Deluxe King': 2, 'Family Suite': 1 };
+interface Block { id: string; kind: 'walk_in' | 'block'; room_type_id: string; check_in: string; check_out: string; rooms: number; guest_name: string; guest_phone: string; note: string; released: boolean }
 
 // Demo guests with the profile they would have saved in the guest app. The numbers are made up.
 interface DemoGuest {
@@ -74,6 +78,7 @@ const guestNamed = (name: string): DemoGuest => GUESTS.find((g) => g.name === na
 export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi {
   const latency = opts.latencyMs ?? 450;
   const rows = new Map<string, Row>();
+  const blocks = new Map<string, Block>(); // walk-ins and blocks the hotel recorded (kept for the session)
   const pushTokens = new Map<string, PushRegistration>(); // by device id
   let seq = 0;
 
@@ -183,6 +188,25 @@ export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi 
     return r;
   };
 
+  async function roomsChart(o?: { property_id?: string; from?: string; days?: number }) {
+      await gate();
+      auth.identityOf();
+      const from = o?.from ?? todayAddis();
+      const days = o?.days ?? 14;
+      const rooms = ROOMS.map(([name]) => {
+        const total = TOTAL_ROOMS[name] ?? 1;
+        const nights = Array.from({ length: days }, (_, d) => {
+          const date = addDays(from, d);
+          const booked = [...rows.values()].filter((r) => r.room_name === name && ['CONFIRMED', 'CHECKED_IN'].includes(view(r).status) && r.check_in <= date && date < addDays(r.check_in, r.nights)).reduce((a, r) => a + (r.rooms ?? 1), 0);
+          const held = [...rows.values()].filter((r) => r.room_name === name && view(r).status === 'PAID_AWAITING_HOTEL' && r.check_in <= date && date < addDays(r.check_in, r.nights)).reduce((a, r) => a + (r.rooms ?? 1), 0);
+          const blocked = [...blocks.values()].filter((b) => !b.released && b.room_type_id === name && b.check_in <= date && date < b.check_out).reduce((a, b) => a + b.rooms, 0);
+          return { date, capacity: total, booked, held, blocked, free: Math.max(0, total - booked - held - blocked) };
+        });
+        return { id: name, name, total_rooms: total, nights };
+      });
+      return RoomsChartSchema.parse({ hotels: [HOTEL], property: HOTEL, from, days, rooms, server_time: new Date().toISOString() });
+  }
+
   return {
     ...auth.api,
 
@@ -274,6 +298,52 @@ export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi 
         hotels: [{ id: HOTEL.id, name: HOTEL.name, currency: 'ETB', ready_santim: sum(true), upcoming_santim: sum(false), paid_santim: 0, to_pay_santim: sum(true), last_paid_at: null, items, payouts: [] }],
         server_time: new Date().toISOString(),
       });
+    },
+
+    getRoomsChart: (o) => roomsChart(o),
+
+    async listRoomBlocks() {
+      await gate();
+      auth.identityOf();
+      const today = todayAddis();
+      return RoomBlockListSchema.parse({
+        blocks: [...blocks.values()].filter((b) => !b.released && b.check_out >= today).map((b) => ({ ...b, room_name: b.room_type_id })),
+        server_time: new Date().toISOString(),
+      }).blocks;
+    },
+
+    async createRoomBlock(input) {
+      await gate();
+      auth.identityOf();
+      if (input.check_in < todayAddis()) throw new ApiError('INVALID_REQUEST', 'The first night cannot be in the past');
+      if (input.kind === 'walk_in' && (input.guest_name ?? '').trim().length < 2) throw new ApiError('INVALID_REQUEST', "Give the guest's name");
+      const chart = await roomsChart({ from: input.check_in, days: Math.max(1, Math.round((Date.parse(input.check_out) - Date.parse(input.check_in)) / 86_400_000)) });
+      const room = chart.rooms.find((r) => r.id === input.room_type_id);
+      if (!room) throw new ApiError('NOT_FOUND', 'Room not found');
+      if (room.nights.some((n) => n.free < input.rooms)) throw new ApiError('SOLD_OUT', 'There are not enough free rooms on every one of those nights');
+      const id = `blk_${++seq}_${Date.now().toString(36)}`;
+      blocks.set(id, { id, kind: input.kind, room_type_id: input.room_type_id, check_in: input.check_in, check_out: input.check_out, rooms: input.rooms, guest_name: input.guest_name?.trim() ?? '', guest_phone: input.guest_phone?.trim() ?? '', note: input.note?.trim() ?? '', released: false });
+      await persist();
+    },
+
+    async releaseRoomBlock(id) {
+      await gate();
+      auth.identityOf();
+      const b = blocks.get(id);
+      if (!b) throw new ApiError('NOT_FOUND', 'Not found');
+      b.released = true;
+      await persist();
+    },
+
+    async markNoShow(id) {
+      await gate();
+      const r = find(id);
+      if (r.status === 'NO_SHOW') return view(r);
+      if (view(r).status !== 'CONFIRMED') throw new ApiError('INVALID_STATE', 'Only a confirmed booking can be marked as a no-show');
+      if (r.check_in > todayAddis()) throw new ApiError('INVALID_STATE', "The guest's check-in day has not come yet");
+      r.status = 'NO_SHOW';
+      await persist();
+      return view(r);
     },
 
     async checkInGuest(id) {

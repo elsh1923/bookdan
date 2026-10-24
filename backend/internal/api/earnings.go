@@ -29,7 +29,7 @@ const bookingMoneySQL = `
 	       coalesce(sum(-e.amount_santim) FILTER (WHERE e.account_code = 'vat_on_commission_payable'), 0)::bigint AS vat,
 	       coalesce(sum(e.amount_santim) FILTER (WHERE e.account_code IN ('guest_deposits_held', 'coupon_expense') AND t.kind = 'booking_confirmed'), 0)::bigint AS gross,
 	       coalesce(sum(e.amount_santim) FILTER (WHERE e.account_code = 'coupon_expense' AND t.kind = 'booking_confirmed'), 0)::bigint AS discount,
-	       (b.status IN ('CHECKED_IN', 'COMPLETED') OR (b.status = 'CONFIRMED' AND b.check_out <= (now() AT TIME ZONE 'Africa/Addis_Ababa')::date)) AS ready
+	       (b.status IN ('CHECKED_IN', 'COMPLETED', 'NO_SHOW') OR (b.status = 'CONFIRMED' AND b.check_out <= (now() AT TIME ZONE 'Africa/Addis_Ababa')::date)) AS ready
 	FROM bookings b JOIN ledger_transactions t ON t.booking_id = b.id JOIN ledger_entries e ON e.transaction_id = t.id
 	WHERE ($1::uuid[] IS NULL OR b.property_id = ANY($1::uuid[]))
 	GROUP BY b.id

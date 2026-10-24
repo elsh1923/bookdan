@@ -91,7 +91,8 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function toItem(s: (typeof SEED)[number]): SearchItem {
   const { rooms: _r, reviews: _v, description: _d, phone: _p, address: _a, house_rules: _h, photos: _ph, ...item } = s as any;
   const cheapest = [...s.rooms].sort((a, b) => a.price_santim - b.price_santim).find((r) => r.rooms_left > 0);
-  return { ...item, rooms_left: cheapest?.rooms_left ?? 0, landmark: placesNear(s.lat, s.lng, 15000, 1)[0] ?? null } as SearchItem;
+  const extras = s.rooms.some((r) => offersExtras(r.name));
+  return { ...item, rooms_left: cheapest?.rooms_left ?? 0, landmark: placesNear(s.lat, s.lng, 15000, 1)[0] ?? null, breakfast: extras, nonrefundable: extras, reply_minutes: null } as SearchItem;
 }
 
 function summarize(reviews: { rating: number }[]) {
@@ -256,6 +257,8 @@ export function createMockApi(opts: MockOptions = {}): Api {
       const rooms = p.rooms ?? 1;
       if (!Number.isInteger(rooms) || rooms < 1 || rooms > MAX_ROOMS) throw new ApiError('INVALID_STATE', 'Choose between 1 and 9 rooms');
       if (p.guests < rooms) throw new ApiError('INVALID_STATE', 'Each room needs at least one guest');
+      const children = p.children ?? 0;
+      if (children < 0 || children > p.guests - rooms) throw new ApiError('INVALID_STATE', 'Each room needs at least one adult');
       const available = roomsLeft(s.id, room.id);
       if (available < rooms) throw new ApiError('SOLD_OUT', 'Not enough rooms left');
       const nights = nightsBetween(p.check_in, p.check_out);
@@ -281,7 +284,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
         check_in: p.check_in, check_out: p.check_out, nights, guests: p.guests, rooms, rooms_available: available,
         nightly_santim: option.price_santim, ...priced, currency: room.currency,
         pay_at_hotel: s.amenities.includes('pay_at_hotel') && !couponCode, // a coupon is for online payment only
-        meal, refundable, coupon_code: couponCode, discount_santim: list.total_santim - priced.total_santim, list_total_santim: list.total_santim,
+        meal, refundable, coupon_code: couponCode, discount_santim: list.total_santim - priced.total_santim, list_total_santim: list.total_santim, children,
         server_time: new Date().toISOString(),
       });
       quotes.set(q.id, { ...q, expires: Date.now() + QUOTE_MS });
@@ -338,7 +341,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       await persist();
     },
 
-    async createHold({ quote_id, guest_name, idempotency_key }) {
+    async createHold({ quote_id, guest_name, idempotency_key, special_requests, booked_for_other, guest_phone }) {
       await gate();
       const owner = identityOf();
       // A room request carries the guest's profile to the hotel, so there must be one.
@@ -365,6 +368,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
         room_name: q.room_name, check_in: q.check_in, check_out: q.check_out, nights: q.nights, guests: q.guests, rooms: q.rooms,
         guest_name, total_santim: q.total_santim, currency: q.currency,
         meal: q.meal, refundable: q.refundable, coupon_code: q.coupon_code, discount_santim: q.discount_santim,
+        children: q.children, special_requests: special_requests?.trim() || null, booked_for_other: !!booked_for_other, guest_phone: guest_phone?.trim() || null,
         payment_method: null,
         pay_at_hotel: q.pay_at_hotel,
         payment: 'none',
@@ -462,6 +466,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       if (p.min_rating) found = found.filter((s) => s.rating != null && s.rating >= p.min_rating!);
       if (p.min_price) found = found.filter((s) => s.from_price_santim >= p.min_price!);
       if (p.max_price) found = found.filter((s) => s.from_price_santim <= p.max_price!);
+      if (p.breakfast || p.deals) found = found.filter((s) => s.rooms.some((r) => offersExtras(r.name))); // the demo offers both on every room but the Family Suite
 
       const sort = p.sort ?? 'recommended';
       const dist = (s: (typeof SEED)[number]) => (p.lat != null && p.lng != null ? metres(p.lat, p.lng, s.lat, s.lng) : 0);
@@ -490,6 +495,23 @@ export function createMockApi(opts: MockOptions = {}): Api {
         facets,
         server_time: new Date().toISOString(),
       });
+    },
+
+    async suggest(q: string) {
+      await gate();
+      const needle = q.trim().toLowerCase();
+      const places = PLACES.filter((p) => !needle || p.name.toLowerCase().includes(needle) || p.name_am.includes(needle))
+        .slice(0, 6)
+        .map((p) => ({ kind: 'landmark' as const, text: p.name, text_am: p.name_am, subtitle: 'Ethiopia' }));
+      if (!needle) return places;
+      const seen = new Set(places.map((p) => p.text.toLowerCase()));
+      const areas = [...new Set(SEED.filter((s) => s.area.toLowerCase().includes(needle)).map((s) => s.area))].filter((a) => !seen.has(a.toLowerCase()))
+        .map((a) => ({ kind: 'area' as const, text: a, text_am: undefined, subtitle: SEED.find((s) => s.area === a)!.city }));
+      const cities = [...new Set(SEED.filter((s) => s.city.toLowerCase().includes(needle)).map((s) => s.city))].filter((c) => !seen.has(c.toLowerCase()))
+        .map((c) => ({ kind: 'city' as const, text: c, text_am: undefined, subtitle: 'Ethiopia' }));
+      const hotels = SEED.filter((s) => s.name.toLowerCase().includes(needle)).slice(0, 4)
+        .map((s) => ({ kind: 'hotel' as const, text: s.name, text_am: undefined, subtitle: `${s.area}, ${s.city}`, property_id: s.id }));
+      return [...places, ...areas, ...cities, ...hotels].slice(0, 10);
     },
 
     async getProperty({ id }: GetPropertyParams): Promise<PropertyDetail> {

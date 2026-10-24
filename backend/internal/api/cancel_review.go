@@ -101,6 +101,7 @@ func (s *Server) cancelBooking(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.alertHotelOfCancellation(ctx, id)
+	s.emailGuest(ctx, id, "cancelled")
 	s.runRefunds(ctx)
 	b, err := s.loadBooking(ctx, s.pool, id, uid)
 	if err != nil {

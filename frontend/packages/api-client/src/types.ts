@@ -4,6 +4,9 @@ import type {
   CheckinLookup,
   CheckinQuery,
   Earnings,
+  NewRoomBlock,
+  RoomBlock,
+  RoomsChart,
   DeclineReason,
   GuestProfile,
   GuestProfileInput,
@@ -17,6 +20,7 @@ import type {
   Quote,
   ReviewInput,
   SearchSort,
+  Suggestion,
   SearchResponse,
   Voucher,
 } from '@bookdan/domain';
@@ -39,6 +43,9 @@ export interface SearchParams {
   max_price?: number;
   /** Only hotels rated at least this (0 to 5). */
   min_rating?: number;
+  /** Only hotels that offer breakfast / a cheaper non-refundable rate. */
+  breakfast?: boolean;
+  deals?: boolean;
   cursor?: string | null;
 }
 
@@ -61,6 +68,8 @@ export interface CreateQuoteParams {
   refundable?: boolean;
   /** A coupon code. Fails with COUPON_INVALID when it does not apply. Coupons work with online payment only. */
   coupon_code?: string;
+  /** How many of the guests are children (each room still needs an adult). */
+  children?: number;
 }
 
 export interface Tokens {
@@ -89,6 +98,8 @@ export interface AuthApi {
 export interface Api extends AuthApi {
   search(params: SearchParams): Promise<SearchResponse>;
   getProperty(params: GetPropertyParams): Promise<PropertyDetail>;
+  /** Landmarks, areas, cities and hotels matching what the guest has typed (with nothing typed: popular landmarks). */
+  suggest(q: string): Promise<Suggestion[]>;
 
   createQuote(params: CreateQuoteParams): Promise<Quote>;
   /**
@@ -97,7 +108,17 @@ export interface Api extends AuthApi {
    * idempotency_key is created once per checkout attempt and reused on retries: the same key
    * returns the same booking, the same key with different details fails with IDEMPOTENCY_MISMATCH.
    */
-  createHold(params: { quote_id: string; guest_name: string; idempotency_key: string }): Promise<Booking>;
+  createHold(params: {
+    quote_id: string;
+    /** The name of the person who will stay. */
+    guest_name: string;
+    idempotency_key: string;
+    /** Up to 400 characters for the hotel ("late arrival", "high floor"). */
+    special_requests?: string;
+    /** Booking for someone else: the hotel is told, and gets the guest's phone number to reach them. */
+    booked_for_other?: boolean;
+    guest_phone?: string;
+  }): Promise<Booking>;
   /**
    * Starts payment for a held booking. Pay-at-hotel completes immediately (session is null).
    * Otherwise returns a session whose payment_url the app opens in an in-app browser; the result
@@ -174,6 +195,16 @@ export interface PartnerApi extends AuthApi {
   lookupCheckin(query: CheckinQuery): Promise<CheckinLookup>;
   /** What the owner's hotels have earned and been paid. Fails with FORBIDDEN for anyone who is not an owner. */
   getEarnings(): Promise<Earnings>;
+  /** The rooms chart: free rooms per room type per night, from the same inventory the guest app sells from. */
+  getRoomsChart(opts?: { property_id?: string; from?: string; days?: number }): Promise<RoomsChart>;
+  /** The walk-ins and blocks that are still on. */
+  listRoomBlocks(property_id?: string): Promise<RoomBlock[]>;
+  /** Records a walk-in guest or blocks rooms. Fails with SOLD_OUT when the rooms are not free on every night. */
+  createRoomBlock(input: NewRoomBlock): Promise<void>;
+  /** Gives the rooms back. Harmless to repeat. */
+  releaseRoomBlock(id: string): Promise<void>;
+  /** The guest never came: the hotel keeps its share and the nights still to come are free again. Only from the check-in day. */
+  markNoShow(bookingId: string): Promise<PartnerBooking>;
   /** Marks the guest as arrived. Harmless to repeat. Fails with INVALID_STATE when the booking cannot be checked in. */
   checkInGuest(id: string): Promise<PartnerBooking>;
 

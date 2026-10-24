@@ -36,6 +36,11 @@ export const PartnerBookingSchema = z.object({
   /** The room option the guest booked: serve breakfast when it is 'breakfast'; a non-refundable booking is not refunded on cancelling. */
   meal: MealSchema.default('room_only'),
   refundable: z.boolean().default(true),
+  /** Who is travelling and what they asked for. For a booking made for someone else, guest_name is the person staying and guest_phone reaches them. */
+  children: z.number().int().default(0),
+  special_requests: z.string().default(''),
+  booked_for_other: z.boolean().default(false),
+  guest_phone: z.string().default(''),
   server_time: z.string(),
 });
 
@@ -91,6 +96,60 @@ export type EarningLine = z.infer<typeof EarningLineSchema>;
 export type PayoutLine = z.infer<typeof PayoutLineSchema>;
 export type HotelEarnings = z.infer<typeof HotelEarningsSchema>;
 export type Earnings = z.infer<typeof EarningsSchema>;
+
+/** One night of one room type on the hotel's chart. booked = rooms of guests who booked in the app, held = being paid for right now, blocked = the hotel's own walk-ins and blocks. */
+export const ChartNightSchema = z.object({
+  date: z.string(),
+  capacity: z.number().int(),
+  booked: z.number().int(),
+  held: z.number().int(),
+  blocked: z.number().int(),
+  free: z.number().int(),
+});
+export const ChartRoomSchema = z.object({ id: z.string(), name: z.string(), total_rooms: z.number().int(), nights: z.array(ChartNightSchema) });
+export const HotelRefSchema = z.object({ id: z.string(), name: z.string() });
+export const RoomsChartSchema = z.object({
+  hotels: z.array(HotelRefSchema),
+  property: HotelRefSchema,
+  from: z.string(),
+  days: z.number().int(),
+  rooms: z.array(ChartRoomSchema),
+  server_time: z.string(),
+});
+export type ChartNight = z.infer<typeof ChartNightSchema>;
+export type ChartRoom = z.infer<typeof ChartRoomSchema>;
+export type RoomsChart = z.infer<typeof RoomsChartSchema>;
+
+/** A walk-in guest the hotel recorded, or rooms it blocked (repairs, an event). Both take rooms out of sale until given back. */
+export const RoomBlockSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['walk_in', 'block']),
+  room_type_id: z.string(),
+  room_name: z.string(),
+  check_in: z.string(),
+  check_out: z.string(),
+  rooms: z.number().int(),
+  guest_name: z.string(),
+  guest_phone: z.string(),
+  note: z.string(),
+});
+export const RoomBlockListSchema = z.object({ blocks: z.array(RoomBlockSchema), server_time: z.string() });
+export type RoomBlock = z.infer<typeof RoomBlockSchema>;
+export interface NewRoomBlock {
+  property_id?: string;
+  room_type_id: string;
+  check_in: string;
+  /** The morning the rooms are free again (the last night is the day before). */
+  check_out: string;
+  rooms: number;
+  kind: 'walk_in' | 'block';
+  guest_name?: string;
+  guest_phone?: string;
+  note?: string;
+}
+
+/** True when a hotel may mark a confirmed booking as a no-show: the guest's check-in day has come. */
+export const canMarkNoShow = (b: Pick<PartnerBooking, 'status' | 'check_in'>, today: string): boolean => b.status === 'CONFIRMED' && b.check_in <= today;
 
 /** What a check-in lookup found: ready to check in, or why not. */
 export const CHECKIN_STATES = ['ready', 'checked_in', 'too_early', 'ended', 'cancelled', 'waiting', 'not_ready'] as const;

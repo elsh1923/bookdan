@@ -234,7 +234,9 @@ export default function BookingScreen() {
           {b.coupon_code ? <Line label={t('booking.coupon_row', { code: b.coupon_code })} value={`− ${price(b.discount_santim, b.currency)}`} /> : null}
           <Line label={t('booking.check_in')} value={`${shortDate(b.check_in, months)} · ${b.check_in_time}`} />
           <Line label={t('booking.check_out')} value={`${shortDate(b.check_out, months)} · ${b.check_out_time}`} />
-          <Line label={t('booking.guests')} value={String(b.guests)} />
+          <Line label={t('booking.guests')} value={b.children > 0 ? t('booking.adults_children', { adults: b.guests - b.children, children: b.children }) : String(b.guests)} />
+          {b.booked_for_other ? <Line label={t('checkout.staying')} value={`${b.guest_name}${b.guest_phone ? ` · ${b.guest_phone}` : ''}`} /> : null}
+          {b.special_requests ? <Line label={t('checkout.your_requests')} value={b.special_requests} /> : null}
           {b.payment_method ? <Line label={t('booking.paid_with')} value={t(`booking.${b.payment_method}`)} /> : null}
           <View style={{ height: 1, backgroundColor: colors.line, marginVertical: spacing.sm }} />
           <Line label={t('booking.total')} value={total} />

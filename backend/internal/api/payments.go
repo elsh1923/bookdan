@@ -154,6 +154,7 @@ func (s *Server) payBooking(w http.ResponseWriter, r *http.Request) error {
 	}
 	if requested {
 		s.notifyHotel(ctx, id)
+		s.emailGuest(ctx, id, "requested")
 	}
 	b, err := s.loadBooking(ctx, s.pool, id, uid)
 	if err != nil {
@@ -229,6 +230,7 @@ func (s *Server) processPaymentEvent(ctx context.Context, provider, eventID, pro
 	}
 	if notifyID != "" {
 		s.notifyHotel(ctx, notifyID)
+		s.emailGuest(ctx, notifyID, "requested")
 	}
 	s.runRefunds(ctx)
 	return nil
@@ -340,6 +342,7 @@ func (s *Server) notifyGuest(ctx context.Context, bookingID, kind string) {
 	if !ok {
 		return
 	}
+	s.emailGuest(ctx, bookingID, kind) // the same news by email, with the receipt, for guests who signed in with an address
 	rows, err := s.pool.Query(ctx, `SELECT d.push_token, p.name FROM bookings b JOIN properties p ON p.id = b.property_id
 		JOIN devices d ON d.user_id = b.user_id AND d.app = 'guest' AND d.push_token IS NOT NULL AND d.revoked_at IS NULL
 		WHERE b.id = $1`, bookingID)

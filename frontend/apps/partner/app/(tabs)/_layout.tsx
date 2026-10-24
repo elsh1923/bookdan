@@ -44,6 +44,7 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen name="checkin" options={{ title: t('partner.tab_checkin'), tabBarIcon: icon('qr-code-outline') }} />
+      <Tabs.Screen name="rooms" options={{ title: t('partner.tab_rooms'), tabBarIcon: icon('grid-outline') }} />
       <Tabs.Screen name="earnings" options={{ title: t('partner.tab_earnings'), tabBarIcon: icon('wallet-outline'), href: owner ? undefined : null }} />
       <Tabs.Screen name="settings" options={{ title: t('partner.tab_settings'), tabBarIcon: icon('settings-outline') }} />
     </Tabs>

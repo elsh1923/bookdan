@@ -26,7 +26,7 @@ var (
 	hotelTypes    = map[string]bool{"hotel": true, "guesthouse": true, "lodge": true, "resort": true}
 	hotelStatuses = map[string]bool{"draft": true, "active": true, "hidden": true}
 	amenityList   = map[string]bool{"generator": true, "hot_water": true, "wifi": true, "parking": true, "pay_at_hotel": true,
-		"ac": true, "pool": true, "restaurant": true, "gym": true, "spa": true, "airport_shuttle": true, "laundry": true, "front_desk_24h": true}
+		"ac": true, "pool": true, "restaurant": true, "gym": true, "spa": true, "airport_shuttle": true, "laundry": true, "front_desk_24h": true, "water_tank": true}
 	phoneAnyRE = regexp.MustCompile(`^\+?[0-9 ()-]{7,20}$`)
 )
 

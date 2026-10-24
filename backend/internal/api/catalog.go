@@ -38,22 +38,27 @@ func (s *Server) latLng(col string) (lat, lng string) {
 }
 
 type searchItem struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Area      string   `json:"area"`
-	City      string   `json:"city"`
-	Type      string   `json:"type"`
-	Badge     string   `json:"badge"`
-	FromPrice int64    `json:"from_price_santim"`
-	Currency  string   `json:"currency"`
-	Available bool     `json:"available"`
-	Amenities []string `json:"amenities"`
-	Rating    *float64 `json:"rating"`
-	ReviewCnt int      `json:"review_count"`
-	PhotoURL  *string  `json:"photo_url"`
-	Accent    string   `json:"accent"`
-	Lat       float64  `json:"lat"`
-	Lng       float64  `json:"lng"`
+	// Breakfast: some room here can be booked with breakfast. NonRefundable: a cheaper non-refundable rate is offered. ReplyMinutes: how long the
+	// hotel usually takes to answer a request (nil until it has answered a few).
+	Breakfast     bool     `json:"breakfast"`
+	NonRefundable bool     `json:"nonrefundable"`
+	ReplyMinutes  *int     `json:"reply_minutes"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Area          string   `json:"area"`
+	City          string   `json:"city"`
+	Type          string   `json:"type"`
+	Badge         string   `json:"badge"`
+	FromPrice     int64    `json:"from_price_santim"`
+	Currency      string   `json:"currency"`
+	Available     bool     `json:"available"`
+	Amenities     []string `json:"amenities"`
+	Rating        *float64 `json:"rating"`
+	ReviewCnt     int      `json:"review_count"`
+	PhotoURL      *string  `json:"photo_url"`
+	Accent        string   `json:"accent"`
+	Lat           float64  `json:"lat"`
+	Lng           float64  `json:"lng"`
 	// RoomsLeft is how many rooms of the cheapest room type that fits the party are still free (0 when none): the apps show "Only 2 left".
 	RoomsLeft int `json:"rooms_left"`
 	// DistanceM is the distance from the point the guest searched around (lat and lng in the request), when given.
@@ -186,6 +191,7 @@ func atoiDefault(v string, d int) int {
 
 // searchPlan is what the guest asked for, read from the query string.
 type searchPlan struct {
+	breakfast, deals bool // only hotels that offer breakfast / a cheaper non-refundable rate
 	needle           string
 	types, amenities []string
 	minPrice         int64 // santim per night, 0 = no limit
@@ -222,6 +228,7 @@ func readSearchPlan(q map[string][]string) (searchPlan, error) {
 	if !searchSorts[p.sort] {
 		return p, fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "sort must be recommended, price_asc, price_desc, rating or distance")
 	}
+	p.breakfast, p.deals = get("breakfast") == "1", get("deals") == "1"
 	var err error
 	for k, dst := range map[string]*int64{"min_price": &p.minPrice, "max_price": &p.maxPrice} {
 		if v := get(k); v != "" {
@@ -330,6 +337,10 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	replies, err := s.replyMinutes(r.Context(), ids)
+	if err != nil {
+		return err
+	}
 	facets := struct {
 		Types     map[string]int `json:"types"`
 		Amenities map[string]int `json:"amenities"`
@@ -343,6 +354,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 	for i := range all {
 		it := &all[i]
 		fillAvailability(it, rts[it.ID], guests, rooms)
+		it.ReplyMinutes = replies[it.ID]
 		if plan.hasPoint {
 			d := distanceM(plan.lat, plan.lng, it.Lat, it.Lng)
 			it.DistanceM = &d
@@ -398,6 +410,9 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 
 // keeps reports whether a hotel passes the guest's type, amenity, price and rating filters.
 func (p searchPlan) keeps(it searchItem) bool {
+	if (p.breakfast && !it.Breakfast) || (p.deals && !it.NonRefundable) {
+		return false
+	}
 	if len(p.types) > 0 {
 		ok := false
 		for _, t := range p.types {
@@ -483,6 +498,14 @@ func ratingOr0(it searchItem) float64 {
 func fillAvailability(it *searchItem, rts []roomType, guests, rooms int) {
 	it.Currency = "ETB"
 	for i, rt := range rts { // cheapest first
+		for _, o := range rt.Options {
+			if o.Meal == mealBreakfast {
+				it.Breakfast = true
+			}
+			if !o.Refundable {
+				it.NonRefundable = true
+			}
+		}
 		if i == 0 || rt.Price < it.FromPrice {
 			it.FromPrice, it.Currency = rt.Price, rt.Currency
 		}
@@ -512,15 +535,15 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 	var rating *float64
 	var rules []byte
 	var coverID *string
-	var checkInTime, checkOutTime string
+	var checkInTime, checkOutTime, descAm, directions, directionsAm string
 	err = s.pool.QueryRow(ctx, `
 		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating::float8, coalesce(pr.review_count, 0),
 		       `+lat+`, `+lng+`, p.description, p.phone, p.address, p.house_rules, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id AND pp.room_type_id IS NULL ORDER BY pp.position, pp.created_at LIMIT 1),
-		       to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI')
+		       to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI'), p.description_am, p.directions, p.directions_am
 		FROM properties p LEFT JOIN property_ratings pr ON pr.property_id = p.id
 		WHERE p.id = $1 AND p.status = 'active'`, id).
 		Scan(&it.ID, &it.Name, &it.Area, &it.City, &it.Type, &verified, &it.Amenities, &rating, &it.ReviewCnt, &it.Lat, &it.Lng,
-			&it.description, &it.phone, &it.address, &rules, &coverID, &checkInTime, &checkOutTime)
+			&it.description, &it.phone, &it.address, &rules, &coverID, &checkInTime, &checkOutTime, &descAm, &directions, &directionsAm)
 	if err == pgx.ErrNoRows || (err != nil && strings.Contains(err.Error(), "invalid input syntax for type uuid")) {
 		return errNotFound
 	}
@@ -555,6 +578,9 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	fillAvailability(&it, rts[it.ID], 1, 1)
+	if rep, err := s.replyMinutes(ctx, []string{it.ID}); err == nil {
+		it.ReplyMinutes = rep[it.ID]
+	}
 	rooms := rts[it.ID]
 	if rooms == nil {
 		rooms = []roomType{}
@@ -617,6 +643,10 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		Photos       []string `json:"photos"`
 		CheckInTime  string   `json:"check_in_time"`
 		CheckOutTime string   `json:"check_out_time"`
+		// The description in Amharic and how to find the hotel in words, in both languages (empty when the hotel wrote none).
+		DescriptionAm string `json:"description_am"`
+		Directions    string `json:"directions"`
+		DirectionsAm  string `json:"directions_am"`
 	}
 	var houseRules any = []string{}
 	if len(rules) > 0 {
@@ -630,6 +660,6 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		// RatingSummary is the average, the count per star, and the averages of the four sub-ratings; Nearby lists landmarks within 5 km.
 		RatingSummary ratingSummary `json:"rating_summary"`
 		Nearby        []placeRef    `json:"nearby"`
-	}{httpx.NowMeta(), propertyOut{it, it.description, it.phone, it.address, houseRules, photos, checkInTime, checkOutTime}, rooms, reviews, summary, nearby})
+	}{httpx.NowMeta(), propertyOut{it, it.description, it.phone, it.address, houseRules, photos, checkInTime, checkOutTime, descAm, directions, directionsAm}, rooms, reviews, summary, nearby})
 	return nil
 }

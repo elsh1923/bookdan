@@ -105,6 +105,7 @@ func (s *Server) Routes(root chi.Router) {
 		r.Get("/keys/voucher", s.h(s.voucherKey))
 
 		r.Get("/search", s.h(s.search))
+		r.Get("/suggest", s.h(s.suggest))
 		r.Get("/properties/{id}", s.h(s.property))
 
 		r.Group(func(r chi.Router) {
@@ -130,6 +131,11 @@ func (s *Server) Routes(root chi.Router) {
 			r.Post("/bookings/{id}/accept", s.h(s.partnerAccept))
 			r.Post("/bookings/{id}/decline", s.h(s.partnerDecline))
 			r.Post("/bookings/{id}/check-in", s.h(s.partnerCheckin))
+			r.Post("/bookings/{id}/no-show", s.h(s.partnerNoShow))
+			r.Get("/rooms", s.h(s.partnerRoomsChart))
+			r.Get("/rooms/blocks", s.h(s.partnerBlocks))
+			r.Post("/rooms/blocks", s.h(s.partnerCreateBlock))
+			r.Delete("/rooms/blocks/{id}", s.h(s.partnerReleaseBlock))
 			r.Post("/checkin/lookup", s.h(s.partnerCheckinLookup))
 			r.Get("/earnings", s.h(s.partnerEarnings))
 			r.Post("/bookings/{id}/guest/reveal", s.h(s.partnerReveal))

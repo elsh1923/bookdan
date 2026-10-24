@@ -16,6 +16,8 @@ export interface SearchCriteria {
   min_price?: number;
   max_price?: number;
   min_rating?: number;
+  breakfast?: boolean;
+  deals?: boolean;
   /** The guest's position, for "Near me": hotels know how far they are and can be sorted by it. */
   lat?: number;
   lng?: number;

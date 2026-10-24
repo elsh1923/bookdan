@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -51,6 +52,9 @@ type Config struct {
 	AdminOwners   bool
 	// PartnerAppURL is where hotel staff download the BookDan Partner app (a link to the APK today, the Play Store later). It goes in invitation emails.
 	PartnerAppURL string
+	// IDRetentionDays is how many days after check-out a hotel keeps the full ID number of a guest before it is erased (the type and the last
+	// four characters stay). 0 = never erased. How long the law requires is the owner's decision (docs/design.md, DECISION 5).
+	IDRetentionDays int
 	// PaymentWebhookSecret signs payment-gateway callbacks (HMAC-SHA256 of the body).
 	PaymentWebhookSecret string
 }
@@ -85,8 +89,17 @@ func Load() Config {
 		AdminPassword:        get("ADMIN_PASSWORD", ""),
 		AdminOwners:          get("ADMIN_OWNERS", "false") == "true",
 		PartnerAppURL:        get("PARTNER_APP_URL", ""),
+		IDRetentionDays:      atoi(get("ID_RETENTION_DAYS", "0")),
 		PaymentWebhookSecret: get("PAYMENT_WEBHOOK_SECRET", ""),
 	}
+}
+
+func atoi(v string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 func (c Config) IsProduction() bool { return c.Env == "production" }

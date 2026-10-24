@@ -15,7 +15,7 @@ export const BookingStatusSchema = z.enum([
 
 export const PropertyTypeSchema = z.enum(['hotel', 'guesthouse', 'lodge', 'resort']);
 
-export const AmenitySchema = z.enum(['generator', 'hot_water', 'wifi', 'parking', 'pay_at_hotel', 'ac', 'pool', 'restaurant', 'gym', 'spa', 'airport_shuttle', 'laundry', 'front_desk_24h']);
+export const AmenitySchema = z.enum(['generator', 'hot_water', 'wifi', 'parking', 'pay_at_hotel', 'ac', 'pool', 'restaurant', 'gym', 'spa', 'airport_shuttle', 'laundry', 'front_desk_24h', 'water_tank']);
 export const ALL_AMENITIES = AmenitySchema.options;
 
 /** A well-known place and how far it is from a hotel, in metres. */
@@ -44,7 +44,23 @@ export const SearchItemSchema = z.object({
   distance_m: z.number().int().nullable().default(null),
   /** The closest well-known place, for the card ("1.4 km to Bole Airport"). */
   landmark: PlaceRefSchema.nullable().default(null),
+  /** Some room here can be booked with breakfast / a cheaper non-refundable rate is offered. */
+  breakfast: z.boolean().default(false),
+  nonrefundable: z.boolean().default(false),
+  /** How many minutes the hotel usually takes to answer a request (null until it has answered a few). */
+  reply_minutes: z.number().int().nullable().default(null),
 });
+
+/** One place suggestion as the guest types: a landmark, area or city to search for, or a hotel to open. */
+export const SuggestionSchema = z.object({
+  kind: z.enum(['landmark', 'area', 'city', 'hotel']),
+  text: z.string(),
+  text_am: z.string().optional(),
+  subtitle: z.string().default(''),
+  property_id: z.string().optional(),
+});
+export type Suggestion = z.infer<typeof SuggestionSchema>;
+export const SuggestResponseSchema = z.object({ items: z.array(SuggestionSchema), server_time: z.string() });
 
 export const SearchSortSchema = z.enum(['recommended', 'price_asc', 'price_desc', 'rating', 'distance']);
 export type SearchSort = z.infer<typeof SearchSortSchema>;
@@ -115,6 +131,10 @@ export const PropertyDetailSchema = z.object({
     /** When guests may arrive and must leave (HH:MM, Addis Ababa time). */
     check_in_time: z.string().default('14:00'),
     check_out_time: z.string().default('12:00'),
+    /** The description in Amharic, and how to find the hotel in words (English and Amharic). Empty when the hotel wrote none. */
+    description_am: z.string().default(''),
+    directions: z.string().default(''),
+    directions_am: z.string().default(''),
   }),
   room_types: z.array(RoomTypeSchema),
   reviews: z.array(ReviewSchema),
@@ -162,6 +182,8 @@ export const QuoteSchema = z.object({
   coupon_code: z.string().nullable().default(null),
   discount_santim: z.number().int().default(0),
   list_total_santim: z.number().int().default(0),
+  /** How many of the guests are children (the rest are adults). */
+  children: z.number().int().default(0),
   server_time: z.string(),
 });
 
@@ -207,6 +229,11 @@ export const BookingSchema = z.object({
   refundable: z.boolean().default(true),
   coupon_code: z.string().nullable().default(null),
   discount_santim: z.number().int().default(0),
+  children: z.number().int().default(0),
+  /** What the guest asked the hotel for, and whether the person staying booked it for someone else (with a phone number to reach them). */
+  special_requests: z.string().nullable().default(null),
+  booked_for_other: z.boolean().default(false),
+  guest_phone: z.string().nullable().default(null),
   server_time: z.string(),
 });
 

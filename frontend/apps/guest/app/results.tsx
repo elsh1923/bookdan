@@ -8,6 +8,7 @@ import { ALL_AMENITIES, nightsBetween, type Amenity, type PropertyType, type Sea
 import { useTranslation } from '@bookdan/i18n';
 import { Button, Chip, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
 import { HotelMap } from '../src/HotelMap';
+import { Photo } from '../src/Photo';
 import { PropertyCard } from '../src/PropertyCard';
 import { price, shortDate } from '../src/format';
 import { useSearch, type SearchCriteria } from '../src/queries';
@@ -26,8 +27,10 @@ interface Filters {
   min_price: number;
   max_price: number;
   min_rating: number;
+  breakfast: boolean;
+  deals: boolean;
 }
-const NO_FILTERS: Filters = { types: [], amenities: [], min_price: 0, max_price: 0, min_rating: 0 };
+const NO_FILTERS: Filters = { types: [], amenities: [], min_price: 0, max_price: 0, min_rating: 0, breakfast: false, deals: false };
 
 function bracketLabel(t: (k: string, o?: Record<string, unknown>) => string, [from, to]: [number, number]): string {
   if (!from && !to) return t('filters.price_any');
@@ -92,6 +95,11 @@ function FilterSheet({ visible, filters, facets, onClose, onApply }: {
             <Chip key={r} label={r === 0 ? t('filters.rating_any') : `★ ${t('filters.rating_min', { n: r })}`} selected={f.min_rating === r} onPress={() => setF({ ...f, min_rating: r })} />
           ))}
         </View>
+        <T variant="h3" style={{ marginTop: spacing.lg }}>{t('filters.offers')}</T>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
+          <Chip label={t('filters.breakfast')} selected={f.breakfast} onPress={() => setF({ ...f, breakfast: !f.breakfast })} />
+          <Chip label={t('filters.deals')} selected={f.deals} onPress={() => setF({ ...f, deals: !f.deals })} />
+        </View>
         <T variant="h3" style={{ marginTop: spacing.lg }}>{t('filters.type')}</T>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
           {TYPES.map((x) => <Chip key={x} label={`${t(`type.${x}`)}${count(facets?.types[x] ?? (facets ? 0 : undefined))}`} selected={f.types.includes(x)} onPress={() => setF({ ...f, types: toggle(f.types, x) })} />)}
@@ -113,7 +121,7 @@ function FilterSheet({ visible, filters, facets, onClose, onApply }: {
 export default function Results() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
-  const p = useLocalSearchParams<{ q?: string; in: string; out: string; guests: string; rooms?: string; lat?: string; lng?: string }>();
+  const p = useLocalSearchParams<{ q?: string; in: string; out: string; guests: string; children?: string; rooms?: string; lat?: string; lng?: string }>();
   // "Near me": the guest's position came with the search.
   const near = p.lat && p.lng && !isNaN(Number(p.lat)) && !isNaN(Number(p.lng)) ? { lat: Number(p.lat), lng: Number(p.lng) } : null;
   const months = t('months.short', { returnObjects: true }) as unknown as string[];
@@ -130,6 +138,7 @@ export default function Results() {
       q: p.q ?? '', check_in: p.in, check_out: p.out, guests: Number(p.guests) || 1, rooms: Number(p.rooms) || 1,
       types: filters.types, amenities: filters.amenities, sort,
       min_price: filters.min_price || undefined, max_price: filters.max_price || undefined, min_rating: filters.min_rating || undefined,
+      breakfast: filters.breakfast || undefined, deals: filters.deals || undefined,
       lat: near?.lat, lng: near?.lng,
     }),
     [p.q, p.in, p.out, p.guests, p.rooms, filters, sort, near?.lat, near?.lng],
@@ -147,7 +156,7 @@ export default function Results() {
   const nights = nightsBetween(p.in, p.out);
   const stale = query.data && Date.now() - query.dataUpdatedAt > STALE_AFTER_MS;
   const filterCount =
-    filters.types.length + filters.amenities.length + (filters.min_price || filters.max_price ? 1 : 0) + (filters.min_rating ? 1 : 0);
+    filters.types.length + filters.amenities.length + (filters.min_price || filters.max_price ? 1 : 0) + (filters.min_rating ? 1 : 0) + (filters.breakfast ? 1 : 0) + (filters.deals ? 1 : 0);
   const quickRating = filters.min_rating === 4;
 
   const errorView = () => {
@@ -181,6 +190,7 @@ export default function Results() {
           <Chip label={`${t('results.sort')}: ${t(`results.sort_${sort}`)}`} selected={sort !== 'recommended'} onPress={() => setShowSort(true)} />
           <Chip label={`${t('results.filters')}${filterCount ? ` (${filterCount})` : ''}`} selected={filterCount > 0} onPress={() => setShowFilters(true)} />
           <Chip label={t('results.quick_rating')} selected={quickRating} onPress={() => setFilters({ ...filters, min_rating: quickRating ? 0 : 4 })} />
+          <Chip label={t('filters.breakfast')} selected={filters.breakfast} onPress={() => setFilters({ ...filters, breakfast: !filters.breakfast })} />
           <Chip label={t('amenity.wifi')} selected={filters.amenities.includes('wifi')} onPress={() => setFilters({ ...filters, amenities: filters.amenities.includes('wifi') ? filters.amenities.filter((a) => a !== 'wifi') : [...filters.amenities, 'wifi'] })} />
           <Chip label={t('results.list')} selected={view === 'list'} onPress={() => setView('list')} />
           <Chip label={t('results.map')} selected={view === 'map'} onPress={() => setView('map')} />
@@ -197,9 +207,10 @@ export default function Results() {
             {pickedItem ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push({ pathname: '/property/[id]', params: { id: pickedItem.id, in: p.in, out: p.out, guests: p.guests, rooms: p.rooms ?? '1' } })}
+                onPress={() => router.push({ pathname: '/property/[id]', params: { id: pickedItem.id, in: p.in, out: p.out, guests: p.guests, children: p.children ?? '0', rooms: p.rooms ?? '1' } })}
                 style={{ position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }}
               >
+                <Photo uri={pickedItem.photo_url} accent={pickedItem.accent} name={pickedItem.name} showInitial={false} style={{ width: 64, height: 64, borderRadius: radius.md }} />
                 <View style={{ flex: 1 }}>
                   <T variant="h3" numberOfLines={1}>{pickedItem.name}</T>
                   <T variant="small" color={colors.inkSoft}>{pickedItem.rating ? `★ ${pickedItem.rating.toFixed(1)} · ` : ''}{price(pickedItem.from_price_santim, pickedItem.currency)} {t('common.per_night')}</T>
@@ -233,7 +244,7 @@ export default function Results() {
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ padding: spacing.lg }}
           renderItem={({ item, index }) => (
-            <Reveal index={index}><PropertyCard item={item} onPress={() => router.push({ pathname: '/property/[id]', params: { id: item.id, in: p.in, out: p.out, guests: p.guests, rooms: p.rooms ?? '1' } })} /></Reveal>
+            <Reveal index={index}><PropertyCard item={item} onPress={() => router.push({ pathname: '/property/[id]', params: { id: item.id, in: p.in, out: p.out, guests: p.guests, children: p.children ?? '0', rooms: p.rooms ?? '1' } })} /></Reveal>
           )}
           onEndReached={() => query.hasNextPage && !query.isFetchingNextPage && query.fetchNextPage()}
           onEndReachedThreshold={0.5}

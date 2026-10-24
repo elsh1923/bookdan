@@ -4,7 +4,7 @@
   'use strict';
 
   var API = '/v1';
-  var AMENITIES = [['generator', 'Generator'], ['hot_water', 'Hot water'], ['wifi', 'Wi-Fi'], ['parking', 'Parking'], ['pay_at_hotel', 'Pay at hotel'], ['ac', 'Air conditioning'], ['pool', 'Swimming pool'], ['restaurant', 'Restaurant'], ['gym', 'Gym'], ['spa', 'Spa'], ['airport_shuttle', 'Airport shuttle'], ['laundry', 'Laundry'], ['front_desk_24h', '24-hour front desk']];
+  var AMENITIES = [['generator', 'Generator'], ['hot_water', 'Hot water'], ['wifi', 'Wi-Fi'], ['parking', 'Parking'], ['pay_at_hotel', 'Pay at hotel'], ['ac', 'Air conditioning'], ['pool', 'Swimming pool'], ['restaurant', 'Restaurant'], ['gym', 'Gym'], ['spa', 'Spa'], ['airport_shuttle', 'Airport shuttle'], ['laundry', 'Laundry'], ['front_desk_24h', '24-hour front desk'], ['water_tank', '24-hour water']];
   var TYPES = [['hotel', 'Hotel'], ['guesthouse', 'Guesthouse'], ['lodge', 'Lodge'], ['resort', 'Resort']];
   var STATUSES = [['draft', 'Draft (not shown to guests)'], ['active', 'Published'], ['hidden', 'Hidden']];
 
@@ -146,7 +146,7 @@
   // ---- hotel form (shared by create and edit)
   function detailsForm(hotel, onSaved) {
     var isNew = !hotel;
-    hotel = hotel || { name: '', type: 'hotel', city: '', area: '', address: '', phone: '', description: '', lat: '', lng: '', amenities: [], house_rules: [], pay_at_hotel: false, verified: false, status: 'draft', check_in_time: '14:00', check_out_time: '12:00' };
+    hotel = hotel || { name: '', type: 'hotel', city: '', area: '', address: '', phone: '', description: '', lat: '', lng: '', amenities: [], house_rules: [], pay_at_hotel: false, verified: false, status: 'draft', check_in_time: '14:00', check_out_time: '12:00', description_am: '', directions: '', directions_am: '' };
     var f = {
       name: h('input', { value: hotel.name, maxlength: '120' }),
       type: select(TYPES, hotel.type),
@@ -161,6 +161,9 @@
       pay: h('input', { type: 'checkbox', checked: hotel.pay_at_hotel }),
       verified: h('input', { type: 'checkbox', checked: hotel.verified }),
       status: select(STATUSES, hotel.status),
+      descAm: h('textarea', { maxlength: '2000', placeholder: 'ስለ ሆቴሉ በአማርኛ' }, hotel.description_am || ''),
+      directions: h('textarea', { maxlength: '600', placeholder: 'For example: Behind the blue church, next to the pharmacy' }, hotel.directions || ''),
+      directionsAm: h('textarea', { maxlength: '600', placeholder: 'እንዴት እንደሚገኝ በአማርኛ' }, hotel.directions_am || ''),
       checkIn: h('input', { type: 'time', value: hotel.check_in_time || '14:00' }),
       checkOut: h('input', { type: 'time', value: hotel.check_out_time || '12:00' })
     };
@@ -174,7 +177,8 @@
         description: f.description.value, lat: parseFloat(f.lat.value), lng: parseFloat(f.lng.value),
         amenities: amen.filter(function (a) { return a.box.checked; }).map(function (a) { return a.key; }),
         house_rules: f.rules.value.split('\n'), pay_at_hotel: f.pay.checked, status: isNew ? 'draft' : f.status.value,
-        check_in_time: f.checkIn.value, check_out_time: f.checkOut.value
+        check_in_time: f.checkIn.value, check_out_time: f.checkOut.value,
+        description_am: f.descAm.value, directions: f.directions.value, directions_am: f.directionsAm.value
       };
       if (isNaN(body.lat)) body.lat = null;
       if (isNaN(body.lng)) body.lng = null;
@@ -189,6 +193,9 @@
         field('Latitude', f.lat), field('Longitude', f.lng, 'Tip: in Google Maps, right-click the hotel and click the numbers at the top to copy them.'),
         field('Check-in from', f.checkIn, 'Shown to guests on the hotel page and in their booking (Addis Ababa time).'), field('Check-out until', f.checkOut)),
       field('Description', f.description),
+      field('Description in Amharic (shown to guests who use the app in Amharic)', f.descAm),
+      field('How to find us, in words', f.directions, 'Addresses here are often landmarks. Example: "Behind the blue church, next to the pharmacy". Shown on the hotel page.'),
+      field('How to find us, in Amharic', f.directionsAm),
       field('House rules', f.rules),
       h('div', { class: 'field' }, h('label', {}, 'Features'), h('div', { class: 'checks' }, amen.map(function (a) { return h('label', { class: 'check' }, a.box, a.label); }))),
       h('div', { class: 'field' }, h('label', { class: 'check' }, f.pay, 'Guests may choose to pay at the hotel')),

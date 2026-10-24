@@ -69,11 +69,16 @@ paths:
       description: |
         Body: { property_id, room_type_id, check_in, check_out, guests, rooms? } (1 to 9 rooms of one type; guests >= rooms).
         Amounts cover all rooms: nightly_santim is one room for one night; subtotal_santim, vat_santim and total_santim are for the stay.
-        Optional: meal (room_only | breakfast), refundable (default true) and coupon_code. The answer says what was chosen, discount_santim (how much cheaper the total is, VAT included)
+        Optional: meal (room_only | breakfast), refundable (default true), coupon_code and children (each room needs an adult). The answer says what was chosen, discount_santim (how much cheaper the total is, VAT included)
         and list_total_santim (the price without the coupon). pay_at_hotel is false whenever a coupon is applied.
         Errors: SOLD_OUT (not enough rooms for every night), INVALID_STATE (too many guests, no price for those dates), PRICING_NOT_CONFIRMED.
         Also: OPTION_UNAVAILABLE (the room does not offer that meal or non-refundable), COUPON_INVALID (the message says why).
       responses: { "200": { description: Quote } }
+  /suggest:
+    get:
+      summary: Place suggestions as the guest types (public)
+      description: Landmarks, areas and cities with a published hotel, and hotels by name. With q empty, the popular landmarks. Each item has kind (landmark, area, city, hotel), text, subtitle and, for a hotel, property_id.
+      responses: { "200": { description: Up to 10 suggestions } }
   /bookings:
     get:
       summary: The signed-in guest's bookings
@@ -188,6 +193,30 @@ paths:
       description: Allowed from the check-in date until 06:00 on the check-out date (Addis Ababa time) for a confirmed booking. INVALID_STATE otherwise.
       parameters: [{ $ref: "#/components/parameters/Id" }]
       responses: { "200": { description: The booking, now CHECKED_IN } }
+  /partner/rooms:
+    get:
+      summary: The hotel's rooms chart (query: property_id?, from?, days? up to 31)
+      description: Per room type and night - capacity, booked (guests who booked in the app), held (being paid), blocked (the hotel's own walk-ins and blocks) and free.
+      responses: { "200": { description: The chart } }
+  /partner/rooms/blocks:
+    get:
+      summary: Walk-ins and blocks that are still on
+      responses: { "200": { description: Blocks } }
+    post:
+      summary: Record a walk-in guest or block rooms
+      description: Body { property_id?, room_type_id, check_in, check_out, rooms, kind walk_in|block, guest_name (walk-in), guest_phone?, note? }. The rooms are taken for every night or none (SOLD_OUT).
+      responses: { "200": { description: Recorded } }
+  /partner/rooms/blocks/{id}:
+    delete:
+      summary: Give the rooms back (harmless to repeat)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Released } }
+  /partner/bookings/{id}/no-show:
+    post:
+      summary: Mark a guest who did not arrive (a confirmed booking, from its check-in day)
+      description: The hotel keeps its share and it becomes payable; the nights still to come are free again. INVALID_STATE otherwise.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: The booking, now NO_SHOW } }
   /partner/earnings:
     get:
       summary: What the owner's hotels earned and were paid (owners only; FORBIDDEN for receptionists)

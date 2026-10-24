@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from '@bookdan/i18n';
 import { T, spacing } from '@bookdan/ui';
@@ -44,22 +44,48 @@ export function PhotoCarousel({ photos, accent, name, width, height }: { photos:
   );
 }
 
-/** Every photo, one under the other, full screen. */
+/** The photos full screen: swipe sideways, "3 of 12" shows where you are, and the strip of small pictures jumps to one. */
 export function PhotoGallery({ photos, visible, accent, name, onClose }: { photos: string[]; visible: boolean; accent?: string; name: string; onClose: () => void }) {
   const { t } = useTranslation();
+  const { width } = useWindowDimensions();
+  const pager = useRef<ScrollView>(null);
+  const [index, setIndex] = useState(0);
+  const jump = (i: number) => {
+    setIndex(i);
+    pager.current?.scrollTo({ x: i * width, animated: true });
+  };
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={t('property.close')} onPress={onClose} style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end' }}>
-          <Ionicons name="close" size={28} color="#fff" />
-        </Pressable>
-        <ScrollView style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: spacing.lg }}>
+          <T color="#fff">{t('property.gallery_of', { i: index + 1, n: photos.length })}</T>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('property.close')} onPress={onClose} style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </Pressable>
+        </View>
+        <ScrollView
+          ref={pager}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
+          style={{ flex: 1 }}
+        >
           {photos.map((uri) => (
-            <View key={uri} style={{ marginBottom: spacing.sm }}>
-              <Photo uri={uri} accent={accent} name={name} style={{ width: '100%', aspectRatio: 4 / 3 }} />
+            <View key={uri} style={{ width, justifyContent: 'center' }}>
+              <Photo uri={uri} accent={accent} name={name} style={{ width, aspectRatio: 4 / 3 }} />
             </View>
           ))}
         </ScrollView>
+        {photos.length > 1 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.xs, padding: spacing.md }}>
+            {photos.map((uri, i) => (
+              <Pressable key={uri} accessibilityRole="button" accessibilityLabel={t('property.gallery_of', { i: i + 1, n: photos.length })} onPress={() => jump(i)} style={{ borderWidth: 2, borderColor: i === index ? '#fff' : 'transparent', borderRadius: 6, opacity: i === index ? 1 : 0.6 }}>
+                <Photo uri={uri} accent={accent} name={name} style={{ width: 64, height: 48, borderRadius: 4 }} />
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
       </SafeAreaView>
     </Modal>
   );
