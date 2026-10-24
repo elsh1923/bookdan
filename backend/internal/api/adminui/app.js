@@ -143,6 +143,37 @@
       holder));
   }
 
+  // ---- map pin: click the map or drag the pin; the two number boxes stay in step (and can still be typed)
+  function locationPicker(latBox, lngBox) {
+    var holder = h('div', { class: 'mappick' });
+    var mapEl = h('div', { class: 'mappick-map' });
+    var coords = h('div', { class: 'grid' }, field('Latitude', latBox), field('Longitude', lngBox));
+    if (!window.L) { add(holder, coords); return holder; }
+    add(holder, mapEl); add(holder, coords);
+    var ADDIS = [9.0108, 38.7613];
+    function valid() { var a = parseFloat(latBox.value), b = parseFloat(lngBox.value); return isNaN(a) || isNaN(b) ? null : [a, b]; }
+    var start = valid();
+    setTimeout(function () {
+      var map = L.map(mapEl).setView(start || ADDIS, start ? 16 : 12);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+      var pin = null;
+      function set(ll) { latBox.value = ll.lat.toFixed(6); lngBox.value = ll.lng.toFixed(6); }
+      function put(ll, fly) {
+        if (!pin) {
+          pin = L.marker(ll, { draggable: true }).addTo(map);
+          pin.on('dragend', function () { set(pin.getLatLng()); });
+        } else pin.setLatLng(ll);
+        if (fly) map.setView(ll, Math.max(map.getZoom(), 16));
+      }
+      if (start) put(start, false);
+      map.on('click', function (e) { set(e.latlng); put(e.latlng, false); });
+      function typed() { var v = valid(); if (v) put(v, true); }
+      latBox.addEventListener('change', typed); lngBox.addEventListener('change', typed);
+      map.invalidateSize();
+    }, 0);
+    return holder;
+  }
+
   // ---- hotel form (shared by create and edit)
   function detailsForm(hotel, onSaved) {
     var isNew = !hotel;
@@ -190,8 +221,8 @@
       h('div', { class: 'grid' },
         field('Name', f.name), field('Type', f.type), field('City', f.city), field('Area or neighbourhood', f.area),
         field('Street address', f.address), field('Phone for guests', f.phone),
-        field('Latitude', f.lat), field('Longitude', f.lng, 'Tip: in Google Maps, right-click the hotel and click the numbers at the top to copy them.'),
         field('Check-in from', f.checkIn, 'Shown to guests on the hotel page and in their booking (Addis Ababa time).'), field('Check-out until', f.checkOut)),
+      field('Location on the map', locationPicker(f.lat, f.lng), 'Click the map (or drag the pin) where the hotel is. Guests see this pin on the hotel page and in the map view.'),
       field('Description', f.description),
       field('Description in Amharic (shown to guests who use the app in Amharic)', f.descAm),
       field('How to find us, in words', f.directions, 'Addresses here are often landmarks. Example: "Behind the blue church, next to the pharmacy". Shown on the hotel page.'),

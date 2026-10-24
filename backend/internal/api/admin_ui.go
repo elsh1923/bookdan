@@ -29,13 +29,18 @@ func (s *Server) AdminPage(r chi.Router) {
 			h.Set("Cache-Control", "no-store")
 			h.Set("X-Content-Type-Options", "nosniff")
 			h.Set("X-Frame-Options", "DENY")
-			h.Set("Referrer-Policy", "no-referrer")
-			h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 			_, _ = w.Write(body)
 		}
 	}
 	r.Get("/admin", serve("index.html", "text/html; charset=utf-8"))
 	r.Get("/admin/", serve("index.html", "text/html; charset=utf-8"))
 	r.Get("/admin/app.js", serve("app.js", "text/javascript; charset=utf-8"))
+	r.Get("/admin/leaflet/leaflet.js", serve("leaflet/leaflet.js", "text/javascript; charset=utf-8"))
+	r.Get("/admin/leaflet/leaflet.css", serve("leaflet/leaflet.css", "text/css; charset=utf-8"))
+	for _, img := range []string{"marker-icon.png", "marker-icon-2x.png", "marker-shadow.png", "layers.png", "layers-2x.png"} {
+		r.Get("/admin/leaflet/images/"+img, serve("leaflet/images/"+img, "image/png"))
+	}
 	r.Get("/admin/style.css", serve("style.css", "text/css; charset=utf-8"))
 }

@@ -51,3 +51,5 @@ td input{padding:8px 10px}
 .login{max-width:420px;margin:12vh auto 0}
 .checks{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px}
 @media (max-width:640px){header.top{padding:12px 16px}main{padding:16px 12px 48px}.card{padding:14px}}
+
+.mappick-map { height: 320px; border-radius: 10px; border: 1px solid #d8dee8; margin-bottom: 10px; }
