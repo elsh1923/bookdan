@@ -1,10 +1,11 @@
 import type { PropertyDetail } from '@bookdan/domain';
 
-type Seed = PropertyDetail['property'] & { rooms: PropertyDetail['room_types']; reviews: PropertyDetail['reviews'] };
+// What the mock hotels are made of: the fields the server computes (rooms left, distance, nearest landmark) are added by the mock.
+type Seed = Omit<PropertyDetail['property'], 'rooms_left' | 'distance_m' | 'landmark' | 'check_in_time' | 'check_out_time'> & { rooms: Omit<PropertyDetail['room_types'][number], 'options' | 'photos' | 'photo_thumb'>[]; reviews: PropertyDetail['reviews'] };
 
 const rules = ['Check-in from 12:00, check-out until 11:00', 'Valid ID required at check-in', 'No smoking inside rooms'];
 
-function rooms(prefix: string, prices: [string, number, number, number][]): PropertyDetail['room_types'] {
+function rooms(prefix: string, prices: [string, number, number, number][]): Omit<PropertyDetail['room_types'][number], 'options' | 'photos' | 'photo_thumb'>[] {
   return prices.map(([name, birr, capacity, left], i) => ({
     id: `${prefix}-r${i + 1}`,
     name,
@@ -18,8 +19,8 @@ function rooms(prefix: string, prices: [string, number, number, number][]): Prop
 
 function reviews(prefix: string): PropertyDetail['reviews'] {
   return [
-    { id: `${prefix}-v1`, author: 'Hanna T.', rating: 5, text: 'Spotless rooms and a very helpful reception.', date: '2026-09-02' },
-    { id: `${prefix}-v2`, author: 'Daniel M.', rating: 4, text: 'Good value. Hot water was reliable.', date: '2026-08-14' },
+    { id: `${prefix}-v1`, author: 'Hanna T.', rating: 5, text: 'Spotless rooms and a very helpful reception.', date: '2026-09-02', verified: true },
+    { id: `${prefix}-v2`, author: 'Daniel M.', rating: 4, text: 'Good value. Hot water was reliable.', date: '2026-08-14', verified: true },
   ];
 }
 

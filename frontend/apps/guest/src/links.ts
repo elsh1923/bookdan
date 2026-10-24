@@ -28,6 +28,23 @@ export function openDirections(place: { lat: number; lng: number; label: string 
   return tryOpen(urls);
 }
 
+/**
+ * Opens a "new event" screen for a stay (Google Calendar's own link, which works with no calendar permission).
+ * Times are the hotel's check-in and check-out in Addis Ababa. Returns false when nothing could open it.
+ */
+export function addStayToCalendar(stay: { title: string; details: string; location: string; checkIn: string; checkOut: string; inTime: string; outTime: string }): Promise<boolean> {
+  const stamp = (date: string, time: string) => `${date.replace(/-/g, '')}T${time.replace(':', '')}00`;
+  const q = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: stay.title,
+    details: stay.details,
+    location: stay.location,
+    dates: `${stamp(stay.checkIn, stay.inTime)}/${stamp(stay.checkOut, stay.outTime)}`,
+    ctz: 'Africa/Addis_Ababa',
+  });
+  return tryOpen([`https://calendar.google.com/calendar/render?${q.toString()}`]);
+}
+
 /** Opens the dialer. Returns false on devices with no phone app (tablets, emulators). */
 export function callPhone(phone: string): Promise<boolean> {
   return tryOpen([`tel:${phone.replace(/[^\d+]/g, '')}`]);

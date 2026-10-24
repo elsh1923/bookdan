@@ -61,7 +61,7 @@ export default function RootLayout() {
         persistOptions={{
           persister: queryPersister,
           maxAge: 24 * 3_600_000,
-          buster: '1', // bump when the cached shapes change
+          buster: '4', // bump when the cached shapes change (4: ... and room photos)
           dehydrateOptions: {
             shouldDehydrateQuery: (q) => q.state.status === 'success' && PERSISTED_QUERY_KEYS.has(String(q.queryKey[0])),
           },

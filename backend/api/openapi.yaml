@@ -69,7 +69,10 @@ paths:
       description: |
         Body: { property_id, room_type_id, check_in, check_out, guests, rooms? } (1 to 9 rooms of one type; guests >= rooms).
         Amounts cover all rooms: nightly_santim is one room for one night; subtotal_santim, vat_santim and total_santim are for the stay.
+        Optional: meal (room_only | breakfast), refundable (default true) and coupon_code. The answer says what was chosen, discount_santim (how much cheaper the total is, VAT included)
+        and list_total_santim (the price without the coupon). pay_at_hotel is false whenever a coupon is applied.
         Errors: SOLD_OUT (not enough rooms for every night), INVALID_STATE (too many guests, no price for those dates), PRICING_NOT_CONFIRMED.
+        Also: OPTION_UNAVAILABLE (the room does not offer that meal or non-refundable), COUPON_INVALID (the message says why).
       responses: { "200": { description: Quote } }
   /bookings:
     get:
@@ -192,6 +195,24 @@ paths:
         Per hotel: ready_santim (guest checked in or stay over), upcoming_santim (stay still to come, not payable), paid_santim, to_pay_santim
         (ready minus paid), then one line per online-paid booking (gross, commission, VAT, net) and the payouts so far.
       responses: { "200": { description: Earnings } }
+  /admin/hotels/{id}/rooms/{room}/photos:
+    post:
+      summary: Add a photo to one room type (multipart field "photo"; at most 10 per room)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Added; the same cover and delete endpoints as hotel photos apply } }
+  /admin/coupons:
+    get:
+      summary: Platform admin. Every coupon with how often it was used and what it cost BookDan
+      responses: { "200": { description: Coupons } }
+    post:
+      summary: Platform admin. Create a coupon
+      description: Body { code, kind percent|fixed, value (basis points or santim), max_discount_santim?, min_subtotal_santim?, starts_on?, ends_on?, max_uses?, per_user_limit, first_booking_only, property_id?, active }.
+      responses: { "200": { description: Created } }
+  /admin/coupons/{id}:
+    put:
+      summary: Platform admin. Change a coupon's rules or switch it on or off (the code never changes)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Saved } }
   /admin/payouts:
     get:
       summary: Platform admin. Every hotel's money position and its payout account

@@ -37,6 +37,12 @@ export function StayLine({ b }: { b: PartnerBooking }) {
         {b.rooms > 1 ? `${b.rooms} × ` : ''}{b.room_name} · {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {t('common.night', { count: b.nights })}
       </T>
       <T variant="small" color={colors.muted}>{t('common.guest', { count: b.guests })} · {b.reference}</T>
+      {b.meal === 'breakfast' || !b.refundable ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs }}>
+          {b.meal === 'breakfast' ? <Badge tone="success" icon="☕" label={t('partner.meal_breakfast')} /> : null}
+          {!b.refundable ? <Badge tone="warning" icon="⚠" label={t('partner.nonrefundable')} /> : null}
+        </View>
+      ) : null}
     </>
   );
 }

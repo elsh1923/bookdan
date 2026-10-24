@@ -43,12 +43,62 @@ const LANDMARKS: Record<string, string[]> = {
   'fasil': ['p-gondar-1'],
 };
 
+// Well-known places with their coordinates, for "1.4 km to Meskel Square" and the nearby list.
+const PLACES = [
+  { name: 'Meskel Square', name_am: 'መስቀል አደባባይ', lat: 9.0108, lng: 38.7613 },
+  { name: 'Bole Airport', name_am: 'ቦሌ አየር ማረፊያ', lat: 8.9779, lng: 38.7993 },
+  { name: 'Piassa', name_am: 'ፒያሳ', lat: 9.0346, lng: 38.7469 },
+  { name: 'Lake Tana', name_am: 'ጣና ሐይቅ', lat: 11.6, lng: 37.39 },
+  { name: 'Bete Giyorgis', name_am: 'ቤተ ጊዮርጊስ', lat: 12.0319, lng: 39.0473 },
+  { name: 'Fasil Ghebbi', name_am: 'ፋሲል ግቢ', lat: 12.6074, lng: 37.4666 },
+];
+
+function metres(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const rad = Math.PI / 180;
+  const a = Math.sin(((lat2 - lat1) * rad) / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(((lng2 - lng1) * rad) / 2) ** 2;
+  return Math.round(2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(a))));
+}
+
+function placesNear(lat: number, lng: number, maxM: number, limit: number) {
+  return PLACES.map((p) => ({ name: p.name, name_am: p.name_am, distance_m: metres(lat, lng, p.lat, p.lng) }))
+    .filter((p) => p.distance_m <= maxM)
+    .sort((a, b) => a.distance_m - b.distance_m)
+    .slice(0, limit);
+}
+
+// What the demo hotels offer besides the plain room: breakfast at 150 birr a night and 10% off for no refund (not on the Family Suite).
+const BREAKFAST_SANTIM = 15_000;
+const NONREFUNDABLE_BPS = 1000;
+const offersExtras = (roomName: string) => roomName !== 'Family Suite';
+function roomOptions(room: { name: string; price_santim: number }) {
+  const base = room.price_santim;
+  const cheaper = Math.round((base * (10000 - NONREFUNDABLE_BPS)) / 10000);
+  const out: { meal: 'room_only' | 'breakfast'; refundable: boolean; price_santim: number }[] = [{ meal: 'room_only', refundable: true, price_santim: base }];
+  if (offersExtras(room.name)) {
+    out.push({ meal: 'room_only', refundable: false, price_santim: cheaper });
+    out.push({ meal: 'breakfast', refundable: true, price_santim: base + BREAKFAST_SANTIM });
+    out.push({ meal: 'breakfast', refundable: false, price_santim: cheaper + BREAKFAST_SANTIM });
+  }
+  return out;
+}
+
+// Demo coupons: WELCOME10 is 10% off, SAVE200 takes 200 birr off.
+const COUPONS: Record<string, { percentBp?: number; fixed?: number }> = { WELCOME10: { percentBp: 1000 }, SAVE200: { fixed: 20_000 } };
+
 const MAX_ROOMS = 9;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function toItem(s: (typeof SEED)[number]): SearchItem {
   const { rooms: _r, reviews: _v, description: _d, phone: _p, address: _a, house_rules: _h, photos: _ph, ...item } = s as any;
-  return item as SearchItem;
+  const cheapest = [...s.rooms].sort((a, b) => a.price_santim - b.price_santim).find((r) => r.rooms_left > 0);
+  return { ...item, rooms_left: cheapest?.rooms_left ?? 0, landmark: placesNear(s.lat, s.lng, 15000, 1)[0] ?? null } as SearchItem;
+}
+
+function summarize(reviews: { rating: number }[]) {
+  const distribution = [0, 0, 0, 0, 0];
+  for (const r of reviews) distribution[Math.min(5, Math.max(1, Math.round(r.rating))) - 1]++;
+  const average = reviews.length ? Math.round((reviews.reduce((a, r) => a + r.rating, 0) / reviews.length) * 10) / 10 : null;
+  return { average, count: reviews.length, distribution, categories: { cleanliness: null, location: null, staff: null, value: null } };
 }
 
 function matches(q: string, s: (typeof SEED)[number]): boolean {
@@ -151,12 +201,13 @@ export function createMockApi(opts: MockOptions = {}): Api {
     const checkInAt = Date.parse(`${r.b.check_in}T12:00:00+03:00`);
     const until = checkInAt - 48 * 3_600_000;
     const cancellable = (status === 'PAID_AWAITING_HOTEL' || status === 'CONFIRMED') && now < checkInAt;
-    const refund = status === 'PAID_AWAITING_HOTEL' || now <= until ? paid : 0;
+    // A non-refundable booking gets nothing back once the hotel has confirmed it.
+    const refund = status === 'PAID_AWAITING_HOTEL' || (r.b.refundable && now <= until) ? paid : 0;
     return BookingSchema.parse({
       ...r.b,
       can_cancel: cancellable,
       refund_if_cancelled_santim: cancellable ? refund : 0,
-      full_refund_until: status === 'CONFIRMED' && paid > 0 ? new Date(until).toISOString() : null,
+      full_refund_until: status === 'CONFIRMED' && paid > 0 && r.b.refundable ? new Date(until).toISOString() : null,
       // Demo shortcut: a real review waits for check-out; in the demo a confirmed booking can be reviewed straight away.
       can_review: (status === 'CONFIRMED' || status === 'CHECKED_IN' || status === 'COMPLETED') && !r.b.review,
       server_time: new Date(now).toISOString(),
@@ -208,13 +259,29 @@ export function createMockApi(opts: MockOptions = {}): Api {
       const available = roomsLeft(s.id, room.id);
       if (available < rooms) throw new ApiError('SOLD_OUT', 'Not enough rooms left');
       const nights = nightsBetween(p.check_in, p.check_out);
+      const meal = p.meal ?? 'room_only';
+      const refundable = p.refundable ?? true;
+      const option = roomOptions(room).find((o) => o.meal === meal && o.refundable === refundable);
+      if (!option) throw new ApiError('OPTION_UNAVAILABLE', 'This room does not offer that option');
+      const list = priceStay(option.price_santim * rooms, nights);
+      let priced = list;
+      let couponCode: string | null = null;
+      if (p.coupon_code?.trim()) {
+        const code = p.coupon_code.trim().toUpperCase();
+        const c = COUPONS[code];
+        if (!c) throw new ApiError('COUPON_INVALID', 'That coupon code is not valid');
+        const off = Math.min(list.subtotal_santim, c.percentBp ? Math.round((list.subtotal_santim * c.percentBp) / 10000) : (c.fixed ?? 0));
+        priced = priceStay(list.subtotal_santim - off, 1);
+        couponCode = code;
+      }
       const q = QuoteSchema.parse({
         id: `q_${++seq}_${Date.now().toString(36)}`,
         property_id: s.id, property_name: s.name,
         room_type_id: room.id, room_name: room.name,
         check_in: p.check_in, check_out: p.check_out, nights, guests: p.guests, rooms, rooms_available: available,
-        nightly_santim: room.price_santim, ...priceStay(room.price_santim * rooms, nights), currency: room.currency,
-        pay_at_hotel: s.amenities.includes('pay_at_hotel'),
+        nightly_santim: option.price_santim, ...priced, currency: room.currency,
+        pay_at_hotel: s.amenities.includes('pay_at_hotel') && !couponCode, // a coupon is for online payment only
+        meal, refundable, coupon_code: couponCode, discount_santim: list.total_santim - priced.total_santim, list_total_santim: list.total_santim,
         server_time: new Date().toISOString(),
       });
       quotes.set(q.id, { ...q, expires: Date.now() + QUOTE_MS });
@@ -297,6 +364,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
         property_id: s.id, property_name: s.name, property_phone: s.phone, address: s.address,
         room_name: q.room_name, check_in: q.check_in, check_out: q.check_out, nights: q.nights, guests: q.guests, rooms: q.rooms,
         guest_name, total_santim: q.total_santim, currency: q.currency,
+        meal: q.meal, refundable: q.refundable, coupon_code: q.coupon_code, discount_santim: q.discount_santim,
         payment_method: null,
         pay_at_hotel: q.pay_at_hotel,
         payment: 'none',
@@ -381,12 +449,45 @@ export function createMockApi(opts: MockOptions = {}): Api {
       const wanted = p.rooms ?? 1;
       found = found.filter((s) => s.rooms.some((r) => r.capacity * wanted >= p.guests && r.rooms_left >= wanted) || !s.available);
 
+      // Counts behind each filter describe what the words found; price bounds cover the hotels that have a room.
+      const facets = { types: {} as Record<string, number>, amenities: {} as Record<string, number> };
+      for (const s of found) {
+        facets.types[s.type] = (facets.types[s.type] ?? 0) + 1;
+        for (const a of s.amenities) facets.amenities[a] = (facets.amenities[a] ?? 0) + 1;
+      }
+      const prices = found.filter((s) => s.available).map((s) => s.from_price_santim);
+
+      if (p.types?.length) found = found.filter((s) => p.types!.includes(s.type));
+      if (p.amenities?.length) found = found.filter((s) => p.amenities!.every((a) => s.amenities.includes(a)));
+      if (p.min_rating) found = found.filter((s) => s.rating != null && s.rating >= p.min_rating!);
+      if (p.min_price) found = found.filter((s) => s.from_price_santim >= p.min_price!);
+      if (p.max_price) found = found.filter((s) => s.from_price_santim <= p.max_price!);
+
+      const sort = p.sort ?? 'recommended';
+      const dist = (s: (typeof SEED)[number]) => (p.lat != null && p.lng != null ? metres(p.lat, p.lng, s.lat, s.lng) : 0);
+      found = [...found].sort((a, b) => {
+        if (a.available !== b.available) return a.available ? -1 : 1; // no room for the party: last, whatever the sort
+        if (sort === 'price_asc' && a.from_price_santim !== b.from_price_santim) return a.from_price_santim - b.from_price_santim;
+        if (sort === 'price_desc' && a.from_price_santim !== b.from_price_santim) return b.from_price_santim - a.from_price_santim;
+        if (sort === 'rating' && (a.rating ?? 0) !== (b.rating ?? 0)) return (b.rating ?? 0) - (a.rating ?? 0);
+        if (sort === 'distance' && dist(a) !== dist(b)) return dist(a) - dist(b);
+        if (sort === 'recommended') {
+          if (direct(a) !== direct(b)) return Number(direct(b)) - Number(direct(a));
+          if ((a.rating ?? 0) !== (b.rating ?? 0)) return (b.rating ?? 0) - (a.rating ?? 0);
+        }
+        return a.name.localeCompare(b.name);
+      });
+
       const start = p.cursor ? Number(p.cursor) : 0;
       const page = found.slice(start, start + PAGE_SIZE);
       const next = start + PAGE_SIZE < found.length ? String(start + PAGE_SIZE) : null;
       return SearchResponseSchema.parse({
-        items: page.map(toItem),
+        items: page.map((s) => ({ ...toItem(s), distance_m: p.lat != null && p.lng != null ? dist(s) : null })),
         next_cursor: next,
+        total: found.length,
+        price_min_santim: prices.length ? Math.min(...prices) : 0,
+        price_max_santim: prices.length ? Math.max(...prices) : 0,
+        facets,
         server_time: new Date().toISOString(),
       });
     },
@@ -396,9 +497,11 @@ export function createMockApi(opts: MockOptions = {}): Api {
       const s = SEED.find((x) => x.id === id);
       if (!s) throw new ApiError('NOT_FOUND', 'Property not found');
       return PropertyDetailSchema.parse({
-        property: { ...toItem(s), description: s.description, phone: s.phone, address: s.address, house_rules: s.house_rules, photos: s.photos },
-        room_types: s.rooms,
+        property: { ...toItem(s), description: s.description, phone: s.phone, address: s.address, house_rules: s.house_rules, photos: s.photos, check_in_time: '12:00', check_out_time: '11:00' },
+        room_types: s.rooms.map((r) => ({ ...r, options: roomOptions(r) })),
         reviews: s.reviews,
+        rating_summary: summarize(s.reviews),
+        nearby: placesNear(s.lat, s.lng, 5000, 6),
         server_time: new Date().toISOString(),
       });
     },

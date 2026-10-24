@@ -121,6 +121,14 @@ function searchQuery(p: SearchParams): string {
   if (p.rooms && p.rooms > 1) q.set('rooms', String(p.rooms));
   if (p.types?.length) q.set('types', p.types.join(','));
   if (p.amenities?.length) q.set('amenities', p.amenities.join(','));
+  if (p.sort && p.sort !== 'recommended') q.set('sort', p.sort);
+  if (p.min_price) q.set('min_price', String(p.min_price));
+  if (p.max_price) q.set('max_price', String(p.max_price));
+  if (p.min_rating) q.set('min_rating', String(p.min_rating));
+  if (p.lat != null && p.lng != null) {
+    q.set('lat', String(p.lat));
+    q.set('lng', String(p.lng));
+  }
   if (p.cursor) q.set('cursor', p.cursor);
   return q.toString();
 }

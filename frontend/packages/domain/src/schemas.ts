@@ -15,7 +15,11 @@ export const BookingStatusSchema = z.enum([
 
 export const PropertyTypeSchema = z.enum(['hotel', 'guesthouse', 'lodge', 'resort']);
 
-export const AmenitySchema = z.enum(['generator', 'hot_water', 'wifi', 'parking', 'pay_at_hotel']);
+export const AmenitySchema = z.enum(['generator', 'hot_water', 'wifi', 'parking', 'pay_at_hotel', 'ac', 'pool', 'restaurant', 'gym', 'spa', 'airport_shuttle', 'laundry', 'front_desk_24h']);
+export const ALL_AMENITIES = AmenitySchema.options;
+
+/** A well-known place and how far it is from a hotel, in metres. */
+export const PlaceRefSchema = z.object({ name: z.string(), name_am: z.string().optional(), distance_m: z.number().int() });
 
 export const SearchItemSchema = z.object({
   id: z.string(),
@@ -34,13 +38,33 @@ export const SearchItemSchema = z.object({
   accent: z.string().optional(), // placeholder colour while photos load
   lat: z.number(),
   lng: z.number(),
+  /** Rooms still free of the cheapest room type that fits the party (0 when none): "Only 2 left". */
+  rooms_left: z.number().int().default(0),
+  /** Distance from the point the guest searched around, when the search had one. */
+  distance_m: z.number().int().nullable().default(null),
+  /** The closest well-known place, for the card ("1.4 km to Bole Airport"). */
+  landmark: PlaceRefSchema.nullable().default(null),
 });
+
+export const SearchSortSchema = z.enum(['recommended', 'price_asc', 'price_desc', 'rating', 'distance']);
+export type SearchSort = z.infer<typeof SearchSortSchema>;
 
 export const SearchResponseSchema = z.object({
   items: z.array(SearchItemSchema),
   next_cursor: z.string().nullable(),
+  /** How many hotels match the filters (all pages), the cheapest and dearest night among hotels with a room, and the count behind each filter. */
+  total: z.number().int().optional(),
+  price_min_santim: z.number().int().default(0),
+  price_max_santim: z.number().int().default(0),
+  facets: z.object({ types: z.record(z.number().int()).default({}), amenities: z.record(z.number().int()).default({}) }).default({ types: {}, amenities: {} }),
   server_time: z.string(),
 });
+
+/** The ways to book a room: room only or with breakfast, with free cancellation or non-refundable (cheaper). */
+export const MealSchema = z.enum(['room_only', 'breakfast']);
+export type Meal = z.infer<typeof MealSchema>;
+export const RoomOptionSchema = z.object({ meal: MealSchema, refundable: z.boolean(), price_santim: z.number().int() });
+export type RoomOption = z.infer<typeof RoomOptionSchema>;
 
 export const RoomTypeSchema = z.object({
   id: z.string(),
@@ -50,6 +74,11 @@ export const RoomTypeSchema = z.object({
   currency: CurrencySchema,
   amenities: z.array(z.string()),
   rooms_left: z.number().int(),
+  /** What this room offers, each with its price per night. Always has the plain room first. */
+  options: z.array(RoomOptionSchema).default([]),
+  /** This room's own pictures (full size), cover first, and the first one small for the card. */
+  photos: z.array(z.string()).default([]),
+  photo_thumb: z.string().nullable().default(null),
 });
 
 export const ReviewSchema = z.object({
@@ -58,7 +87,23 @@ export const ReviewSchema = z.object({
   rating: z.number(),
   text: z.string(),
   date: z.string(),
+  /** The review comes from a guest whose stay was booked and finished on BookDan. */
+  verified: z.boolean().default(true),
 });
+
+/** The numbers above a hotel's reviews. distribution[0] counts one-star reviews and distribution[4] five-star reviews. */
+export const RatingSummarySchema = z.object({
+  average: z.number().nullable(),
+  count: z.number().int(),
+  distribution: z.array(z.number().int()).length(5),
+  categories: z.object({
+    cleanliness: z.number().nullable(),
+    location: z.number().nullable(),
+    staff: z.number().nullable(),
+    value: z.number().nullable(),
+  }),
+});
+export type RatingSummary = z.infer<typeof RatingSummarySchema>;
 
 export const PropertyDetailSchema = z.object({
   property: SearchItemSchema.extend({
@@ -67,9 +112,15 @@ export const PropertyDetailSchema = z.object({
     address: z.string(),
     house_rules: z.array(z.string()),
     photos: z.array(z.string()),
+    /** When guests may arrive and must leave (HH:MM, Addis Ababa time). */
+    check_in_time: z.string().default('14:00'),
+    check_out_time: z.string().default('12:00'),
   }),
   room_types: z.array(RoomTypeSchema),
   reviews: z.array(ReviewSchema),
+  rating_summary: RatingSummarySchema.default({ average: null, count: 0, distribution: [0, 0, 0, 0, 0], categories: { cleanliness: null, location: null, staff: null, value: null } }),
+  /** Landmarks within 5 km, closest first. */
+  nearby: z.array(PlaceRefSchema).default([]),
   server_time: z.string(),
 });
 
@@ -105,6 +156,12 @@ export const QuoteSchema = z.object({
   total_santim: z.number().int(),
   currency: CurrencySchema,
   pay_at_hotel: z.boolean(),
+  /** The room option chosen, the coupon applied, how much it took off the total (VAT included), and the total without it. */
+  meal: MealSchema.default('room_only'),
+  refundable: z.boolean().default(true),
+  coupon_code: z.string().nullable().default(null),
+  discount_santim: z.number().int().default(0),
+  list_total_santim: z.number().int().default(0),
   server_time: z.string(),
 });
 
@@ -140,8 +197,28 @@ export const BookingSchema = z.object({
   /** Whether the guest may review this stay now (after check-out), and the review they wrote. */
   can_review: z.boolean().default(false),
   review: z.object({ rating: z.number().int(), text: z.string() }).nullable().default(null),
+  /** The hotel's check-in and check-out times (HH:MM). */
+  check_in_time: z.string().default('14:00'),
+  check_out_time: z.string().default('12:00'),
+  /** What happened to the booking and when (single-booking view only). */
+  timeline: z.array(z.object({ status: BookingStatusSchema, at: z.string() })).default([]),
+  /** The room option booked, and the coupon used (the discount is paid online only). */
+  meal: MealSchema.default('room_only'),
+  refundable: z.boolean().default(true),
+  coupon_code: z.string().nullable().default(null),
+  discount_santim: z.number().int().default(0),
   server_time: z.string(),
 });
+
+/** The optional sub-ratings a guest can give with their stars. */
+export interface ReviewInput {
+  rating: number;
+  text: string;
+  cleanliness?: number;
+  location?: number;
+  staff?: number;
+  value?: number;
+}
 
 /** What the app opens to take the payment: an in-app browser at payment_url, which returns by deep link. */
 export const PaymentSessionSchema = z.object({

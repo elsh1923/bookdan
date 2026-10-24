@@ -12,6 +12,7 @@ import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, PressableScale, Reveal, Skeleton, T, dark, gradients, radius, spacing } from '@bookdan/ui';
 import { StayCard } from '../../src/StayCard';
 import { useAllProperties } from '../../src/queries';
+import { usePrefs } from '../../src/store';
 
 type Category = PropertyType | 'all';
 const CATEGORIES: Category[] = ['all', 'hotel', 'guesthouse', 'lodge', 'resort'];
@@ -69,6 +70,10 @@ export default function Home() {
       .map((x) => x.item);
     return { featured: shuffled.slice(0, FEATURED_COUNT), more: shuffled.slice(FEATURED_COUNT, FEATURED_COUNT + GRID_COUNT) };
   }, [all.items, shuffleSeed]);
+
+  // Hotels the guest looked at before, newest first, for a quick way back.
+  const viewedIds = usePrefs((s) => s.viewed);
+  const recent = useMemo(() => viewedIds.map((id) => all.items.find((i) => i.id === id)).filter((x): x is SearchItem => !!x).slice(0, 6), [viewedIds, all.items]);
 
   const open = (item: SearchItem) =>
     router.push({ pathname: '/property/[id]', params: { id: item.id, in: today, out: checkOut, guests: '1' } });
@@ -148,6 +153,17 @@ export default function Home() {
                 <Reveal key={item.id} index={i}><StayCard item={item} large width={wideWidth} height={Math.round(wideWidth * 0.78)} onPress={() => open(item)} /></Reveal>
               ))}
             </ScrollView>
+
+            {recent.length > 0 ? (
+              <View style={{ marginTop: spacing.xl }}>
+                <T variant="displaySm" color={dark.text} style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.md }}>{t('home.recently_viewed')}</T>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
+                  {recent.map((item) => (
+                    <StayCard key={item.id} item={item} width={gridWidth} height={Math.round(gridWidth * 0.95)} onPress={() => open(item)} />
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
 
             {more.length > 0 ? (
               <View style={{ marginTop: spacing.xl }}>

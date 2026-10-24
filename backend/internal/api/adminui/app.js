@@ -4,7 +4,7 @@
   'use strict';
 
   var API = '/v1';
-  var AMENITIES = [['generator', 'Generator'], ['hot_water', 'Hot water'], ['wifi', 'Wi-Fi'], ['parking', 'Parking'], ['pay_at_hotel', 'Pay at hotel']];
+  var AMENITIES = [['generator', 'Generator'], ['hot_water', 'Hot water'], ['wifi', 'Wi-Fi'], ['parking', 'Parking'], ['pay_at_hotel', 'Pay at hotel'], ['ac', 'Air conditioning'], ['pool', 'Swimming pool'], ['restaurant', 'Restaurant'], ['gym', 'Gym'], ['spa', 'Spa'], ['airport_shuttle', 'Airport shuttle'], ['laundry', 'Laundry'], ['front_desk_24h', '24-hour front desk']];
   var TYPES = [['hotel', 'Hotel'], ['guesthouse', 'Guesthouse'], ['lodge', 'Lodge'], ['resort', 'Resort']];
   var STATUSES = [['draft', 'Draft (not shown to guests)'], ['active', 'Published'], ['hidden', 'Hidden']];
 
@@ -139,14 +139,14 @@
     }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
     return shell(h('div', {},
       h('div', { class: 'row between' }, h('h1', {}, 'Hotels'),
-        state.role === 'admin' ? h('span', {}, h('button', { class: 'secondary', onclick: function () { go('#/payouts'); } }, 'Payouts'), ' ', h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel')) : null),
+        state.role === 'admin' ? h('span', {}, h('button', { class: 'secondary', onclick: function () { go('#/coupons'); } }, 'Coupons'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/payouts'); } }, 'Payouts'), ' ', h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel')) : null),
       holder));
   }
 
   // ---- hotel form (shared by create and edit)
   function detailsForm(hotel, onSaved) {
     var isNew = !hotel;
-    hotel = hotel || { name: '', type: 'hotel', city: '', area: '', address: '', phone: '', description: '', lat: '', lng: '', amenities: [], house_rules: [], pay_at_hotel: false, verified: false, status: 'draft' };
+    hotel = hotel || { name: '', type: 'hotel', city: '', area: '', address: '', phone: '', description: '', lat: '', lng: '', amenities: [], house_rules: [], pay_at_hotel: false, verified: false, status: 'draft', check_in_time: '14:00', check_out_time: '12:00' };
     var f = {
       name: h('input', { value: hotel.name, maxlength: '120' }),
       type: select(TYPES, hotel.type),
@@ -160,7 +160,9 @@
       rules: h('textarea', { placeholder: 'One rule per line' }, (hotel.house_rules || []).join('\n')),
       pay: h('input', { type: 'checkbox', checked: hotel.pay_at_hotel }),
       verified: h('input', { type: 'checkbox', checked: hotel.verified }),
-      status: select(STATUSES, hotel.status)
+      status: select(STATUSES, hotel.status),
+      checkIn: h('input', { type: 'time', value: hotel.check_in_time || '14:00' }),
+      checkOut: h('input', { type: 'time', value: hotel.check_out_time || '12:00' })
     };
     var amen = AMENITIES.map(function (a) { return { key: a[0], box: h('input', { type: 'checkbox', checked: (hotel.amenities || []).indexOf(a[0]) >= 0 }), label: a[1] }; });
     var out = h('div', {});
@@ -171,7 +173,8 @@
         name: f.name.value, type: f.type.value, city: f.city.value, area: f.area.value, address: f.address.value, phone: f.phone.value,
         description: f.description.value, lat: parseFloat(f.lat.value), lng: parseFloat(f.lng.value),
         amenities: amen.filter(function (a) { return a.box.checked; }).map(function (a) { return a.key; }),
-        house_rules: f.rules.value.split('\n'), pay_at_hotel: f.pay.checked, status: isNew ? 'draft' : f.status.value
+        house_rules: f.rules.value.split('\n'), pay_at_hotel: f.pay.checked, status: isNew ? 'draft' : f.status.value,
+        check_in_time: f.checkIn.value, check_out_time: f.checkOut.value
       };
       if (isNaN(body.lat)) body.lat = null;
       if (isNaN(body.lng)) body.lng = null;
@@ -183,7 +186,8 @@
       h('div', { class: 'grid' },
         field('Name', f.name), field('Type', f.type), field('City', f.city), field('Area or neighbourhood', f.area),
         field('Street address', f.address), field('Phone for guests', f.phone),
-        field('Latitude', f.lat), field('Longitude', f.lng, 'Tip: in Google Maps, right-click the hotel and click the numbers at the top to copy them.')),
+        field('Latitude', f.lat), field('Longitude', f.lng, 'Tip: in Google Maps, right-click the hotel and click the numbers at the top to copy them.'),
+        field('Check-in from', f.checkIn, 'Shown to guests on the hotel page and in their booking (Addis Ababa time).'), field('Check-out until', f.checkOut)),
       field('Description', f.description),
       field('House rules', f.rules),
       h('div', { class: 'field' }, h('label', {}, 'Features'), h('div', { class: 'checks' }, amen.map(function (a) { return h('label', { class: 'check' }, a.box, a.label); }))),
@@ -226,26 +230,36 @@
     return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), holder));
   }
 
+  // Empty means "not offered"; otherwise the amount in birr as santim, or a percent as basis points.
+  function optionalBirr(v) { var n = parseFloat(String(v).replace(/,/g, '')); return isNaN(n) || n <= 0 ? null : Math.round(n * 100); }
+  function optionalPercent(v) { var n = parseFloat(v); return isNaN(n) || n <= 0 ? null : Math.round(n * 100); }
+
   function roomsPanel(hotel, reload) {
     var wrap = h('div', {});
     add(wrap, h('p', { class: 'soft' }, 'Set how many rooms of each kind you have and the price per night in birr. The price applies from today for the next two years. Bookings already made keep the price they were sold at.'));
+    add(wrap, h('p', { class: 'soft' }, 'Optional extras guests can choose: a price for breakfast (added per room per night) and a discount for guests who accept no refund. Leave them empty to offer neither.'));
     var out = h('div', {});
     if (hotel.rooms.length) {
-      var table = h('table', {}, h('thead', {}, h('tr', {}, ['Room name', 'Guests per room', 'Rooms', 'Features (comma separated)', 'Price per night (ETB)', ''].map(function (t) { return h('th', {}, t); }))));
+      var table = h('table', {}, h('thead', {}, h('tr', {}, ['Room name', 'Guests per room', 'Rooms', 'Features (comma separated)', 'Price per night (ETB)', 'Breakfast per night (ETB)', 'Non-refundable discount (%)', ''].map(function (t) { return h('th', {}, t); }))));
       var body = h('tbody', {});
       hotel.rooms.forEach(function (r) {
         var name = h('input', { value: r.name }), cap = h('input', { value: r.capacity, inputmode: 'numeric', style: 'width:80px' }),
           total = h('input', { value: r.total_rooms, inputmode: 'numeric', style: 'width:80px' }),
-          feat = h('input', { value: r.amenities.join(', ') }), price = h('input', { value: birr(r.price_santim), inputmode: 'numeric', style: 'width:120px', placeholder: 'e.g. 3200' });
+          feat = h('input', { value: r.amenities.join(', ') }), price = h('input', { value: birr(r.price_santim), inputmode: 'numeric', style: 'width:120px', placeholder: 'e.g. 3200' }),
+          bf = h('input', { value: r.breakfast_santim ? birr(r.breakfast_santim) : '', inputmode: 'numeric', style: 'width:110px', placeholder: 'not offered' }),
+          nr = h('input', { value: r.nonrefundable_bps ? String(r.nonrefundable_bps / 100) : '', inputmode: 'numeric', style: 'width:110px', placeholder: 'not offered' });
+        var photosRow = h('tr', { style: 'display:none' }, h('td', { colspan: '8' }, roomPhotosPanel(hotel, r, reload)));
+        var pbtn = h('button', { class: 'ghost', onclick: function () { photosRow.style.display = photosRow.style.display === 'none' ? '' : 'none'; } }, 'Photos (' + (r.photos || []).length + ')');
         var btn = h('button', { class: 'secondary', onclick: function () {
           btn.disabled = true; clear(out);
-          var info = { name: name.value, capacity: parseInt(cap.value, 10), total_rooms: parseInt(total.value, 10), amenities: feat.value.split(',') };
+          var info = { name: name.value, capacity: parseInt(cap.value, 10), total_rooms: parseInt(total.value, 10), amenities: feat.value.split(','), breakfast_santim: optionalBirr(bf.value), nonrefundable_bps: optionalPercent(nr.value) };
           call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + r.id, info).then(function () {
             var p = parseInt(price.value, 10);
             if (!isNaN(p) && p * 100 !== r.price_santim) return call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + r.id + '/price', { price_santim: p * 100 });
           }).then(function () { reload(); }, function (err) { btn.disabled = false; add(out, msg('err', r.name + ': ' + err.message)); });
         } }, 'Save');
-        add(body, h('tr', {}, h('td', {}, name), h('td', {}, cap), h('td', {}, total), h('td', {}, feat), h('td', {}, price), h('td', {}, btn)));
+        add(body, h('tr', {}, h('td', {}, name), h('td', {}, cap), h('td', {}, total), h('td', {}, feat), h('td', {}, price), h('td', {}, bf), h('td', {}, nr), h('td', {}, btn, ' ', pbtn)));
+        add(body, photosRow);
       });
       add(table, body);
       add(wrap, h('div', { style: 'overflow-x:auto' }, table));
@@ -253,18 +267,50 @@
     add(wrap, out);
 
     var n = h('input', { placeholder: 'e.g. Deluxe Double' }), c = h('input', { value: '2', inputmode: 'numeric' }), t = h('input', { value: '5', inputmode: 'numeric' }),
-      f = h('input', { placeholder: 'Private bathroom, TV' }), p = h('input', { inputmode: 'numeric', placeholder: 'e.g. 3200' }), o2 = h('div', {});
+      f = h('input', { placeholder: 'Private bathroom, TV' }), p = h('input', { inputmode: 'numeric', placeholder: 'e.g. 3200' }), nb = h('input', { inputmode: 'numeric', placeholder: 'optional' }), nn = h('input', { inputmode: 'numeric', placeholder: 'optional, e.g. 10' }), o2 = h('div', {});
     var add_ = h('button', { type: 'submit' }, 'Add room');
     add(wrap, h('h3', { style: 'margin-top:24px' }, 'Add a room type'));
     add(wrap, h('form', { onsubmit: function (e) {
       e.preventDefault(); add_.disabled = true; clear(o2);
       var price = parseInt(p.value, 10);
-      call('POST', '/admin/hotels/' + hotel.id + '/rooms', { name: n.value, capacity: parseInt(c.value, 10), total_rooms: parseInt(t.value, 10), amenities: f.value.split(',') }).then(function (res) {
+      call('POST', '/admin/hotels/' + hotel.id + '/rooms', { name: n.value, capacity: parseInt(c.value, 10), total_rooms: parseInt(t.value, 10), amenities: f.value.split(','), breakfast_santim: optionalBirr(nb.value), nonrefundable_bps: optionalPercent(nn.value) }).then(function (res) {
         if (!isNaN(price)) return call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + res.id + '/price', { price_santim: price * 100 });
       }).then(function () { reload(); }, function (err) { add_.disabled = false; add(o2, msg('err', err.message)); });
     } },
-      h('div', { class: 'grid' }, field('Room name', n), field('Guests per room', c), field('How many rooms', t), field('Features', f), field('Price per night (ETB)', p)),
+      h('div', { class: 'grid' }, field('Room name', n), field('Guests per room', c), field('How many rooms', t), field('Features', f), field('Price per night (ETB)', p), field('Breakfast per night (ETB)', nb), field('Non-refundable discount (%)', nn)),
       h('div', { class: 'field' }, add_), o2));
+    return wrap;
+  }
+
+  // One room's own pictures: they show on that room's card in the app (the hotel's gallery is the Photos tab).
+  function roomPhotosPanel(hotel, room, reload) {
+    var wrap = h('div', { style: 'padding:8px 0' });
+    var out = h('div', {});
+    var input = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true });
+    var btn = h('button', { class: 'secondary' }, 'Upload photos of ' + room.name);
+    btn.addEventListener('click', function () {
+      var files = Array.prototype.slice.call(input.files || []);
+      if (!files.length) { clear(out); add(out, msg('err', 'Choose one or more photos first.')); return; }
+      btn.disabled = true; clear(out);
+      var i = 0;
+      (function next() {
+        if (i >= files.length) { reload(); return; }
+        var fd = new FormData(); fd.append('photo', files[i]);
+        add(out, h('div', { class: 'muted' }, 'Uploading ' + (i + 1) + ' of ' + files.length + '…'));
+        call('POST', '/admin/hotels/' + hotel.id + '/rooms/' + room.id + '/photos', fd).then(function () { i++; next(); },
+          function (err) { btn.disabled = false; clear(out); add(out, msg('err', files[i].name + ': ' + err.message)); });
+      })();
+    });
+    add(wrap, h('div', { class: 'row' }, input, btn));
+    add(wrap, out);
+    var grid = h('div', { class: 'photos' });
+    (room.photos || []).forEach(function (ph) {
+      add(grid, h('div', { class: 'photo' }, h('img', { src: ph.thumb, alt: room.name, loading: 'lazy' }),
+        h('div', { class: 'bar' },
+          ph.cover ? h('span', { class: 'cover' }, '★ First') : h('button', { class: 'ghost', onclick: function () { call('POST', '/admin/hotels/' + hotel.id + '/photos/' + ph.id + '/cover').then(reload, function (e) { alert(e.message); }); } }, 'Make first'),
+          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/admin/hotels/' + hotel.id + '/photos/' + ph.id).then(reload, function (e) { alert(e.message); }); } }, 'Delete'))));
+    });
+    add(wrap, (room.photos || []).length ? grid : h('p', { class: 'muted' }, 'No photos of this room yet. Up to 10.'));
     return wrap;
   }
 
@@ -406,7 +452,7 @@
   }
 
   // ---- payouts (platform admin): who is owed what, and recording a transfer that was made
-  function birr(santim) { return 'ETB ' + (santim / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function etb(santim) { return 'ETB ' + (santim / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   var METHODS = { telebirr: 'Telebirr', cbe_birr: 'CBE Birr', bank_transfer: 'Bank transfer' };
 
   function payoutsView() {
@@ -433,15 +479,15 @@
     var card = h('div', { class: 'card' },
       h('div', { class: 'row between' }, h('h3', {}, x.name), x.has_business ? h('span', { class: 'soft' }, METHODS[x.payout_method] + ' · ' + x.payout_account_name + ' ••••' + x.payout_last4) : h('span', { class: 'chip draft' }, 'No business details')),
       h('div', { class: 'grid', style: 'margin-top:12px' },
-        field('To pay now', h('strong', {}, birr(x.to_pay_santim))),
-        field('After check-in (not payable yet)', h('span', {}, birr(x.upcoming_santim))),
-        field('Paid so far', h('span', {}, birr(x.paid_santim) + (x.last_paid_at ? ' · last ' + new Date(x.last_paid_at).toLocaleDateString() : '')))),
+        field('To pay now', h('strong', {}, etb(x.to_pay_santim))),
+        field('After check-in (not payable yet)', h('span', {}, etb(x.upcoming_santim))),
+        field('Paid so far', h('span', {}, etb(x.paid_santim) + (x.last_paid_at ? ' · last ' + new Date(x.last_paid_at).toLocaleDateString() : '')))),
       x.has_business ? null : h('p', { class: 'muted' }, 'Add the hotel\'s business and payout details (hotel page, Business tab) before paying it.'),
       h('form', { onsubmit: function (e) {
         e.preventDefault(); clear(out);
         var santim = Math.round(parseFloat(String(amount.value).replace(/,/g, '')) * 100);
         if (!(santim > 0)) { add(out, msg('err', 'Enter the amount in birr.')); return; }
-        if (!confirm('Record a payout of ' + birr(santim) + ' to ' + x.name + '? Make sure the transfer has really been sent.')) return;
+        if (!confirm('Record a payout of ' + etb(santim) + ' to ' + x.name + '? Make sure the transfer has really been sent.')) return;
         btn.disabled = true;
         call('POST', '/admin/hotels/' + x.id + '/payouts', { amount_santim: santim, reference: ref.value, note: note.value }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
       } }, h('div', { class: 'grid' }, field('Amount (birr)', amount), field('Transfer reference', ref), field('Note', note)), h('div', { class: 'field' }, btn), out),
@@ -451,12 +497,77 @@
           if (!res.payouts.length) { add(history, h('p', { class: 'muted' }, 'No payouts recorded yet.')); return; }
           var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', {}, 'Amount'), h('th', {}, 'Method'), h('th', {}, 'Reference'), h('th', {}, 'Note'))));
           var body = h('tbody', {});
-          res.payouts.forEach(function (p) { add(body, h('tr', {}, h('td', {}, new Date(p.paid_at).toLocaleString()), h('td', {}, birr(p.amount_santim)), h('td', {}, METHODS[p.method] || p.method), h('td', {}, p.reference), h('td', {}, p.note || ''))); });
+          res.payouts.forEach(function (p) { add(body, h('tr', {}, h('td', {}, new Date(p.paid_at).toLocaleString()), h('td', {}, etb(p.amount_santim)), h('td', {}, METHODS[p.method] || p.method), h('td', {}, p.reference), h('td', {}, p.note || ''))); });
           add(table, body); add(history, h('div', { style: 'overflow-x:auto' }, table));
         }, function (err) { add(history, msg('err', err.message)); });
       } }, 'Show payout history'),
       history);
     return card;
+  }
+
+  // ---- coupons (platform admin)
+  function couponRule(c) {
+    var what = c.kind === 'percent' ? (c.value / 100) + '% off' : birr(c.value) + ' ETB off';
+    var bits = [what];
+    if (c.max_discount_santim) bits.push('at most ' + birr(c.max_discount_santim) + ' ETB');
+    if (c.min_subtotal_santim) bits.push('from ' + birr(c.min_subtotal_santim) + ' ETB');
+    if (c.first_booking_only) bits.push('first booking only');
+    bits.push(c.per_user_limit + ' per guest');
+    if (c.max_uses) bits.push(c.max_uses + ' uses in all');
+    if (c.starts_on || c.ends_on) bits.push((c.starts_on || '…') + ' to ' + (c.ends_on || '…'));
+    bits.push(c.property_name || 'every hotel');
+    return bits.join(' · ');
+  }
+
+  function couponsView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    function load() {
+      call('GET', '/admin/coupons').then(function (res) {
+        clear(holder);
+        if (!res.coupons.length) add(holder, h('div', { class: 'card' }, h('p', {}, 'No coupons yet. Create the first one below.')));
+        res.coupons.forEach(function (c) {
+          var btn = h('button', { class: 'secondary', onclick: function () {
+            btn.disabled = true;
+            call('PUT', '/admin/coupons/' + c.id, { kind: c.kind, value: c.value, max_discount_santim: c.max_discount_santim, min_subtotal_santim: c.min_subtotal_santim, description: c.description,
+              starts_on: c.starts_on || '', ends_on: c.ends_on || '', max_uses: c.max_uses, per_user_limit: c.per_user_limit, first_booking_only: c.first_booking_only, property_id: c.property_id || '', active: !c.active })
+              .then(load, function (e) { btn.disabled = false; alert(e.message); });
+          } }, c.active ? 'Switch off' : 'Switch on');
+          add(holder, h('div', { class: 'card' }, h('div', { class: 'row between' },
+            h('div', {}, h('h3', {}, c.code), h('div', { class: 'soft' }, couponRule(c)), h('div', { class: 'muted' }, 'Used ' + c.uses + ' time' + (c.uses === 1 ? '' : 's') + ' · BookDan paid ' + birr(c.discounted_santim) + ' ETB in discounts')),
+            h('div', {}, h('span', { class: 'chip ' + (c.active ? 'active' : 'hidden') }, c.active ? 'On' : 'Off'), ' ', btn))));
+        });
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    load();
+
+    var f = {
+      code: h('input', { placeholder: 'WELCOME10', maxlength: '20', style: 'text-transform:uppercase' }), kind: select([['percent', 'Percent off'], ['fixed', 'Fixed amount off']], 'percent'),
+      value: h('input', { inputmode: 'decimal', placeholder: '10 (percent) or 200 (birr)' }), max: h('input', { inputmode: 'decimal', placeholder: 'optional, birr' }),
+      min: h('input', { inputmode: 'decimal', placeholder: 'optional, birr' }), starts: h('input', { type: 'date' }), ends: h('input', { type: 'date' }),
+      uses: h('input', { inputmode: 'numeric', placeholder: 'optional' }), per: h('input', { inputmode: 'numeric', value: '1' }),
+      first: h('input', { type: 'checkbox' }), hotel: h('input', { placeholder: 'optional: a hotel id; empty = every hotel' }), desc: h('input', { placeholder: 'optional note for your team' })
+    };
+    var out = h('div', {});
+    var btn = h('button', { type: 'submit' }, 'Create coupon');
+    var form = h('form', { onsubmit: function (e) {
+      e.preventDefault(); btn.disabled = true; clear(out);
+      var v = parseFloat(String(f.value.value).replace(/,/g, ''));
+      var body = {
+        code: f.code.value, kind: f.kind.value, value: isNaN(v) ? 0 : (f.kind.value === 'percent' ? Math.round(v * 100) : Math.round(v * 100)),
+        max_discount_santim: optionalBirr(f.max.value), min_subtotal_santim: optionalBirr(f.min.value) || 0, description: f.desc.value,
+        starts_on: f.starts.value, ends_on: f.ends.value, max_uses: parseInt(f.uses.value, 10) || null, per_user_limit: parseInt(f.per.value, 10) || 1,
+        first_booking_only: f.first.checked, property_id: f.hotel.value.trim(), active: true
+      };
+      call('POST', '/admin/coupons', body).then(function () { btn.disabled = false; load(); }, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+    } },
+      h('div', { class: 'grid' }, field('Code', f.code, 'Letters and digits. Guests type it at checkout.'), field('Type', f.kind), field('Value', f.value, 'Percent: 10 means 10%. Fixed: an amount in birr.'),
+        field('Most it can take off (birr)', f.max), field('Smallest booking it applies to (birr)', f.min), field('First day', f.starts), field('Last day', f.ends),
+        field('Uses in total', f.uses), field('Uses per guest', f.per), field('Hotel', f.hotel), field('Note', f.desc)),
+      h('div', { class: 'field' }, h('label', { class: 'check' }, f.first, 'First booking only')),
+      h('div', { class: 'field' }, btn), out);
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Coupons'),
+      h('p', { class: 'soft' }, 'The discount comes off the room price before VAT. BookDan pays for it: the hotel still receives its full share. Coupons work with online payment only.'),
+      holder, h('div', { class: 'card' }, h('h3', {}, 'Create a coupon'), form)));
   }
 
   // ---- routing
@@ -468,6 +579,7 @@
     if (m) add(app, hotelView(m[1], 'details'));
     else if (location.hash === '#/new' && state.role === 'admin') add(app, newView());
     else if (location.hash === '#/payouts' && state.role === 'admin') add(app, payoutsView());
+    else if (location.hash === '#/coupons' && state.role === 'admin') add(app, couponsView());
     else add(app, listView());
   }
   window.addEventListener('hashchange', render);

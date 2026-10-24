@@ -53,6 +53,7 @@ export function CancelCard({ booking, months, onChanged }: { booking: Booking; m
     <View style={{ marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.danger, backgroundColor: colors.dangerSoft }}>
       <T variant="h3" color={colors.danger}>{t('cancel.title')}</T>
       <T style={{ marginTop: spacing.xs }}>{message}</T>
+      {!booking.refundable ? <T variant="small" color={colors.danger} style={{ marginTop: spacing.xs }}>{t('cancel.nonrefundable_note')}</T> : null}
       {refund > 0 && booking.full_refund_until ? (
         <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>
           {t('cancel.free_until', { when: addisMoment(booking.full_refund_until, months) })}

@@ -38,6 +38,12 @@
           "icon": "./assets/android-icon-monochrome.png",
           "color": "#2563EB"
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "BookDan uses your location to show hotels near you."
+        }
       ]
     ],
     "extra": {

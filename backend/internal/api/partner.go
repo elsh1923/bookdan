@@ -71,13 +71,16 @@ type partnerBooking struct {
 	// CheckedInAt is when the guest arrived; BalanceDue is what the guest still pays at the hotel (a pay-at-hotel booking: the whole total).
 	CheckedInAt *string `json:"checked_in_at"`
 	BalanceDue  int64   `json:"balance_due_santim"`
+	// The room option the guest booked: the hotel serves breakfast when meal is breakfast; a non-refundable booking is not given back on cancelling.
+	Meal       string `json:"meal"`
+	Refundable bool   `json:"refundable"`
 }
 
 // A hotel never sees a room that is only held: the guest has not paid or asked yet.
 const partnerSelect = `
 	SELECT b.id, b.code, b.status, b.guest_name, g.full_name, g.contact, g.nationality, g.id_type, g.id_last4, g.purged_at IS NOT NULL,
 	       rt.name, b.check_in, b.check_out, b.guests, b.rooms, b.total_santim, b.currency, b.paid_at, b.hotel_deadline_at, b.decline_reason,
-	       p.name, b.checked_in_at, CASE WHEN b.payment_method = 'pay_at_hotel' THEN b.total_santim ELSE 0 END
+	       p.name, b.checked_in_at, CASE WHEN b.payment_method = 'pay_at_hotel' THEN b.total_santim ELSE 0 END, b.meal, b.refundable
 	FROM bookings b JOIN booking_guests g ON g.booking_id = b.id JOIN room_types rt ON rt.id = b.room_type_id
 	JOIN properties p ON p.id = b.property_id`
 
@@ -87,7 +90,7 @@ func scanPartner(row pgx.Row, multiHotel bool) (partnerBooking, error) {
 	var paid, deadline, checkedIn *time.Time
 	var hotel string
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.GuestName, &b.Guest.FullName, &b.Guest.Contact, &b.Guest.Nationality, &b.Guest.IDType,
-		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel, &checkedIn, &b.BalanceDue); err != nil {
+		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel, &checkedIn, &b.BalanceDue, &b.Meal, &b.Refundable); err != nil {
 		return b, err
 	}
 	if multiHotel {
@@ -255,10 +258,17 @@ func (s *Server) confirm(ctx context.Context, tx pgx.Tx, id, roomType, in, out s
 	if err := tx.QueryRow(ctx, `SELECT commission_bps, commission_vat_bps FROM pricing_config WHERE id = 1`).Scan(&commBP, &commVatBP); err != nil {
 		return err
 	}
-	commission := (amount*commBP + 5000) / 10000
+	// A coupon makes the guest pay less. The hotel still gets its share of the full price and BookDan pays for the discount, so the
+	// share and the commission come from what the guest paid plus the discount, and the discount is booked as a coupon cost.
+	var discount int64
+	if err := tx.QueryRow(ctx, `SELECT discount_santim FROM bookings WHERE id = $1`, id).Scan(&discount); err != nil {
+		return err
+	}
+	full := amount + discount
+	commission := (full*commBP + 5000) / 10000
 	commVAT := (commission*commVatBP + 5000) / 10000
 	return ledger(ctx, tx, id, payID, "booking_confirmed", "hotel accepted: our commission and the hotel's share", cur,
-		entry{"guest_deposits_held", amount}, entry{"property_payable", -(amount - commission - commVAT)},
+		entry{"guest_deposits_held", amount}, entry{"coupon_expense", discount}, entry{"property_payable", -(full - commission - commVAT)},
 		entry{"commission_revenue", -commission}, entry{"vat_on_commission_payable", -commVAT})
 }
 

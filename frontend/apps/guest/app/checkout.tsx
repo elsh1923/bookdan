@@ -11,7 +11,9 @@ import { Animated, Button, EmptyState, FadeIn, Pop, ProgressFill, StepTransition
 import { api } from '../src/api';
 import { useAuth } from '../src/auth';
 import { usePrefs } from '../src/store';
+import { CouponBox } from '../src/CouponBox';
 import { Field } from '../src/Field';
+import { PolicyCard } from '../src/RoomOptions';
 import { FOOTER_CLEARANCE, StickyFooter } from '../src/StickyFooter';
 import { price, shortDate } from '../src/format';
 import { useProfile, useQuote } from '../src/queries';
@@ -61,7 +63,10 @@ export default function Checkout() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();
-  const p = useLocalSearchParams<{ id: string; room: string; in: string; out: string; guests: string; rooms?: string }>();
+  const p = useLocalSearchParams<{ id: string; room: string; in: string; out: string; guests: string; rooms?: string; meal?: string; refundable?: string }>();
+  // The room option chosen on the hotel page (room only and refundable unless the guest picked otherwise).
+  const meal: 'room_only' | 'breakfast' = p.meal === 'breakfast' ? 'breakfast' : 'room_only';
+  const refundable = p.refundable !== 'false';
   const token = useAuth((s) => s.token);
 
   // The name is kept on the phone while typing, so a session that expires mid-checkout loses nothing.
@@ -72,13 +77,22 @@ export default function Checkout() {
   const [step, setStep] = useState(0); // 0 review, 1 guest details, 2 pay
   const [busy, setBusy] = useState(false);
   const [holdError, setHoldError] = useState<string | null>(null);
+  const [coupon, setCoupon] = useState<string | null>(null); // the code the server accepted
+  const [couponNote, setCouponNote] = useState<string | null>(null);
   // Created once per checkout attempt and reused if the request is retried, so a retry can never create a second hold.
   const attemptKey = useRef<string | null>(null);
 
   const quote = useQuote(
-    { property_id: p.id, room_type_id: p.room, check_in: p.in, check_out: p.out, guests: Math.max(Number(p.guests) || 1, rooms), rooms },
+    { property_id: p.id, room_type_id: p.room, check_in: p.in, check_out: p.out, guests: Math.max(Number(p.guests) || 1, rooms), rooms, meal, refundable, coupon_code: coupon ?? undefined },
     !!token,
   );
+  // A coupon that stops working while the guest is on this screen (it ran out, or expired) is dropped and the guest is told.
+  useEffect(() => {
+    if (coupon && quote.error instanceof ApiError && quote.error.code === 'COUPON_INVALID') {
+      setCoupon(null);
+      setCouponNote(quote.error.message);
+    }
+  }, [coupon, quote.error]);
 
   // The hotel receives the guest's name and ID with the request, so the guest must have saved them.
   const profile = useProfile(!!token);
@@ -87,7 +101,7 @@ export default function Checkout() {
   }, [profile.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!token) {
-    const next = `/checkout?id=${p.id}&room=${p.room}&in=${p.in}&out=${p.out}&guests=${p.guests ?? 1}&rooms=${rooms}`;
+    const next = `/checkout?id=${p.id}&room=${p.room}&in=${p.in}&out=${p.out}&guests=${p.guests ?? 1}&rooms=${rooms}&meal=${meal}&refundable=${refundable}`;
     return <Redirect href={{ pathname: '/signin', params: { next } }} />;
   }
 
@@ -107,10 +121,16 @@ export default function Checkout() {
   }
   if (quote.isError) {
     const soldOut = quote.error instanceof ApiError && quote.error.code === 'SOLD_OUT';
+    const optionOff = quote.error instanceof ApiError && quote.error.code === 'OPTION_UNAVAILABLE';
+    if (coupon && quote.error instanceof ApiError && quote.error.code === 'COUPON_INVALID') {
+      return <SafeAreaView style={{ flex: 1 }}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></SafeAreaView>;
+    }
     return (
       <SafeAreaView style={{ flex: 1 }}>
         {header}
-        {soldOut
+        {optionOff
+          ? <EmptyState icon="🛏️" title={t('checkout.option_unavailable')} body="" actionLabel={t('checkout.back_to_property')} onAction={leave} />
+          : soldOut
           ? <EmptyState icon="🛏️" title={t('checkout.sold_out_title')} body={t('checkout.sold_out_body')} actionLabel={t('checkout.back_to_property')} onAction={leave} />
           : <EmptyState icon="⚠️" title={t('results.error_title')} body={t('results.error_body')} actionLabel={t('common.retry')} onAction={() => quote.refetch()} />}
       </SafeAreaView>
@@ -124,6 +144,26 @@ export default function Checkout() {
     setRooms(n);
   };
   const needsProfile = profile.isSuccess && !profile.data;
+
+  // The server decides whether a code works (dates, uses, hotel, minimum): ask it for a price with the code and keep the code if it answers.
+  async function applyCoupon(code: string): Promise<string | null> {
+    try {
+      await api.createQuote({ property_id: p.id, room_type_id: p.room, check_in: p.in, check_out: p.out, guests: Math.max(Number(p.guests) || 1, rooms), rooms, meal, refundable, coupon_code: code });
+      attemptKey.current = null; // a different price must never reuse the old retry key
+      setCouponNote(null);
+      setCoupon(code);
+      return null;
+    } catch (e) {
+      return e instanceof ApiError && e.code === 'COUPON_INVALID' ? e.message : t('checkout.coupon_failed');
+    }
+  }
+  const removeCoupon = () => {
+    attemptKey.current = null;
+    setCoupon(null);
+  };
+  // What the coupon took off the room charges (before VAT), for the price lines.
+  const listBase = q.nightly_santim * q.nights * q.rooms;
+  const roomDiscount = Math.max(0, listBase - q.subtotal_santim);
 
   function next() {
     if (step === 1) {
@@ -151,6 +191,7 @@ export default function Checkout() {
     } catch (e) {
       if (e instanceof ApiError && e.code === 'SOLD_OUT') setHoldError(t('checkout.sold_out_title'));
       else if (e instanceof ApiError && e.code === 'PROFILE_INCOMPLETE') router.push('/guest-details');
+      else if (e instanceof ApiError && e.code === 'COUPON_INVALID') { attemptKey.current = null; setCoupon(null); setCouponNote(e.message); }
       else if (e instanceof ApiError && e.code === 'QUOTE_EXPIRED') { attemptKey.current = null; setHoldError(t('checkout.expired')); quote.refetch(); }
       else setHoldError(t('results.error_body'));
     } finally {
@@ -193,6 +234,14 @@ export default function Checkout() {
               <Pressable accessibilityLabel={`${t('checkout.rooms_label')} +`} disabled={rooms >= Math.min(9, q.rooms_available)} onPress={() => changeRooms(rooms + 1)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: rooms >= Math.min(9, q.rooms_available) ? 0.3 : 1 }}>
                 <T variant="h2" color={colors.primaryInk}>+</T>
               </Pressable>
+            </View>
+          ) : null}
+
+          {step === 0 ? (
+            <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg, gap: spacing.md }}>
+              <PolicyCard meal={q.meal} refundable={q.refundable} />
+              <CouponBox applied={q.coupon_code} saving={q.discount_santim > 0 ? price(q.discount_santim, q.currency) : null} onApply={applyCoupon} onRemove={removeCoupon} />
+              {couponNote ? <T variant="small" color={colors.danger}>✕ {couponNote}</T> : null}
             </View>
           ) : null}
 
@@ -240,10 +289,18 @@ export default function Checkout() {
                 ) : null}
 
                 <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('checkout.price').toUpperCase()}</T>
-                <Row label={q.rooms > 1 ? t('checkout.nightly_rooms', { price: price(q.nightly_santim, q.currency), rooms: t('common.room', { count: q.rooms }), nights: t('common.night', { count: q.nights }) }) : t('checkout.nightly', { price: price(q.nightly_santim, q.currency), nights: q.nights })} value={price(q.subtotal_santim, q.currency)} />
+                <Row label={q.rooms > 1 ? t('checkout.nightly_rooms', { price: price(q.nightly_santim, q.currency), rooms: t('common.room', { count: q.rooms }), nights: t('common.night', { count: q.nights }) }) : t('checkout.nightly', { price: price(q.nightly_santim, q.currency), nights: q.nights })} value={price(roomDiscount > 0 ? listBase : q.subtotal_santim, q.currency)} />
+                {roomDiscount > 0 && q.coupon_code ? (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.md }}>
+                    <T color={colors.success} style={{ flex: 1, marginRight: spacing.md }}>{t('checkout.coupon_line', { code: q.coupon_code })}</T>
+                    <T color={colors.success}>− {price(roomDiscount, q.currency)}</T>
+                  </View>
+                ) : null}
                 <Row label={t('checkout.vat')} value={price(q.vat_santim, q.currency)} />
                 <View style={{ height: 1, backgroundColor: colors.line, marginTop: spacing.md }} />
                 <Row strong label={t('checkout.total')} value={price(q.total_santim, q.currency)} />
+                {q.discount_santim > 0 ? <T variant="small" color={colors.success} style={{ textAlign: 'right', marginTop: spacing.xs }}>{t('checkout.coupon_saved', { amount: price(q.discount_santim, q.currency) })}</T> : null}
+                {step === 2 ? <View style={{ marginTop: spacing.lg }}><PolicyCard meal={q.meal} refundable={q.refundable} /></View> : null}
 
                 <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center', marginTop: spacing.lg }}>
                   <Ionicons name="shield-checkmark-outline" size={18} color={colors.primaryDark} />

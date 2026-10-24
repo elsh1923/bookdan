@@ -28,7 +28,7 @@ func (s *Server) adminListHotels(w http.ResponseWriter, r *http.Request) error {
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT p.id, p.name, p.city, p.type, p.status,
 		       (SELECT count(*) FROM room_types rt WHERE rt.property_id = p.id)::int,
-		       (SELECT count(*) FROM property_photos pp WHERE pp.property_id = p.id)::int
+		       (SELECT count(*) FROM property_photos pp WHERE pp.property_id = p.id AND pp.room_type_id IS NULL)::int
 		FROM properties p
 		WHERE $1 = 'admin' OR EXISTS (SELECT 1 FROM property_staff ps WHERE ps.property_id = p.id AND ps.user_id = $2::uuid AND ps.role = 'owner')
 		ORDER BY p.name`, c.Role, c.Sub)
@@ -71,6 +71,9 @@ type hotelInput struct {
 	PayAtHotel  bool     `json:"pay_at_hotel"`
 	Verified    *bool    `json:"verified"`
 	Status      string   `json:"status"`
+	// CheckInTime and CheckOutTime are HH:MM (Addis Ababa time). Empty keeps the current ones (14:00 and 12:00 for a new hotel).
+	CheckInTime  string `json:"check_in_time"`
+	CheckOutTime string `json:"check_out_time"`
 }
 
 func trimLen(v string, min, max int) (string, bool) {
@@ -132,6 +135,12 @@ func (in *hotelInput) validate(creating bool) error {
 		}
 	}
 	in.HouseRules = rules
+	in.CheckInTime, in.CheckOutTime = strings.TrimSpace(in.CheckInTime), strings.TrimSpace(in.CheckOutTime)
+	for _, v := range []string{in.CheckInTime, in.CheckOutTime} {
+		if v != "" && !shiftRE.MatchString(v) {
+			return bad("Check-in and check-out times are HH:MM, for example 14:00")
+		}
+	}
 	if in.Status == "" {
 		in.Status = "draft"
 	}
@@ -157,6 +166,11 @@ type roomOut struct {
 	Amenities   []string `json:"amenities"`
 	PriceSantim *int64   `json:"price_santim"`
 	Currency    string   `json:"currency"`
+	// What breakfast adds per night, and the non-refundable discount (basis points); empty when not offered.
+	BreakfastSantim  *int64 `json:"breakfast_santim"`
+	NonRefundableBPS *int   `json:"nonrefundable_bps"`
+	// The room's own photos, cover first.
+	Photos []photoOut `json:"photos"`
 }
 
 type photoOut struct {
@@ -222,6 +236,8 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 		PayAtHotel  bool         `json:"pay_at_hotel"`
 		Verified    bool         `json:"verified"`
 		Status      string       `json:"status"`
+		CheckIn     string       `json:"check_in_time"`
+		CheckOut    string       `json:"check_out_time"`
 		AlertMode   string       `json:"alert_mode"`
 		EscalateMin int          `json:"escalate_after_min"`
 		Rooms       []roomOut    `json:"rooms"`
@@ -230,9 +246,10 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 		Business    *businessOut `json:"business"`
 	}
 	var rules []byte
-	if err := s.pool.QueryRow(ctx, `SELECT id, name, type, city, area, address, phone, description, `+lat+`, `+lng+`, amenities, house_rules, pay_at_hotel, verified, status, alert_mode, escalate_after_min
+	if err := s.pool.QueryRow(ctx, `SELECT id, name, type, city, area, address, phone, description, `+lat+`, `+lng+`, amenities, house_rules, pay_at_hotel, verified, status, alert_mode, escalate_after_min,
+		to_char(check_in_time, 'HH24:MI'), to_char(check_out_time, 'HH24:MI')
 		FROM properties WHERE id = $1`, id).Scan(&h.ID, &h.Name, &h.Type, &h.City, &h.Area, &h.Address, &h.Phone, &h.Description, &h.Lat, &h.Lng,
-		&h.Amenities, &rules, &h.PayAtHotel, &h.Verified, &h.Status, &h.AlertMode, &h.EscalateMin); err != nil {
+		&h.Amenities, &rules, &h.PayAtHotel, &h.Verified, &h.Status, &h.AlertMode, &h.EscalateMin, &h.CheckIn, &h.CheckOut); err != nil {
 		return err
 	}
 	h.HouseRules = []string{}
@@ -243,7 +260,7 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 		h.Amenities = []string{}
 	}
 
-	rr, err := s.pool.Query(ctx, `SELECT rt.id, rt.name, rt.capacity, rt.total_rooms, rt.amenities, rp.nightly_price_santim, coalesce(rp.currency, 'ETB')
+	rr, err := s.pool.Query(ctx, `SELECT rt.id, rt.name, rt.capacity, rt.total_rooms, rt.amenities, rp.nightly_price_santim, coalesce(rp.currency, 'ETB'), rt.breakfast_santim, rt.nonrefundable_bps
 		FROM room_types rt LEFT JOIN LATERAL (SELECT nightly_price_santim, currency FROM rate_plans
 		  WHERE room_type_id = rt.id AND (now() AT TIME ZONE 'Africa/Addis_Ababa')::date BETWEEN valid_from AND valid_to LIMIT 1) rp ON true
 		WHERE rt.property_id = $1 ORDER BY rt.name`, id)
@@ -254,17 +271,35 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 	h.Rooms = []roomOut{}
 	for rr.Next() {
 		var ro roomOut
-		if err := rr.Scan(&ro.ID, &ro.Name, &ro.Capacity, &ro.TotalRooms, &ro.Amenities, &ro.PriceSantim, &ro.Currency); err != nil {
+		if err := rr.Scan(&ro.ID, &ro.Name, &ro.Capacity, &ro.TotalRooms, &ro.Amenities, &ro.PriceSantim, &ro.Currency, &ro.BreakfastSantim, &ro.NonRefundableBPS); err != nil {
 			return err
 		}
 		if ro.Amenities == nil {
 			ro.Amenities = []string{}
 		}
+		ro.Photos = []photoOut{}
 		h.Rooms = append(h.Rooms, ro)
 	}
 	rr.Close()
+	roomPics, err := s.pool.Query(ctx, `SELECT room_type_id::text, id FROM property_photos WHERE property_id = $1 AND room_type_id IS NOT NULL ORDER BY position, created_at`, id)
+	if err != nil {
+		return err
+	}
+	defer roomPics.Close()
+	for roomPics.Next() {
+		var room, photo string
+		if err := roomPics.Scan(&room, &photo); err != nil {
+			return err
+		}
+		for i := range h.Rooms {
+			if h.Rooms[i].ID == room {
+				h.Rooms[i].Photos = append(h.Rooms[i].Photos, photoOut{photo, s.photoURL(photo, "main"), s.photoURL(photo, "thumb"), len(h.Rooms[i].Photos) == 0})
+			}
+		}
+	}
+	roomPics.Close()
 
-	pr, err := s.pool.Query(ctx, `SELECT id FROM property_photos WHERE property_id = $1 ORDER BY position, created_at`, id)
+	pr, err := s.pool.Query(ctx, `SELECT id FROM property_photos WHERE property_id = $1 AND room_type_id IS NULL ORDER BY position, created_at`, id)
 	if err != nil {
 		return err
 	}
@@ -335,9 +370,9 @@ func (s *Server) adminCreateHotel(w http.ResponseWriter, r *http.Request) error 
 	rules, _ := json.Marshal(in.HouseRules)
 	var id string
 	err := s.tx(r.Context(), func(tx pgx.Tx) error {
-		if err := tx.QueryRow(r.Context(), `INSERT INTO properties (name, type, city, area, address, location, phone, description, pay_at_hotel, amenities, house_rules, status, verified)
-			VALUES ($1, $2, $3, $4, $5, `+s.pointSQL("$6", "$7")+`, $8, $9, $10, $11, $12::jsonb, 'draft', coalesce($13, false)) RETURNING id`,
-			in.Name, in.Type, in.City, in.Area, in.Address, *in.Lng, *in.Lat, in.Phone, in.Description, in.PayAtHotel, in.Amenities, string(rules), in.Verified).Scan(&id); err != nil {
+		if err := tx.QueryRow(r.Context(), `INSERT INTO properties (name, type, city, area, address, location, phone, description, pay_at_hotel, amenities, house_rules, status, verified, check_in_time, check_out_time)
+			VALUES ($1, $2, $3, $4, $5, `+s.pointSQL("$6", "$7")+`, $8, $9, $10, $11, $12::jsonb, 'draft', coalesce($13, false), coalesce(nullif($14, '')::time, '14:00'), coalesce(nullif($15, '')::time, '12:00')) RETURNING id`,
+			in.Name, in.Type, in.City, in.Area, in.Address, *in.Lng, *in.Lat, in.Phone, in.Description, in.PayAtHotel, in.Amenities, string(rules), in.Verified, in.CheckInTime, in.CheckOutTime).Scan(&id); err != nil {
 			return err
 		}
 		return s.adminAudit(r, tx, "admin_hotel_created", id, map[string]any{"name": in.Name})
@@ -391,8 +426,9 @@ func (s *Server) adminUpdateHotel(w http.ResponseWriter, r *http.Request) error 
 			verified = nil
 		}
 		if _, err := tx.Exec(r.Context(), `UPDATE properties SET name = $2, type = $3, city = $4, area = $5, address = $6, location = `+s.pointSQL("$7", "$8")+`,
-			phone = $9, description = $10, pay_at_hotel = $11, amenities = $12, house_rules = $13::jsonb, status = $14, verified = coalesce($15, verified)
-			WHERE id = $1`, id, in.Name, in.Type, in.City, in.Area, in.Address, *in.Lng, *in.Lat, in.Phone, in.Description, in.PayAtHotel, in.Amenities, string(rules), in.Status, verified); err != nil {
+			phone = $9, description = $10, pay_at_hotel = $11, amenities = $12, house_rules = $13::jsonb, status = $14, verified = coalesce($15, verified),
+			check_in_time = coalesce(nullif($16, '')::time, check_in_time), check_out_time = coalesce(nullif($17, '')::time, check_out_time)
+			WHERE id = $1`, id, in.Name, in.Type, in.City, in.Area, in.Address, *in.Lng, *in.Lat, in.Phone, in.Description, in.PayAtHotel, in.Amenities, string(rules), in.Status, verified, in.CheckInTime, in.CheckOutTime); err != nil {
 			return err
 		}
 		return s.adminAudit(r, tx, "admin_hotel_updated", id, map[string]any{"status": in.Status})
@@ -411,6 +447,9 @@ type roomInput struct {
 	Capacity   int      `json:"capacity"`
 	TotalRooms int      `json:"total_rooms"`
 	Amenities  []string `json:"amenities"`
+	// Optional extras: what breakfast adds per room per night (santim), and how much cheaper a non-refundable booking is (basis points: 500 = 5%).
+	BreakfastSantim  *int64 `json:"breakfast_santim"`
+	NonRefundableBPS *int   `json:"nonrefundable_bps"`
 }
 
 func (in *roomInput) validate() error {
@@ -435,6 +474,12 @@ func (in *roomInput) validate() error {
 		}
 	}
 	in.Amenities = clean
+	if in.BreakfastSantim != nil && (*in.BreakfastSantim <= 0 || *in.BreakfastSantim > 100_000_000) {
+		return bad("Breakfast must cost more than zero (or leave it empty if you do not offer it)")
+	}
+	if in.NonRefundableBPS != nil && (*in.NonRefundableBPS < 100 || *in.NonRefundableBPS > 5000) {
+		return bad("The non-refundable discount is 1% to 50% (or leave it empty if you do not offer it)")
+	}
 	return nil
 }
 
@@ -452,8 +497,8 @@ func (s *Server) adminCreateRoom(w http.ResponseWriter, r *http.Request) error {
 	}
 	var roomID string
 	err := s.tx(r.Context(), func(tx pgx.Tx) error {
-		if err := tx.QueryRow(r.Context(), `INSERT INTO room_types (property_id, name, capacity, total_rooms, amenities) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			id, in.Name, in.Capacity, in.TotalRooms, in.Amenities).Scan(&roomID); err != nil {
+		if err := tx.QueryRow(r.Context(), `INSERT INTO room_types (property_id, name, capacity, total_rooms, amenities, breakfast_santim, nonrefundable_bps) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+			id, in.Name, in.Capacity, in.TotalRooms, in.Amenities, in.BreakfastSantim, in.NonRefundableBPS).Scan(&roomID); err != nil {
 			return err
 		}
 		return s.adminAudit(r, tx, "admin_room_created", id, map[string]any{"room_type_id": roomID, "name": in.Name})
@@ -499,8 +544,8 @@ func (s *Server) adminUpdateRoom(w http.ResponseWriter, r *http.Request) error {
 		if in.TotalRooms < busiest {
 			return fail(http.StatusConflict, codeInvalidState, "Up to "+itoa(int64(busiest))+" of these rooms are already held or booked on a coming night, so you cannot go below that")
 		}
-		if _, err := tx.Exec(r.Context(), `UPDATE room_types SET name = $2, capacity = $3, total_rooms = $4, amenities = $5 WHERE id = $1`,
-			room, in.Name, in.Capacity, in.TotalRooms, in.Amenities); err != nil {
+		if _, err := tx.Exec(r.Context(), `UPDATE room_types SET name = $2, capacity = $3, total_rooms = $4, amenities = $5, breakfast_santim = $6, nonrefundable_bps = $7 WHERE id = $1`,
+			room, in.Name, in.Capacity, in.TotalRooms, in.Amenities, in.BreakfastSantim, in.NonRefundableBPS); err != nil {
 			return err
 		}
 		// Coming nights that already exist follow the new number of rooms; later nights are created from it on demand.

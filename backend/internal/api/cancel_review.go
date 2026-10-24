@@ -42,8 +42,9 @@ func (s *Server) cancelBooking(w http.ResponseWriter, r *http.Request) error {
 		var status, roomType, cur string
 		var in, out time.Time
 		var rooms int
-		err := tx.QueryRow(ctx, `SELECT status, room_type_id, check_in, check_out, rooms, currency FROM bookings WHERE id = $1 AND user_id = $2 FOR UPDATE`, id, uid).
-			Scan(&status, &roomType, &in, &out, &rooms, &cur)
+		var refundable bool
+		err := tx.QueryRow(ctx, `SELECT status, room_type_id, check_in, check_out, rooms, currency, refundable FROM bookings WHERE id = $1 AND user_id = $2 FOR UPDATE`, id, uid).
+			Scan(&status, &roomType, &in, &out, &rooms, &cur, &refundable)
 		if err == pgx.ErrNoRows || isBadUUID(err) {
 			return errNotFound
 		}
@@ -68,7 +69,8 @@ func (s *Server) cancelBooking(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		var refund int64
-		if hasPayment && (status == "PAID_AWAITING_HOTEL" || !now.After(until)) {
+		// Non-refundable: nothing back once the hotel has confirmed (before that the hotel has not accepted anything yet).
+		if hasPayment && (status == "PAID_AWAITING_HOTEL" || (refundable && !now.After(until))) {
 			refund = paid
 		}
 
@@ -167,6 +169,11 @@ func (s *Server) submitReview(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Rating int    `json:"rating"`
 		Text   string `json:"text"`
+		// Optional sub-ratings, 1 to 5 each (0 or left out = not given).
+		Cleanliness int `json:"cleanliness"`
+		Location    int `json:"location"`
+		Staff       int `json:"staff"`
+		Value       int `json:"value"`
 	}
 	if err := decode(r, &in); err != nil {
 		return err
@@ -174,6 +181,11 @@ func (s *Server) submitReview(w http.ResponseWriter, r *http.Request) error {
 	text := strings.TrimSpace(in.Text)
 	if in.Rating < 1 || in.Rating > 5 || len(text) > 1000 {
 		return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "Give 1 to 5 stars and at most 1000 characters of text")
+	}
+	for _, sub := range []int{in.Cleanliness, in.Location, in.Staff, in.Value} {
+		if sub < 0 || sub > 5 {
+			return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "Sub-ratings are 1 to 5 stars")
+		}
 	}
 	err := s.tx(ctx, func(tx pgx.Tx) error {
 		var status, property string
@@ -188,8 +200,9 @@ func (s *Server) submitReview(w http.ResponseWriter, r *http.Request) error {
 		if (status != "CONFIRMED" && status != "CHECKED_IN" && status != "COMPLETED") || pgDate(out) > s.addisToday() {
 			return fail(http.StatusConflict, codeReviewNotReady, "You can review a stay after check-out")
 		}
-		tag, err := tx.Exec(ctx, `INSERT INTO reviews (booking_id, property_id, user_id, rating, text) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (booking_id) DO NOTHING`,
-			id, property, uid, in.Rating, text)
+		tag, err := tx.Exec(ctx, `INSERT INTO reviews (booking_id, property_id, user_id, rating, text, rating_cleanliness, rating_location, rating_staff, rating_value)
+			VALUES ($1, $2, $3, $4, $5, NULLIF($6, 0), NULLIF($7, 0), NULLIF($8, 0), NULLIF($9, 0)) ON CONFLICT (booking_id) DO NOTHING`,
+			id, property, uid, in.Rating, text, in.Cleanliness, in.Location, in.Staff, in.Value)
 		if err != nil {
 			return err
 		}

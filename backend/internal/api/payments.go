@@ -82,9 +82,10 @@ func (s *Server) payBooking(w http.ResponseWriter, r *http.Request) error {
 		var deposit int64
 		var payAtHotel bool
 		var chosen *string
-		err := tx.QueryRow(ctx, `SELECT b.status, b.hold_expires_at, b.deposit_santim, b.currency, b.code, p.pay_at_hotel, b.payment_method
+		var discount int64
+		err := tx.QueryRow(ctx, `SELECT b.status, b.hold_expires_at, b.deposit_santim, b.currency, b.code, p.pay_at_hotel, b.payment_method, b.discount_santim
 			FROM bookings b JOIN properties p ON p.id = b.property_id WHERE b.id = $1 AND b.user_id = $2 FOR UPDATE OF b`, id, uid).
-			Scan(&status, &hold, &deposit, &cur, &code, &payAtHotel, &chosen)
+			Scan(&status, &hold, &deposit, &cur, &code, &payAtHotel, &chosen, &discount)
 		if err == pgx.ErrNoRows || isBadUUID(err) {
 			return errNotFound
 		}
@@ -98,6 +99,9 @@ func (s *Server) payBooking(w http.ResponseWriter, r *http.Request) error {
 		if in.Method == "pay_at_hotel" {
 			if !payAtHotel {
 				return fail(http.StatusBadRequest, codePaymentFailed, "This hotel does not take pay-at-hotel bookings")
+			}
+			if discount > 0 {
+				return fail(http.StatusConflict, "COUPON_ONLINE_ONLY", "A booking with a coupon is paid online")
 			}
 			if _, err := tx.Exec(ctx, `UPDATE payments SET status = 'failed' WHERE booking_id = $1 AND status = 'pending'`, id); err != nil {
 				return err

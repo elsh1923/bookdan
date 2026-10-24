@@ -12,6 +12,7 @@ interface PrefsState {
   currency: Currency;
   recentSearches: string[];
   saved: string[]; // wishlist: property ids
+  viewed: string[]; // property ids the guest opened, newest first
   draftGuestName: string; // typed at checkout; survives a session expiry
   setLanguage: (l: Language) => void;
   setCurrency: (c: Currency) => void;
@@ -19,6 +20,7 @@ interface PrefsState {
   addRecent: (q: string) => void;
   clearRecent: () => void;
   toggleSaved: (id: string) => void;
+  addViewed: (id: string) => void;
   setDraftGuestName: (name: string) => void;
 }
 
@@ -31,6 +33,7 @@ export const usePrefs = create<PrefsState>()(
       currency: 'ETB',
       recentSearches: [],
       saved: [],
+      viewed: [],
       draftGuestName: '',
       setLanguage: (language) => set({ language }),
       setCurrency: (currency) => set({ currency }),
@@ -43,6 +46,7 @@ export const usePrefs = create<PrefsState>()(
         }),
       clearRecent: () => set({ recentSearches: [] }),
       setDraftGuestName: (draftGuestName) => set({ draftGuestName }),
+      addViewed: (id) => set((s) => (s.viewed[0] === id ? s : { viewed: [id, ...s.viewed.filter((x) => x !== id)].slice(0, 10) })),
       toggleSaved: (id) => set((st) => ({ saved: st.saved.includes(id) ? st.saved.filter((x) => x !== id) : [id, ...st.saved] })),
     }),
     {
@@ -54,6 +58,7 @@ export const usePrefs = create<PrefsState>()(
         currency: s.currency,
         recentSearches: s.recentSearches,
         saved: s.saved,
+        viewed: s.viewed,
         draftGuestName: s.draftGuestName,
       }),
       onRehydrateStorage: () => () => usePrefs.setState({ hydrated: true }),

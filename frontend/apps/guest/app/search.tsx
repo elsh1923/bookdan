@@ -70,15 +70,23 @@ export default function SearchSheet() {
     router.replace({ pathname: '/results', params: { q: query, in: checkIn, out: checkOut, guests: String(guests), rooms: String(rooms) } });
   };
 
-  // GPS permission is only requested when this button is tapped.
+  // GPS permission is only requested when this button is tapped. The hotels come back nearest first, each with its distance.
+  const [locating, setLocating] = useState(false);
   const useGps = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(t('search.use_gps'), t('results.error_body'));
-      return;
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(t('search.use_gps'), t('search.gps_denied'));
+        return;
+      }
+      const here = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+      router.replace({ pathname: '/results', params: { q: '', lat: String(here.coords.latitude), lng: String(here.coords.longitude), in: checkIn, out: checkOut, guests: String(guests), rooms: String(rooms) } });
+    } catch {
+      Alert.alert(t('search.use_gps'), t('search.gps_failed'));
+    } finally {
+      setLocating(false);
     }
-    // The mock backend searches by name; real /search takes lat/lng. Nearest-area fallback for now.
-    go('Bole');
   };
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
@@ -119,7 +127,7 @@ export default function SearchSheet() {
           <Pressable onPress={useGps} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
               <Ionicons name="navigate-outline" size={16} color={colors.primaryInk} />
-              <T color={colors.primaryInk} variant="small">{t('search.use_gps')}</T>
+              <T color={colors.primaryInk} variant="small">{locating ? t('search.locating') : t('search.use_gps')}</T>
             </View>
           </Pressable>
 

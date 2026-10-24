@@ -30,15 +30,22 @@ type priced struct {
 	Nightly                   int64 // one room, first night
 	Base, Service, VAT, Total int64
 	Deposit, Balance          int64
-	Nights                    []nightPrice
+	// Discount is how much cheaper Total is because of a coupon (VAT included): what the price would have been, minus Total.
+	Discount int64
+	Nights   []nightPrice
 }
 
-// priceStay prices every night (rate plus any boost), multiplies by the number of rooms, then adds the service charge and
-// VAT from pricing_config. Whole santim, rounded half up, never floats. The result is frozen into the quote.
+// priceStay prices every night (rate plus any boost, then the chosen room option), multiplies by the number of rooms, takes off a coupon
+// if there is one (disc gets the room charges and returns the discount), then adds the service charge and VAT from pricing_config.
+// Whole santim, rounded half up, never floats. The result is frozen into the quote.
 func (s *Server) priceStay(ctx context.Context, q interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
-}, roomTypeID, checkIn, checkOut string, rooms int) (priced, error) {
+}, roomTypeID, checkIn, checkOut string, rooms int, opt rateOption, disc func(base int64) (int64, error)) (priced, error) {
+	offer, err := s.roomOffer(ctx, q, roomTypeID)
+	if err != nil {
+		return priced{}, err
+	}
 	rows, err := q.Query(ctx, `
 		SELECT n.night::date, rp.nightly_price_santim, rp.currency,
 		  COALESCE((SELECT sum(b.percent_bp) FROM rate_boosts b WHERE b.property_id = rt.property_id AND n.night::date BETWEEN b.starts_on AND b.ends_on), 0)::int
@@ -63,7 +70,10 @@ func (s *Server) priceStay(ctx context.Context, q interface {
 		if rate == nil {
 			return priced{}, fail(http.StatusConflict, codeInvalidState, "This room has no price for those dates")
 		}
-		price := (*rate*int64(10000+boost) + 5000) / 10000
+		price, err := offer.night((*rate*int64(10000+boost)+5000)/10000, opt)
+		if err != nil {
+			return priced{}, err
+		}
 		if len(p.Nights) == 0 {
 			p.Nightly, p.Currency = price, *cur
 		}
@@ -84,10 +94,21 @@ func (s *Server) priceStay(ctx context.Context, q interface {
 		// The rates in pricing_config are placeholders until the owner confirms them (design.md, open decisions).
 		return priced{}, fail(http.StatusServiceUnavailable, codePricingPending, "Prices are not confirmed yet")
 	}
-	p.Base = sum * int64(rooms)
+	list := sum * int64(rooms)
+	listService := (list*serviceBP + 5000) / 10000
+	listTotal := list + listService + ((list+listService)*vatBP+5000)/10000
+	p.Base = list
+	if disc != nil {
+		d, err := disc(list)
+		if err != nil {
+			return priced{}, err
+		}
+		p.Base = list - d
+	}
 	p.Service = (p.Base*serviceBP + 5000) / 10000
 	p.VAT = ((p.Base+p.Service)*vatBP + 5000) / 10000
 	p.Total = p.Base + p.Service + p.VAT
+	p.Discount = listTotal - p.Total
 	p.Deposit = (p.Total*depositBP + 5000) / 10000
 	p.Balance = p.Total - p.Deposit
 	return p, nil
@@ -114,6 +135,12 @@ type quoteOut struct {
 	Total          int64  `json:"total_santim"`
 	Currency       string `json:"currency"`
 	PayAtHotel     bool   `json:"pay_at_hotel"`
+	// The room option chosen, the coupon applied and how much it took off the total (VAT included); ListTotal is the price without the coupon.
+	Meal       string  `json:"meal"`
+	Refundable bool    `json:"refundable"`
+	CouponCode *string `json:"coupon_code"`
+	Discount   int64   `json:"discount_santim"`
+	ListTotal  int64   `json:"list_total_santim"`
 }
 
 func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
@@ -124,12 +151,20 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 		CheckOut   string `json:"check_out"`
 		Guests     int    `json:"guests"`
 		Rooms      int    `json:"rooms"`
+		// The room option (meal room_only or breakfast; refundable defaults to true) and an optional coupon code.
+		Meal       string `json:"meal"`
+		Refundable *bool  `json:"refundable"`
+		CouponCode string `json:"coupon_code"`
 	}
 	if err := decode(r, &in); err != nil {
 		return err
 	}
 	if in.Rooms == 0 {
 		in.Rooms = 1
+	}
+	opt := rateOption{Meal: in.Meal, Refundable: in.Refundable == nil || *in.Refundable}
+	if opt.Meal == "" {
+		opt.Meal = mealRoomOnly
 	}
 	bad := func(msg string) error { return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, msg) }
 	switch {
@@ -174,23 +209,38 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 	if left < in.Rooms {
 		return fail(http.StatusConflict, codeSoldOut, "Not enough rooms are left for those dates")
 	}
-	price, err := s.priceStay(ctx, s.pool, in.RoomTypeID, in.CheckIn, in.CheckOut, in.Rooms)
+	var coupon *couponRule
+	var disc func(int64) (int64, error)
+	if strings.TrimSpace(in.CouponCode) != "" {
+		if coupon, err = s.loadCoupon(ctx, s.pool, claimsFrom(r).Sub, in.CouponCode, in.PropertyID, false); err != nil {
+			return err
+		}
+		disc = coupon.discount
+	}
+	price, err := s.priceStay(ctx, s.pool, in.RoomTypeID, in.CheckIn, in.CheckOut, in.Rooms, opt, disc)
 	if err != nil {
 		return err
+	}
+	var couponID, couponCode *string
+	if coupon != nil {
+		couponID, couponCode = &coupon.id, &coupon.code
 	}
 
 	var id string
 	if err := s.pool.QueryRow(ctx, `INSERT INTO quotes (user_id, property_id, room_type_id, check_in, check_out, guests, rooms, currency,
-			base_santim, service_santim, vat_santim, total_santim, deposit_santim, balance_due_santim, price_snapshot, expires_at)
-		VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now() + $16::interval) RETURNING id`,
+			base_santim, service_santim, vat_santim, total_santim, deposit_santim, balance_due_santim, price_snapshot, expires_at, meal, refundable, coupon_id, discount_santim)
+		VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now() + $16::interval, $17, $18, $19, $20) RETURNING id`,
 		claimsFrom(r).Sub, in.PropertyID, in.RoomTypeID, in.CheckIn, in.CheckOut, in.Guests, in.Rooms, price.Currency,
-		price.Base, price.Service, price.VAT, price.Total, price.Deposit, price.Balance, price.Nights, "600 seconds").Scan(&id); err != nil {
+		price.Base, price.Service, price.VAT, price.Total, price.Deposit, price.Balance, price.Nights, "600 seconds", opt.Meal, opt.Refundable, couponID, price.Discount).Scan(&id); err != nil {
 		return err
 	}
 	respond(w, http.StatusOK, quoteOut{
 		Meta: httpx.NowMeta(), ID: id, PropertyID: in.PropertyID, PropertyName: propName, RoomTypeID: in.RoomTypeID, RoomName: roomName,
 		CheckIn: in.CheckIn, CheckOut: in.CheckOut, Nights: len(price.Nights), Guests: in.Guests, Rooms: in.Rooms, RoomsAvailable: left,
-		Nightly: price.Nightly, Subtotal: price.Base + price.Service, VAT: price.VAT, Total: price.Total, Currency: price.Currency, PayAtHotel: payAtHotel,
+		Nightly: price.Nightly, Subtotal: price.Base + price.Service, VAT: price.VAT, Total: price.Total, Currency: price.Currency,
+		// A booking with a coupon is paid online: nobody could fund the discount on money collected at the hotel.
+		PayAtHotel: payAtHotel && coupon == nil,
+		Meal:       opt.Meal, Refundable: opt.Refundable, CouponCode: couponCode, Discount: price.Discount, ListTotal: price.Total + price.Discount,
 	})
 	return nil
 }
@@ -250,6 +300,21 @@ type bookingOut struct {
 	// Review: whether the guest may write one now, and the one they wrote.
 	CanReview bool       `json:"can_review"`
 	Review    *reviewOut `json:"review"`
+	// CheckInTime and CheckOutTime are the hotel's times (HH:MM, Addis Ababa).
+	CheckInTime  string `json:"check_in_time"`
+	CheckOutTime string `json:"check_out_time"`
+	// Timeline lists what happened to the booking and when (only on the single-booking view).
+	Timeline []timelineEvent `json:"timeline,omitempty"`
+	// The room option booked (meal room_only or breakfast; refundable false = no refund once confirmed) and the coupon, if any.
+	Meal           string  `json:"meal"`
+	Refundable     bool    `json:"refundable"`
+	CouponCode     *string `json:"coupon_code"`
+	DiscountSantim int64   `json:"discount_santim"`
+}
+
+type timelineEvent struct {
+	Status string `json:"status"`
+	At     string `json:"at"`
 }
 
 const bookingSelect = `
@@ -258,9 +323,10 @@ const bookingSelect = `
 	       COALESCE((SELECT CASE pay.status WHEN 'pending' THEN 'pending' WHEN 'failed' THEN 'failed' ELSE 'none' END
 	                 FROM payments pay WHERE pay.booking_id = b.id ORDER BY pay.created_at DESC LIMIT 1), 'none'),
 	       COALESCE((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status = 'succeeded'), 0)::bigint,
-	       b.refund_santim, rv.rating, rv.text
+	       b.refund_santim, rv.rating, rv.text, to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI'),
+	       b.meal, b.refundable, cp.code, b.discount_santim
 	FROM bookings b JOIN properties p ON p.id = b.property_id JOIN room_types rt ON rt.id = b.room_type_id
-	LEFT JOIN reviews rv ON rv.booking_id = b.id`
+	LEFT JOIN reviews rv ON rv.booking_id = b.id LEFT JOIN coupons cp ON cp.id = b.coupon_id`
 
 func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	var b bookingOut
@@ -271,7 +337,8 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	var reviewText *string
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.PropertyID, &b.PropertyName, &b.PropertyPhone, &b.Address, &b.RoomName,
 		&in, &out, &b.Guests, &b.Rooms, &b.GuestName, &b.Total, &b.Currency, &b.PaymentMethod, &b.PayAtHotel, &hold, &b.Payment,
-		&paid, &b.RefundSantim, &reviewRating, &reviewText); err != nil {
+		&paid, &b.RefundSantim, &reviewRating, &reviewText, &b.CheckInTime, &b.CheckOutTime,
+		&b.Meal, &b.Refundable, &b.CouponCode, &b.DiscountSantim); err != nil {
 		return b, err
 	}
 	b.CheckIn, b.CheckOut = pgDate(in), pgDate(out)
@@ -296,10 +363,11 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	checkInAt, until := cancelWindow(in)
 	if open := s.now().Before(checkInAt); open && (b.Status == "PAID_AWAITING_HOTEL" || b.Status == "CONFIRMED") {
 		b.CanCancel = true
-		if b.Status == "PAID_AWAITING_HOTEL" || !s.now().After(until) {
+		// A non-refundable booking gets nothing back once the hotel has confirmed it (before that, everything).
+		if b.Status == "PAID_AWAITING_HOTEL" || (b.Refundable && !s.now().After(until)) {
 			b.RefundIfCancelled = paid
 		}
-		if b.Status == "CONFIRMED" && paid > 0 {
+		if b.Status == "CONFIRMED" && paid > 0 && b.Refundable {
 			u := until.UTC().Format(time.RFC3339)
 			b.FullRefundUntil = &u
 		}
@@ -329,6 +397,9 @@ func (s *Server) loadBooking(ctx context.Context, q interface {
 func (s *Server) getBooking(w http.ResponseWriter, r *http.Request) error {
 	b, err := s.loadBooking(r.Context(), s.pool, chi.URLParam(r, "id"), claimsFrom(r).Sub)
 	if err != nil {
+		return err
+	}
+	if b.Timeline, err = s.timeline(r.Context(), b.ID); err != nil {
 		return err
 	}
 	respond(w, http.StatusOK, b)
@@ -460,11 +531,15 @@ func (s *Server) createBooking(w http.ResponseWriter, r *http.Request) error {
 			guests, rooms                       int
 			base, service, vat, total, dep, bal int64
 			expired                             bool
+			meal                                string
+			refundable                          bool
+			couponID                            *string
+			discount                            int64
 		}
 		err = tx.QueryRow(ctx, `SELECT property_id, room_type_id, check_in, check_out, guests, rooms, currency, base_santim, service_santim,
-				vat_santim, total_santim, deposit_santim, balance_due_santim, expires_at <= now()
+				vat_santim, total_santim, deposit_santim, balance_due_santim, expires_at <= now(), meal, refundable, coupon_id::text, discount_santim
 			FROM quotes WHERE id = $1 AND user_id = $2 FOR UPDATE`, in.QuoteID, uid).
-			Scan(&q.propertyID, &q.roomTypeID, &q.checkIn, &q.checkOut, &q.guests, &q.rooms, &q.currency, &q.base, &q.service, &q.vat, &q.total, &q.dep, &q.bal, &q.expired)
+			Scan(&q.propertyID, &q.roomTypeID, &q.checkIn, &q.checkOut, &q.guests, &q.rooms, &q.currency, &q.base, &q.service, &q.vat, &q.total, &q.dep, &q.bal, &q.expired, &q.meal, &q.refundable, &q.couponID, &q.discount)
 		if err == pgx.ErrNoRows || isBadUUID(err) {
 			return errNotFound
 		}
@@ -492,6 +567,17 @@ func (s *Server) createBooking(w http.ResponseWriter, r *http.Request) error {
 			return fail(http.StatusConflict, codeProfileMissing, "Add your name and ID before booking")
 		}
 
+		// A coupon is checked again now, with its row locked: it may have run out or expired since the price was shown.
+		if q.couponID != nil {
+			var code string
+			if err := tx.QueryRow(ctx, `SELECT code FROM coupons WHERE id = $1`, *q.couponID).Scan(&code); err != nil {
+				return err
+			}
+			if _, err := s.loadCoupon(ctx, tx, uid, code, q.propertyID, true); err != nil {
+				return err
+			}
+		}
+
 		// 4. Take the rooms, all nights or none.
 		ci, co := pgDate(q.checkIn), pgDate(q.checkOut)
 		if err := holdRooms(ctx, tx, q.roomTypeID, ci, co, q.rooms); err != nil {
@@ -502,17 +588,22 @@ func (s *Server) createBooking(w http.ResponseWriter, r *http.Request) error {
 		}
 		for attempt := 0; ; attempt++ {
 			err = tx.QueryRow(ctx, `INSERT INTO bookings (code, quote_id, user_id, property_id, room_type_id, check_in, check_out, guests, rooms, guest_name,
-					currency, base_santim, service_santim, vat_santim, total_santim, deposit_santim, balance_due_santim, hold_expires_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now() + $18::interval)
+					currency, base_santim, service_santim, vat_santim, total_santim, deposit_santim, balance_due_santim, hold_expires_at, meal, refundable, coupon_id, discount_santim)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now() + $18::interval, $19, $20, $21::uuid, $22)
 				ON CONFLICT (code) DO NOTHING RETURNING id`,
 				newCode(), in.QuoteID, uid, q.propertyID, q.roomTypeID, q.checkIn, q.checkOut, q.guests, q.rooms, name,
-				q.currency, q.base, q.service, q.vat, q.total, q.dep, q.bal, "900 seconds").Scan(&bookingID)
+				q.currency, q.base, q.service, q.vat, q.total, q.dep, q.bal, "900 seconds", q.meal, q.refundable, q.couponID, q.discount).Scan(&bookingID)
 			if err != pgx.ErrNoRows || attempt >= 5 {
 				break
 			}
 		}
 		if err != nil {
 			return err
+		}
+		if q.couponID != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO coupon_redemptions (coupon_id, user_id, booking_id, discount_santim) VALUES ($1, $2, $3, $4)`, *q.couponID, uid, bookingID, q.discount); err != nil {
+				return err
+			}
 		}
 		// 5. A frozen copy of the profile for the hotel. It is never changed by later edits to the guest's profile.
 		if _, err := tx.Exec(ctx, `INSERT INTO booking_guests (booking_id, property_id, full_name, contact, nationality, id_type, id_number_enc, id_number_hash, id_last4)

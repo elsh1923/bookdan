@@ -27,7 +27,8 @@ const bookingMoneySQL = `
 	       coalesce(sum(-e.amount_santim) FILTER (WHERE e.account_code = 'property_payable'), 0)::bigint AS net,
 	       coalesce(sum(-e.amount_santim) FILTER (WHERE e.account_code = 'commission_revenue'), 0)::bigint AS commission,
 	       coalesce(sum(-e.amount_santim) FILTER (WHERE e.account_code = 'vat_on_commission_payable'), 0)::bigint AS vat,
-	       coalesce(sum(e.amount_santim) FILTER (WHERE e.account_code = 'guest_deposits_held' AND t.kind = 'booking_confirmed'), 0)::bigint AS gross,
+	       coalesce(sum(e.amount_santim) FILTER (WHERE e.account_code IN ('guest_deposits_held', 'coupon_expense') AND t.kind = 'booking_confirmed'), 0)::bigint AS gross,
+	       coalesce(sum(e.amount_santim) FILTER (WHERE e.account_code = 'coupon_expense' AND t.kind = 'booking_confirmed'), 0)::bigint AS discount,
 	       (b.status IN ('CHECKED_IN', 'COMPLETED') OR (b.status = 'CONFIRMED' AND b.check_out <= (now() AT TIME ZONE 'Africa/Addis_Ababa')::date)) AS ready
 	FROM bookings b JOIN ledger_transactions t ON t.booking_id = b.id JOIN ledger_entries e ON e.transaction_id = t.id
 	WHERE ($1::uuid[] IS NULL OR b.property_id = ANY($1::uuid[]))
@@ -87,17 +88,19 @@ func (s *Server) balances(ctx context.Context, q interface {
 }
 
 type earningLine struct {
-	BookingID  string `json:"booking_id"`
-	Reference  string `json:"reference"`
-	GuestName  string `json:"guest_name"`
-	CheckIn    string `json:"check_in"`
-	CheckOut   string `json:"check_out"`
-	Status     string `json:"status"`
-	Gross      int64  `json:"gross_santim"`
-	Commission int64  `json:"commission_santim"`
-	VAT        int64  `json:"vat_santim"`
-	Net        int64  `json:"net_santim"`
-	Ready      bool   `json:"ready"`
+	BookingID string `json:"booking_id"`
+	Reference string `json:"reference"`
+	GuestName string `json:"guest_name"`
+	CheckIn   string `json:"check_in"`
+	CheckOut  string `json:"check_out"`
+	Status    string `json:"status"`
+	// Gross is the booking's full price (what the guest paid plus any coupon); Discount is the part of it BookDan paid with a coupon.
+	Gross      int64 `json:"gross_santim"`
+	Discount   int64 `json:"discount_santim"`
+	Commission int64 `json:"commission_santim"`
+	VAT        int64 `json:"vat_santim"`
+	Net        int64 `json:"net_santim"`
+	Ready      bool  `json:"ready"`
 }
 
 type payoutLine struct {
@@ -160,7 +163,7 @@ func (s *Server) partnerEarnings(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]hotelEarnings, 0, len(bals))
 	for _, b := range bals {
-		lr, err := s.pool.Query(ctx, `WITH m AS (`+bookingMoneySQL+`) SELECT id, code, guest_name, check_in, check_out, status, gross, commission, vat, net, ready
+		lr, err := s.pool.Query(ctx, `WITH m AS (`+bookingMoneySQL+`) SELECT id, code, guest_name, check_in, check_out, status, gross, discount, commission, vat, net, ready
 			FROM m WHERE property_id = $2 ORDER BY check_in DESC, code LIMIT 60`, []string{b.PropertyID}, b.PropertyID)
 		if err != nil {
 			return err
@@ -169,7 +172,7 @@ func (s *Server) partnerEarnings(w http.ResponseWriter, r *http.Request) error {
 		for lr.Next() {
 			var l earningLine
 			var in, o time.Time
-			if err := lr.Scan(&l.BookingID, &l.Reference, &l.GuestName, &in, &o, &l.Status, &l.Gross, &l.Commission, &l.VAT, &l.Net, &l.Ready); err != nil {
+			if err := lr.Scan(&l.BookingID, &l.Reference, &l.GuestName, &in, &o, &l.Status, &l.Gross, &l.Discount, &l.Commission, &l.VAT, &l.Net, &l.Ready); err != nil {
 				lr.Close()
 				return err
 			}

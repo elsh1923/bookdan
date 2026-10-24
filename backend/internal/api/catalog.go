@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"hash/fnv"
+	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -36,34 +38,91 @@ func (s *Server) latLng(col string) (lat, lng string) {
 }
 
 type searchItem struct {
-	ID                          string   `json:"id"`
-	Name                        string   `json:"name"`
-	Area                        string   `json:"area"`
-	City                        string   `json:"city"`
-	Type                        string   `json:"type"`
-	Badge                       string   `json:"badge"`
-	FromPrice                   int64    `json:"from_price_santim"`
-	Currency                    string   `json:"currency"`
-	Available                   bool     `json:"available"`
-	Amenities                   []string `json:"amenities"`
-	Rating                      *float64 `json:"rating"`
-	ReviewCnt                   int      `json:"review_count"`
-	PhotoURL                    *string  `json:"photo_url"`
-	Accent                      string   `json:"accent"`
-	Lat                         float64  `json:"lat"`
-	Lng                         float64  `json:"lng"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Area      string   `json:"area"`
+	City      string   `json:"city"`
+	Type      string   `json:"type"`
+	Badge     string   `json:"badge"`
+	FromPrice int64    `json:"from_price_santim"`
+	Currency  string   `json:"currency"`
+	Available bool     `json:"available"`
+	Amenities []string `json:"amenities"`
+	Rating    *float64 `json:"rating"`
+	ReviewCnt int      `json:"review_count"`
+	PhotoURL  *string  `json:"photo_url"`
+	Accent    string   `json:"accent"`
+	Lat       float64  `json:"lat"`
+	Lng       float64  `json:"lng"`
+	// RoomsLeft is how many rooms of the cheapest room type that fits the party are still free (0 when none): the apps show "Only 2 left".
+	RoomsLeft int `json:"rooms_left"`
+	// DistanceM is the distance from the point the guest searched around (lat and lng in the request), when given.
+	DistanceM *int `json:"distance_m"`
+	// Landmark is the closest well-known place ("1.4 km to Bole Airport"), shown on the card.
+	Landmark                    *placeRef `json:"landmark"`
 	description, phone, address string
 	houseRules                  []byte
+	matched                     bool
+}
+
+// placeRef is a landmark and how far it is.
+type placeRef struct {
+	Name      string `json:"name"`
+	NameAm    string `json:"name_am,omitempty"`
+	DistanceM int    `json:"distance_m"`
+}
+
+type landmark struct {
+	name, nameAm string
+	lat, lng     float64
+}
+
+func (s *Server) landmarks(ctx context.Context) ([]landmark, error) {
+	lat, lng := s.latLng("location")
+	rows, err := s.pool.Query(ctx, `SELECT name, coalesce(name_am, ''), `+lat+`, `+lng+` FROM landmarks`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []landmark
+	for rows.Next() {
+		var l landmark
+		if err := rows.Scan(&l.name, &l.nameAm, &l.lat, &l.lng); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// nearLandmarks returns the landmarks within maxM metres of a point, closest first (at most limit).
+func nearLandmarks(ls []landmark, lat, lng float64, maxM, limit int) []placeRef {
+	var out []placeRef
+	for _, l := range ls {
+		if d := distanceM(lat, lng, l.lat, l.lng); d <= maxM {
+			out = append(out, placeRef{l.name, l.nameAm, d})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DistanceM < out[j].DistanceM })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
 
 type roomType struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	Capacity   int      `json:"capacity"`
-	Price      int64    `json:"price_santim"`
-	Currency   string   `json:"currency"`
-	Amenities  []string `json:"amenities"`
-	RoomsLeft  int      `json:"rooms_left"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Capacity  int      `json:"capacity"`
+	Price     int64    `json:"price_santim"`
+	Currency  string   `json:"currency"`
+	Amenities []string `json:"amenities"`
+	RoomsLeft int      `json:"rooms_left"`
+	// Options are the ways to book this room (meal and cancellation), each with its price per night.
+	Options []roomOption `json:"options"`
+	// Photos are this room's own pictures (full size), cover first; Thumb is the first one, small, for the card.
+	Photos     []string `json:"photos"`
+	Thumb      *string  `json:"photo_thumb"`
 	propertyID string
 }
 
@@ -73,7 +132,7 @@ func (s *Server) roomsFor(ctx context.Context, q interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 }, propertyIDs []string, checkIn, checkOut string) (map[string][]roomType, error) {
 	rows, err := q.Query(ctx, `
-		SELECT rt.property_id, rt.id, rt.name, rt.capacity, rt.amenities, rp.nightly_price_santim, rp.currency,
+		SELECT rt.property_id, rt.id, rt.name, rt.capacity, rt.amenities, rp.nightly_price_santim, rp.currency, rt.breakfast_santim, rt.nonrefundable_bps,
 		  GREATEST(0, COALESCE((
 		    SELECT min(COALESCE(i.capacity - i.held - i.booked, rt.total_rooms))
 		    FROM generate_series($2::date, $3::date - 1, '1 day') AS n(night)
@@ -91,9 +150,11 @@ func (s *Server) roomsFor(ctx context.Context, q interface {
 	out := map[string][]roomType{}
 	for rows.Next() {
 		var r roomType
-		if err := rows.Scan(&r.propertyID, &r.ID, &r.Name, &r.Capacity, &r.Amenities, &r.Price, &r.Currency, &r.RoomsLeft); err != nil {
+		var offer roomOffer
+		if err := rows.Scan(&r.propertyID, &r.ID, &r.Name, &r.Capacity, &r.Amenities, &r.Price, &r.Currency, &offer.breakfast, &offer.nrBPS, &r.RoomsLeft); err != nil {
 			return nil, err
 		}
+		r.Options = offer.options(r.Price)
 		out[r.propertyID] = append(out[r.propertyID], r)
 	}
 	return out, rows.Err()
@@ -123,56 +184,126 @@ func atoiDefault(v string, d int) int {
 	return d
 }
 
+// searchPlan is what the guest asked for, read from the query string.
+type searchPlan struct {
+	needle           string
+	types, amenities []string
+	minPrice         int64 // santim per night, 0 = no limit
+	maxPrice         int64
+	minRating        float64
+	sort             string
+	lat, lng         float64
+	hasPoint         bool
+}
+
+var searchSorts = map[string]bool{"recommended": true, "price_asc": true, "price_desc": true, "rating": true, "distance": true}
+
+func csv(v string) []string {
+	out := []string{}
+	for _, x := range strings.Split(v, ",") {
+		if x = strings.TrimSpace(x); x != "" {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func readSearchPlan(q map[string][]string) (searchPlan, error) {
+	get := func(k string) string {
+		if v := q[k]; len(v) > 0 {
+			return v[0]
+		}
+		return ""
+	}
+	p := searchPlan{needle: strings.ToLower(strings.TrimSpace(get("q"))), types: csv(get("types")), amenities: csv(get("amenities")), sort: get("sort")}
+	if p.sort == "" {
+		p.sort = "recommended"
+	}
+	if !searchSorts[p.sort] {
+		return p, fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "sort must be recommended, price_asc, price_desc, rating or distance")
+	}
+	var err error
+	for k, dst := range map[string]*int64{"min_price": &p.minPrice, "max_price": &p.maxPrice} {
+		if v := get(k); v != "" {
+			if *dst, err = strconv.ParseInt(v, 10, 64); err != nil || *dst < 0 {
+				return p, fail(http.StatusBadRequest, httpx.CodeInvalidRequest, k+" must be an amount in santim")
+			}
+		}
+	}
+	if v := get("min_rating"); v != "" {
+		if p.minRating, err = strconv.ParseFloat(v, 64); err != nil || p.minRating < 0 || p.minRating > 5 {
+			return p, fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "min_rating must be between 0 and 5")
+		}
+	}
+	la, lo := get("lat"), get("lng")
+	if la != "" && lo != "" {
+		var e1, e2 error
+		p.lat, e1 = strconv.ParseFloat(la, 64)
+		p.lng, e2 = strconv.ParseFloat(lo, 64)
+		if e1 != nil || e2 != nil || p.lat < -90 || p.lat > 90 || p.lng < -180 || p.lng > 180 {
+			return p, fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "lat and lng must be coordinates")
+		}
+		p.hasPoint = true
+	}
+	if p.sort == "distance" && !p.hasPoint {
+		return p, fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "sorting by distance needs lat and lng")
+	}
+	return p, nil
+}
+
+// distanceM is the straight-line distance in metres between two points.
+func distanceM(lat1, lng1, lat2, lng2 float64) int {
+	const r = 6371000.0
+	rad := math.Pi / 180
+	dLat, dLng := (lat2-lat1)*rad, (lng2-lng1)*rad
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(lat1*rad)*math.Cos(lat2*rad)*math.Sin(dLng/2)*math.Sin(dLng/2)
+	return int(2 * r * math.Asin(math.Min(1, math.Sqrt(a))))
+}
+
+const maxSearchCandidates = 500
+
 func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 	checkIn, checkOut, guests, rooms, err := s.stay(r)
 	if err != nil {
 		return err
 	}
 	q := r.URL.Query()
-	needle := strings.ToLower(strings.TrimSpace(q.Get("q")))
-	types, amenities := []string{}, []string{}
-	for _, t := range strings.Split(q.Get("types"), ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			types = append(types, t)
-		}
-	}
-	for _, a := range strings.Split(q.Get("amenities"), ",") {
-		if a = strings.TrimSpace(a); a != "" {
-			amenities = append(amenities, a)
-		}
+	plan, err := readSearchPlan(q)
+	if err != nil {
+		return err
 	}
 	offset := atoiDefault(q.Get("cursor"), 0)
 	if offset < 0 {
 		offset = 0
 	}
 
-	// A hotel is shown when its name, area or city matches, or (with PostGIS) when it is within 3 km of a matching landmark.
+	// Every hotel that matches the words (name, area, city, and with PostGIS a landmark within 3 km). Type, amenities, price and
+	// rating are applied below, after prices are known, so sorting and paging by price are exact and the filter counts can be shown.
 	near := ""
 	if s.postgis {
 		near = ` OR EXISTS (SELECT 1 FROM landmarks l WHERE (lower(l.name) LIKE '%' || $1 || '%' OR lower(coalesce(l.name_am, '')) LIKE '%' || $1 || '%') AND ST_DWithin(l.location, p.location, 3000))`
 	}
 	lat, lng := s.latLng("p.location")
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating, coalesce(pr.review_count, 0),
-		       `+lat+`, `+lng+`, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id ORDER BY pp.position, pp.created_at LIMIT 1)
+		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating::float8, coalesce(pr.review_count, 0),
+		       `+lat+`, `+lng+`, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id AND pp.room_type_id IS NULL ORDER BY pp.position, pp.created_at LIMIT 1),
+		       (lower(p.name) LIKE '%' || $1 || '%' OR lower(p.area) LIKE '%' || $1 || '%' OR lower(p.city) LIKE '%' || $1 || '%')
 		FROM properties p LEFT JOIN property_ratings pr ON pr.property_id = p.id
 		WHERE p.status = 'active'
 		  AND ($1 = '' OR lower(p.name) LIKE '%' || $1 || '%' OR lower(p.area) LIKE '%' || $1 || '%' OR lower(p.city) LIKE '%' || $1 || '%'`+near+`)
-		  AND (cardinality($2::text[]) = 0 OR p.type = ANY($2))
-		  AND p.amenities @> $3::text[]
-		ORDER BY (lower(p.name) LIKE '%' || $1 || '%' OR lower(p.area) LIKE '%' || $1 || '%' OR lower(p.city) LIKE '%' || $1 || '%') DESC, p.name
-		LIMIT $4 OFFSET $5`, needle, types, amenities, searchPageSize+1, offset)
+		ORDER BY p.name
+		LIMIT $2`, plan.needle, maxSearchCandidates)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	var items []searchItem
+	var all []searchItem
 	for rows.Next() {
 		var it searchItem
 		var verified bool
 		var rating *float64
 		var coverID *string
-		if err := rows.Scan(&it.ID, &it.Name, &it.Area, &it.City, &it.Type, &verified, &it.Amenities, &rating, &it.ReviewCnt, &it.Lat, &it.Lng, &coverID); err != nil {
+		if err := rows.Scan(&it.ID, &it.Name, &it.Area, &it.City, &it.Type, &verified, &it.Amenities, &rating, &it.ReviewCnt, &it.Lat, &it.Lng, &coverID, &it.matched); err != nil {
 			return err
 		}
 		if coverID != nil {
@@ -184,29 +315,70 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 			it.Badge = "verified"
 		}
 		it.Rating, it.Accent = rating, accentFor(it.ID)
-		items = append(items, it)
+		all = append(all, it)
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 	rows.Close()
 
-	next := (*string)(nil)
-	if len(items) > searchPageSize {
-		items = items[:searchPageSize]
-		n := strconv.Itoa(offset + searchPageSize)
-		next = &n
-	}
-	ids := make([]string, len(items))
-	for i, it := range items {
+	ids := make([]string, len(all))
+	for i, it := range all {
 		ids[i] = it.ID
 	}
 	rts, err := s.roomsFor(r.Context(), s.pool, ids, checkIn, checkOut)
 	if err != nil {
 		return err
 	}
-	for i := range items {
-		fillAvailability(&items[i], rts[items[i].ID], guests, rooms)
+	facets := struct {
+		Types     map[string]int `json:"types"`
+		Amenities map[string]int `json:"amenities"`
+	}{map[string]int{}, map[string]int{}}
+	var pmin, pmax int64
+	var items []searchItem
+	marks, err := s.landmarks(r.Context())
+	if err != nil {
+		return err
+	}
+	for i := range all {
+		it := &all[i]
+		fillAvailability(it, rts[it.ID], guests, rooms)
+		if plan.hasPoint {
+			d := distanceM(plan.lat, plan.lng, it.Lat, it.Lng)
+			it.DistanceM = &d
+		}
+		if near := nearLandmarks(marks, it.Lat, it.Lng, 15000, 1); len(near) > 0 {
+			it.Landmark = &near[0]
+		}
+		// The counts next to each filter describe what the words found, so they stay put while the guest ticks boxes.
+		facets.Types[it.Type]++
+		for _, a := range it.Amenities {
+			facets.Amenities[a]++
+		}
+		if it.Available && it.FromPrice > 0 {
+			if pmin == 0 || it.FromPrice < pmin {
+				pmin = it.FromPrice
+			}
+			if it.FromPrice > pmax {
+				pmax = it.FromPrice
+			}
+		}
+		if plan.keeps(*it) {
+			items = append(items, *it)
+		}
+	}
+	plan.order(items)
+
+	total := len(items)
+	next := (*string)(nil)
+	if offset > len(items) {
+		offset = len(items)
+	}
+	items = items[offset:]
+	if len(items) > searchPageSize {
+		items = items[:searchPageSize]
+		n := strconv.Itoa(offset + searchPageSize)
+		next = &n
 	}
 	if items == nil {
 		items = []searchItem{}
@@ -215,19 +387,109 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 		httpx.Meta
 		Items      []searchItem `json:"items"`
 		NextCursor *string      `json:"next_cursor"`
-	}{httpx.NowMeta(), items, next})
+		// Total is how many hotels match the filters (all pages). Prices are for one night; the bounds cover the hotels that have a room free.
+		Total    int   `json:"total"`
+		PriceMin int64 `json:"price_min_santim"`
+		PriceMax int64 `json:"price_max_santim"`
+		Facets   any   `json:"facets"`
+	}{httpx.NowMeta(), items, next, total, pmin, pmax, facets})
 	return nil
+}
+
+// keeps reports whether a hotel passes the guest's type, amenity, price and rating filters.
+func (p searchPlan) keeps(it searchItem) bool {
+	if len(p.types) > 0 {
+		ok := false
+		for _, t := range p.types {
+			ok = ok || t == it.Type
+		}
+		if !ok {
+			return false
+		}
+	}
+	for _, want := range p.amenities {
+		has := false
+		for _, a := range it.Amenities {
+			has = has || a == want
+		}
+		if !has {
+			return false
+		}
+	}
+	if p.minRating > 0 && (it.Rating == nil || *it.Rating < p.minRating) {
+		return false
+	}
+	// A price filter speaks about the price a guest would pay, so hotels with no price for these dates cannot pass it.
+	if (p.minPrice > 0 || p.maxPrice > 0) && it.FromPrice == 0 {
+		return false
+	}
+	if p.minPrice > 0 && it.FromPrice < p.minPrice {
+		return false
+	}
+	if p.maxPrice > 0 && it.FromPrice > p.maxPrice {
+		return false
+	}
+	return true
+}
+
+// order sorts the hotels. Whatever the sort, hotels with no room for the party come last.
+func (p searchPlan) order(items []searchItem) {
+	less := func(a, b searchItem) bool {
+		if a.Available != b.Available {
+			return a.Available
+		}
+		switch p.sort {
+		case "price_asc":
+			if a.FromPrice != b.FromPrice {
+				return a.FromPrice < b.FromPrice
+			}
+		case "price_desc":
+			if a.FromPrice != b.FromPrice {
+				return a.FromPrice > b.FromPrice
+			}
+		case "rating":
+			if ra, rb := ratingOr0(a), ratingOr0(b); ra != rb {
+				return ra > rb
+			}
+			if a.ReviewCnt != b.ReviewCnt {
+				return a.ReviewCnt > b.ReviewCnt
+			}
+		case "distance":
+			if a.DistanceM != nil && b.DistanceM != nil && *a.DistanceM != *b.DistanceM {
+				return *a.DistanceM < *b.DistanceM
+			}
+		default: // recommended: the ones the words name first, then the best rated
+			if a.matched != b.matched {
+				return a.matched
+			}
+			if ra, rb := ratingOr0(a), ratingOr0(b); ra != rb {
+				return ra > rb
+			}
+		}
+		return a.Name < b.Name
+	}
+	sort.SliceStable(items, func(i, j int) bool { return less(items[i], items[j]) })
+}
+
+func ratingOr0(it searchItem) float64 {
+	if it.Rating == nil {
+		return 0
+	}
+	return *it.Rating
 }
 
 // fillAvailability sets the price shown on a card and whether the party fits: some room type has enough free rooms
 // and the rooms together sleep the guests.
 func fillAvailability(it *searchItem, rts []roomType, guests, rooms int) {
 	it.Currency = "ETB"
-	for i, rt := range rts {
+	for i, rt := range rts { // cheapest first
 		if i == 0 || rt.Price < it.FromPrice {
 			it.FromPrice, it.Currency = rt.Price, rt.Currency
 		}
 		if rt.RoomsLeft >= rooms && rt.Capacity*rooms >= guests {
+			if !it.Available {
+				it.RoomsLeft = rt.RoomsLeft
+			}
 			it.Available = true
 		}
 	}
@@ -250,13 +512,15 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 	var rating *float64
 	var rules []byte
 	var coverID *string
+	var checkInTime, checkOutTime string
 	err = s.pool.QueryRow(ctx, `
-		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating, coalesce(pr.review_count, 0),
-		       `+lat+`, `+lng+`, p.description, p.phone, p.address, p.house_rules, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id ORDER BY pp.position, pp.created_at LIMIT 1)
+		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating::float8, coalesce(pr.review_count, 0),
+		       `+lat+`, `+lng+`, p.description, p.phone, p.address, p.house_rules, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id AND pp.room_type_id IS NULL ORDER BY pp.position, pp.created_at LIMIT 1),
+		       to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI')
 		FROM properties p LEFT JOIN property_ratings pr ON pr.property_id = p.id
 		WHERE p.id = $1 AND p.status = 'active'`, id).
 		Scan(&it.ID, &it.Name, &it.Area, &it.City, &it.Type, &verified, &it.Amenities, &rating, &it.ReviewCnt, &it.Lat, &it.Lng,
-			&it.description, &it.phone, &it.address, &rules, &coverID)
+			&it.description, &it.phone, &it.address, &rules, &coverID, &checkInTime, &checkOutTime)
 	if err == pgx.ErrNoRows || (err != nil && strings.Contains(err.Error(), "invalid input syntax for type uuid")) {
 		return errNotFound
 	}
@@ -273,7 +537,7 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		it.PhotoURL = &u
 	}
 	photos := []string{}
-	pr, err := s.pool.Query(ctx, `SELECT id FROM property_photos WHERE property_id = $1 ORDER BY position, created_at`, it.ID)
+	pr, err := s.pool.Query(ctx, `SELECT id FROM property_photos WHERE property_id = $1 AND room_type_id IS NULL ORDER BY position, created_at`, it.ID)
 	if err != nil {
 		return err
 	}
@@ -299,6 +563,10 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		if rooms[i].Amenities == nil {
 			rooms[i].Amenities = []string{}
 		}
+		rooms[i].Photos = []string{}
+	}
+	if err := s.attachRoomPhotos(ctx, rooms); err != nil {
+		return err
 	}
 
 	type review struct {
@@ -307,6 +575,8 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		Rating float64 `json:"rating"`
 		Text   string  `json:"text"`
 		Date   string  `json:"date"`
+		// Verified: every review comes from a guest whose stay was booked and finished on BookDan.
+		Verified bool `json:"verified"`
 	}
 	revRows, err := s.pool.Query(ctx, `SELECT r.id, coalesce(nullif(split_part(gp.full_name, ' ', 1), ''), nullif(u.display_name, ''), 'Guest'), r.rating, r.text, r.created_at
 		FROM reviews r JOIN users u ON u.id = r.user_id LEFT JOIN guest_profiles gp ON gp.user_id = r.user_id WHERE r.property_id = $1 ORDER BY r.created_at DESC LIMIT 20`, id)
@@ -321,17 +591,32 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		if err := revRows.Scan(&rv.ID, &rv.Author, &rv.Rating, &rv.Text, &at); err != nil {
 			return err
 		}
-		rv.Date = pgDate(at)
+		rv.Date, rv.Verified = pgDate(at), true
 		reviews = append(reviews, rv)
+	}
+
+	summary, err := s.ratingSummary(ctx, id)
+	if err != nil {
+		return err
+	}
+	marks, err := s.landmarks(ctx)
+	if err != nil {
+		return err
+	}
+	nearby := nearLandmarks(marks, it.Lat, it.Lng, 5000, 6)
+	if nearby == nil {
+		nearby = []placeRef{}
 	}
 
 	type propertyOut struct {
 		searchItem
-		Description string   `json:"description"`
-		Phone       string   `json:"phone"`
-		Address     string   `json:"address"`
-		HouseRules  any      `json:"house_rules"`
-		Photos      []string `json:"photos"`
+		Description  string   `json:"description"`
+		Phone        string   `json:"phone"`
+		Address      string   `json:"address"`
+		HouseRules   any      `json:"house_rules"`
+		Photos       []string `json:"photos"`
+		CheckInTime  string   `json:"check_in_time"`
+		CheckOutTime string   `json:"check_out_time"`
 	}
 	var houseRules any = []string{}
 	if len(rules) > 0 {
@@ -342,6 +627,9 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		Property  propertyOut `json:"property"`
 		RoomTypes []roomType  `json:"room_types"`
 		Reviews   []review    `json:"reviews"`
-	}{httpx.NowMeta(), propertyOut{it, it.description, it.phone, it.address, houseRules, photos}, rooms, reviews})
+		// RatingSummary is the average, the count per star, and the averages of the four sub-ratings; Nearby lists landmarks within 5 km.
+		RatingSummary ratingSummary `json:"rating_summary"`
+		Nearby        []placeRef    `json:"nearby"`
+	}{httpx.NowMeta(), propertyOut{it, it.description, it.phone, it.address, houseRules, photos, checkInTime, checkOutTime}, rooms, reviews, summary, nearby})
 	return nil
 }

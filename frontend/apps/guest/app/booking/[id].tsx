@@ -12,11 +12,12 @@ import { api, isMockApi } from '../../src/api';
 import { CancelCard } from '../../src/CancelCard';
 import { NotifyMeCard } from '../../src/NotifyMeCard';
 import { ReviewCard } from '../../src/ReviewCard';
-import { callPhone } from '../../src/links';
+import { addStayToCalendar, callPhone } from '../../src/links';
 import { clearPendingPayment, openGateway, savePendingPayment } from '../../src/payment';
 import { price, shortDate } from '../../src/format';
 import { useBooking } from '../../src/queries';
 import { StatusBadge } from '../../src/StatusBadge';
+import { TripTimeline } from '../../src/TripTimeline';
 import { ensureVoucher } from '../../src/voucherStore';
 
 /** Countdown from the server clock: remaining = expiry - server_time - time since that response. */
@@ -206,9 +207,10 @@ export default function BookingScreen() {
             <T variant="displaySm">{t('booking.choose_payment')}</T>
             <PaymentOption icon="phone-portrait-outline" title={t('booking.telebirr')} selected={method === 'telebirr'} onPress={() => setMethod('telebirr')} />
             <PaymentOption icon="card-outline" title={t('booking.chapa')} selected={method === 'chapa'} onPress={() => setMethod('chapa')} />
-            {b.pay_at_hotel ? (
+            {b.pay_at_hotel && b.discount_santim === 0 ? (
               <PaymentOption icon="business-outline" title={t('booking.pay_at_hotel')} note={t('booking.pay_at_hotel_note')} selected={method === 'pay_at_hotel'} onPress={() => setMethod('pay_at_hotel')} />
             ) : null}
+            {b.pay_at_hotel && b.discount_santim > 0 ? <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.sm }}>{t('booking.coupon_online_only')}</T> : null}
             {isMockApi && method !== 'pay_at_hotel' ? (
               <View style={{ marginTop: spacing.md }}><Badge tone="warning" icon="⚠" label="SIMULATED PAYMENT · no money moves" /></View>
             ) : null}
@@ -227,18 +229,38 @@ export default function BookingScreen() {
           <T color={colors.inkSoft} style={{ marginBottom: spacing.sm }}>{b.address}</T>
           <Line label={t('booking.reference')} value={b.reference} />
           <Line label={t('booking.room')} value={b.rooms > 1 ? `${b.rooms} × ${b.room_name}` : b.room_name} />
-          <Line label={t('booking.check_in')} value={shortDate(b.check_in, months)} />
-          <Line label={t('booking.check_out')} value={shortDate(b.check_out, months)} />
+          {b.meal === 'breakfast' ? <Line label={t('booking.meal_line')} value={t('checkout.meal_breakfast')} /> : null}
+          {!b.refundable ? <Line label={t('booking.policy_line')} value={t('property.option_nonrefundable')} /> : null}
+          {b.coupon_code ? <Line label={t('booking.coupon_row', { code: b.coupon_code })} value={`− ${price(b.discount_santim, b.currency)}`} /> : null}
+          <Line label={t('booking.check_in')} value={`${shortDate(b.check_in, months)} · ${b.check_in_time}`} />
+          <Line label={t('booking.check_out')} value={`${shortDate(b.check_out, months)} · ${b.check_out_time}`} />
           <Line label={t('booking.guests')} value={String(b.guests)} />
           {b.payment_method ? <Line label={t('booking.paid_with')} value={t(`booking.${b.payment_method}`)} /> : null}
           <View style={{ height: 1, backgroundColor: colors.line, marginVertical: spacing.sm }} />
           <Line label={t('booking.total')} value={total} />
         </Reveal>
 
+        <TripTimeline booking={b} />
+
         {b.can_cancel ? <CancelCard booking={b} months={months} onChanged={onBookingChanged} /> : null}
         <ReviewCard booking={b} onChanged={onBookingChanged} />
 
         {expired ? <Button title={t('booking.try_again')} onPress={() => router.replace('/')} style={{ marginTop: spacing.xl }} /> : null}
+        {confirmed ? (
+          <Button
+            variant="secondary"
+            icon="calendar-outline"
+            title={t('booking.add_to_calendar')}
+            onPress={async () => {
+              const ok = await addStayToCalendar({
+                title: b.property_name, details: `${t('booking.reference')}: ${b.reference}`, location: b.address,
+                checkIn: b.check_in, checkOut: b.check_out, inTime: b.check_in_time, outTime: b.check_out_time,
+              });
+              if (!ok) Alert.alert(t('common.cannot_open_title'), t('common.cannot_open_body', { value: `${b.check_in} – ${b.check_out}` }));
+            }}
+            style={{ marginTop: spacing.xl }}
+          />
+        ) : null}
         {confirmed ? (
           <Button icon="qr-code-outline" title={t('booking.view_voucher')} onPress={() => router.push({ pathname: '/voucher/[id]', params: { id } })} style={{ marginTop: spacing.xl }} />
         ) : null}

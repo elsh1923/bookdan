@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"image"
 	"image/color"
@@ -195,7 +196,16 @@ func applyOrientation(src image.Image, o int) image.Image {
 
 // ---- endpoints
 
+// adminUploadPhoto adds a photo to the hotel's gallery; adminUploadRoomPhoto adds one to a room type (shown on its card).
 func (s *Server) adminUploadPhoto(w http.ResponseWriter, r *http.Request) error {
+	return s.uploadPhoto(w, r, "")
+}
+
+func (s *Server) adminUploadRoomPhoto(w http.ResponseWriter, r *http.Request) error {
+	return s.uploadPhoto(w, r, chi.URLParam(r, "room"))
+}
+
+func (s *Server) uploadPhoto(w http.ResponseWriter, r *http.Request, room string) error {
 	id := chi.URLParam(r, "id")
 	if err := s.canManage(r, id); err != nil {
 		return err
@@ -222,16 +232,32 @@ func (s *Server) adminUploadPhoto(w http.ResponseWriter, r *http.Request) error 
 	}
 	var photoID string
 	err = s.tx(r.Context(), func(tx pgx.Tx) error {
+		// The gallery of the hotel (room empty) and the photos of each room are counted and ordered separately.
+		var roomArg any
+		limit, what := maxPhotosPerHotel, "A hotel can have at most 15 photos. Delete one first."
+		if room != "" {
+			var ok bool
+			if err := tx.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM room_types WHERE id = $1 AND property_id = $2)`, room, id).Scan(&ok); err != nil {
+				if isBadUUID(err) {
+					return errNotFound
+				}
+				return err
+			}
+			if !ok {
+				return errNotFound
+			}
+			roomArg, limit, what = room, maxPhotosPerRoom, "A room can have at most 10 photos. Delete one first."
+		}
 		var count int
-		if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM property_photos WHERE property_id = $1`, id).Scan(&count); err != nil {
+		if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM property_photos WHERE property_id = $1 AND room_type_id IS NOT DISTINCT FROM $2::uuid`, id, roomArg).Scan(&count); err != nil {
 			return err
 		}
-		if count >= maxPhotosPerHotel {
-			return fail(http.StatusConflict, codeInvalidState, "A hotel can have at most 15 photos. Delete one first.")
+		if count >= limit {
+			return fail(http.StatusConflict, codeInvalidState, what)
 		}
-		if err := tx.QueryRow(r.Context(), `INSERT INTO property_photos (property_id, position, main, thumb, width, height, uploaded_by)
-			VALUES ($1, coalesce((SELECT max(position) + 1 FROM property_photos WHERE property_id = $1), 0), $2, $3, $4, $5, $6) RETURNING id`,
-			id, main, thumb, pw, ph, claimsFrom(r).Sub).Scan(&photoID); err != nil {
+		if err := tx.QueryRow(r.Context(), `INSERT INTO property_photos (property_id, room_type_id, position, main, thumb, width, height, uploaded_by)
+			VALUES ($1, $7::uuid, coalesce((SELECT max(position) + 1 FROM property_photos WHERE property_id = $1 AND room_type_id IS NOT DISTINCT FROM $7::uuid), 0), $2, $3, $4, $5, $6) RETURNING id`,
+			id, main, thumb, pw, ph, claimsFrom(r).Sub, roomArg).Scan(&photoID); err != nil {
 			return err
 		}
 		return s.adminAudit(r, tx, "admin_photo_added", id, map[string]any{"photo_id": photoID})
@@ -265,7 +291,9 @@ func (s *Server) adminCoverPhoto(w http.ResponseWriter, r *http.Request) error {
 			return errNotFound
 		}
 		// Everyone else moves one place down; the chosen photo takes place 0.
-		if _, err := tx.Exec(r.Context(), `UPDATE property_photos SET position = position + 1 WHERE property_id = $1 AND id <> $2`, id, photo); err != nil {
+		// Only the photos in the same place (the hotel gallery, or the same room) move.
+		if _, err := tx.Exec(r.Context(), `UPDATE property_photos SET position = position + 1 WHERE property_id = $1 AND id <> $2
+			AND room_type_id IS NOT DISTINCT FROM (SELECT room_type_id FROM property_photos WHERE id = $2)`, id, photo); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(r.Context(), `UPDATE property_photos SET position = 0 WHERE id = $1`, photo); err != nil {
@@ -330,4 +358,37 @@ func (s *Server) servePhoto(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	_, _ = w.Write(data)
 	return nil
+}
+
+const maxPhotosPerRoom = 10
+
+// attachRoomPhotos fills each room's photos (cover first) and the thumbnail of the first.
+func (s *Server) attachRoomPhotos(ctx context.Context, rooms []roomType) error {
+	if len(rooms) == 0 {
+		return nil
+	}
+	ids := make([]string, len(rooms))
+	idx := map[string]int{}
+	for i, r := range rooms {
+		ids[i] = r.ID
+		idx[r.ID] = i
+	}
+	rows, err := s.pool.Query(ctx, `SELECT room_type_id::text, id FROM property_photos WHERE room_type_id = ANY($1::uuid[]) ORDER BY position, created_at`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var room, photo string
+		if err := rows.Scan(&room, &photo); err != nil {
+			return err
+		}
+		i := idx[room]
+		if len(rooms[i].Photos) == 0 {
+			t := s.photoURL(photo, "thumb")
+			rooms[i].Thumb = &t
+		}
+		rooms[i].Photos = append(rooms[i].Photos, s.photoURL(photo, "main"))
+	}
+	return rows.Err()
 }

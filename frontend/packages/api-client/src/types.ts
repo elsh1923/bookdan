@@ -15,6 +15,8 @@ import type {
   PropertyDetail,
   PropertyType,
   Quote,
+  ReviewInput,
+  SearchSort,
   SearchResponse,
   Voucher,
 } from '@bookdan/domain';
@@ -30,6 +32,13 @@ export interface SearchParams {
   rooms?: number;
   types?: PropertyType[];
   amenities?: Amenity[];
+  /** Order of the results. Hotels with no room for the party always come last. */
+  sort?: SearchSort;
+  /** Price per night in santim (lowest room that has a rate for check-in). */
+  min_price?: number;
+  max_price?: number;
+  /** Only hotels rated at least this (0 to 5). */
+  min_rating?: number;
   cursor?: string | null;
 }
 
@@ -47,6 +56,11 @@ export interface CreateQuoteParams {
   guests: number;
   /** Rooms of this type (default 1, at most 9). */
   rooms?: number;
+  /** The room option: room only (default) or with breakfast, and whether it is refundable (default true). A room only offers what its hotel set. */
+  meal?: 'room_only' | 'breakfast';
+  refundable?: boolean;
+  /** A coupon code. Fails with COUPON_INVALID when it does not apply. Coupons work with online payment only. */
+  coupon_code?: string;
 }
 
 export interface Tokens {
@@ -108,7 +122,7 @@ export interface Api extends AuthApi {
    */
   cancelBooking(id: string): Promise<Booking>;
   /** Reviews a finished stay (1 to 5 stars, optional text). Fails with REVIEW_NOT_READY before check-out and ALREADY_REVIEWED. */
-  submitReview(id: string, review: { rating: number; text: string }): Promise<Booking>;
+  submitReview(id: string, review: ReviewInput): Promise<Booking>;
   /** Signed voucher for a confirmed booking. Fails with VOUCHER_NOT_READY before confirmation. */
   getVoucher(bookingId: string): Promise<Voucher>;
 

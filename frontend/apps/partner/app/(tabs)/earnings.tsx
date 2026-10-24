@@ -37,6 +37,7 @@ function Line({ l, months }: { l: EarningLine; months: string[] }) {
       <T variant="small" color={colors.muted}>{l.reference} · {shortDate(l.check_in, months)} – {shortDate(l.check_out, months)}</T>
       <View style={{ marginTop: spacing.sm, gap: 2 }}>
         <Split label={t('partner.earnings_gross')} value={price(l.gross_santim)} />
+        {l.discount_santim > 0 ? <Split label={t('partner.earnings_coupon')} value={price(l.discount_santim)} /> : null}
         <Split label={t('partner.earnings_commission')} value={`− ${price(l.commission_santim)}`} />
         <Split label={t('partner.earnings_vat')} value={`− ${price(l.vat_santim)}`} />
         <View style={{ height: 1, backgroundColor: colors.line, marginVertical: 4 }} />

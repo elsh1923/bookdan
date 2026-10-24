@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { isStillChanging, type Amenity, type PropertyType } from '@bookdan/domain';
+import { isStillChanging, type Amenity, type PropertyType, type SearchSort } from '@bookdan/domain';
 import type { CreateQuoteParams } from '@bookdan/api-client';
 import { api } from './api';
 
@@ -12,6 +12,13 @@ export interface SearchCriteria {
   rooms?: number;
   types: PropertyType[];
   amenities: Amenity[];
+  sort?: SearchSort;
+  min_price?: number;
+  max_price?: number;
+  min_rating?: number;
+  /** The guest's position, for "Near me": hotels know how far they are and can be sorted by it. */
+  lat?: number;
+  lng?: number;
 }
 
 export function useSearch(c: SearchCriteria) {

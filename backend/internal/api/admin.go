@@ -25,8 +25,9 @@ const adminTokenTTL = 8 * time.Hour
 var (
 	hotelTypes    = map[string]bool{"hotel": true, "guesthouse": true, "lodge": true, "resort": true}
 	hotelStatuses = map[string]bool{"draft": true, "active": true, "hidden": true}
-	amenityList   = map[string]bool{"generator": true, "hot_water": true, "wifi": true, "parking": true, "pay_at_hotel": true}
-	phoneAnyRE    = regexp.MustCompile(`^\+?[0-9 ()-]{7,20}$`)
+	amenityList   = map[string]bool{"generator": true, "hot_water": true, "wifi": true, "parking": true, "pay_at_hotel": true,
+		"ac": true, "pool": true, "restaurant": true, "gym": true, "spa": true, "airport_shuttle": true, "laundry": true, "front_desk_24h": true}
+	phoneAnyRE = regexp.MustCompile(`^\+?[0-9 ()-]{7,20}$`)
 )
 
 // loginLimiter slows down password guessing: 8 tries per 10 minutes per address and email.
@@ -249,10 +250,14 @@ func (s *Server) adminRoutes(r chi.Router) {
 		r.Put("/admin/hotels/{id}/rooms/{room}", s.h(s.adminUpdateRoom))
 		r.Put("/admin/hotels/{id}/rooms/{room}/price", s.h(s.adminSetPrice))
 		r.Post("/admin/hotels/{id}/photos", s.h(s.adminUploadPhoto))
+		r.Post("/admin/hotels/{id}/rooms/{room}/photos", s.h(s.adminUploadRoomPhoto))
 		r.Post("/admin/hotels/{id}/photos/{photo}/cover", s.h(s.adminCoverPhoto))
 		r.Delete("/admin/hotels/{id}/photos/{photo}", s.h(s.adminDeletePhoto))
 		r.Put("/admin/hotels/{id}/business", s.h(s.adminSetBusiness))
 		r.Post("/admin/hotels/{id}/business/payout/reveal", s.h(s.adminRevealPayout))
+		r.Get("/admin/coupons", s.h(s.adminCoupons))
+		r.Post("/admin/coupons", s.h(s.adminCreateCoupon))
+		r.Put("/admin/coupons/{id}", s.h(s.adminUpdateCoupon))
 		r.Get("/admin/payouts", s.h(s.adminPayouts))
 		r.Get("/admin/hotels/{id}/payouts", s.h(s.adminHotelPayouts))
 		r.Post("/admin/hotels/{id}/payouts", s.h(s.adminRecordPayout))

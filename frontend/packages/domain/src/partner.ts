@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BookingGuestSchema } from './guestIdentity.ts';
-import { BookingStatusSchema, CurrencySchema } from './schemas.ts';
+import { BookingStatusSchema, CurrencySchema, MealSchema } from './schemas.ts';
 
 /** Reasons a hotel can give when declining. The server stores the code; the app translates it. */
 export const DeclineReasonSchema = z.enum(['fully_booked', 'room_unavailable', 'maintenance', 'other']);
@@ -33,6 +33,9 @@ export const PartnerBookingSchema = z.object({
   checked_in_at: z.string().nullable().default(null),
   /** What the guest still pays at the hotel: the whole total for a pay-at-hotel booking, otherwise 0. */
   balance_due_santim: z.number().int().default(0),
+  /** The room option the guest booked: serve breakfast when it is 'breakfast'; a non-refundable booking is not refunded on cancelling. */
+  meal: MealSchema.default('room_only'),
+  refundable: z.boolean().default(true),
   server_time: z.string(),
 });
 
@@ -51,6 +54,8 @@ export const EarningLineSchema = z.object({
   check_out: z.string(),
   status: z.string(),
   gross_santim: z.number().int(),
+  /** The part of the price BookDan paid with a coupon (0 when none). */
+  discount_santim: z.number().int().default(0),
   commission_santim: z.number().int(),
   vat_santim: z.number().int(),
   net_santim: z.number().int(),
