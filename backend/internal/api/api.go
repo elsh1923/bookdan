@@ -142,6 +142,10 @@ func (s *Server) Routes(root chi.Router) {
 		})
 
 		// Payment results arrive here, signed by the gateway. The development gateway page is served only outside production.
+		if _, ok := s.p.Gateway.(*chapaGateway); ok {
+			r.Post("/webhooks/payments/chapa", s.h(s.chapaWebhook))
+			r.Get("/payments/chapa/return", s.chapaReturn)
+		}
 		r.Post("/webhooks/payments/{provider}", s.h(s.paymentWebhook))
 		if s.cfg.PaymentProvider == "dev" && !s.cfg.IsProduction() {
 			r.Get("/dev/gateway/{id}", s.devGatewayPage)

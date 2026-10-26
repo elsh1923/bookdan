@@ -68,7 +68,11 @@ const am: Resources = {
   },
   home: {
     recently_viewed: 'በቅርቡ ያዩዋቸው',
-    welcome: 'ወደ ዘመን የማይሽረው\nቅንጦት እንኳን በደህና መጡ',
+    welcome: 'የሚመጥንዎትን ማረፊያ ያግኙ',
+    tagline: 'በመላው ኢትዮጵያ ሆቴሎች፣ ጌስትሃውሶች እና ሎጆች',
+    featured: 'ለእርስዎ የተመረጡ',
+    deal_title: 'አሁን ይያዙ፣ ሆቴሉ ጋር ይክፈሉ',
+    deal_body: 'በብዙ ማረፊያዎች ካርድ አያስፈልግም',
     dates: 'ቀናት',
     more: 'ተጨማሪ ማረፊያዎች',
     stays_in: 'በ{{city}} የሚያርፉባቸው ቦታዎች',

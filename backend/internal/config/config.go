@@ -40,7 +40,7 @@ type Config struct {
 	// DemoAccountDomains are email domains with no real inbox (the demo hotel owner, test addresses). When DEMO_MODE is on they keep
 	// the fixed code 123456 and nothing is emailed to them. Every other address gets a real random code.
 	DemoAccountDomains []string
-	PaymentProvider    string // dev | (telebirr, chapa to be built)
+	PaymentProvider    string // dev | chapa
 	PushProvider       string // log | fcm
 	// FCMServiceAccountB64 is the Firebase service-account key (JSON file) in base64. Required when PUSH_PROVIDER=fcm.
 	FCMServiceAccountB64 string
@@ -57,6 +57,10 @@ type Config struct {
 	IDRetentionDays int
 	// PaymentWebhookSecret signs payment-gateway callbacks (HMAC-SHA256 of the body).
 	PaymentWebhookSecret string
+	// ChapaSecretKey is the secret key from the Chapa dashboard (Settings, API). Required when PAYMENT_PROVIDER=chapa. ChapaWebhookSecret is the optional
+	// secret hash set for webhooks there; Chapa signs with it (or with the secret key).
+	ChapaSecretKey     string
+	ChapaWebhookSecret string
 }
 
 // Load reads backend/.env when it exists (development convenience; real environment variables win),
@@ -91,6 +95,8 @@ func Load() Config {
 		PartnerAppURL:        get("PARTNER_APP_URL", ""),
 		IDRetentionDays:      atoi(get("ID_RETENTION_DAYS", "0")),
 		PaymentWebhookSecret: get("PAYMENT_WEBHOOK_SECRET", ""),
+		ChapaSecretKey:       get("CHAPA_SECRET_KEY", ""),
+		ChapaWebhookSecret:   get("CHAPA_WEBHOOK_SECRET", ""),
 	}
 }
 
@@ -118,11 +124,20 @@ func (c Config) Validate() error {
 	}
 	for name, v := range map[string]string{
 		"JWT_SECRET": c.JWTSecret, "ID_ENCRYPTION_KEY": c.IDKey, "VOUCHER_SIGNING_SEED": c.VoucherSeedB64,
-		"PAYMENT_WEBHOOK_SECRET": c.PaymentWebhookSecret,
 	} {
 		if v == "" {
 			problems = append(problems, name+" is required when APP_ENV=production")
 		}
+	}
+	// Chapa signs its own callbacks (and every result is confirmed with Chapa), so only the other gateways need the shared webhook secret.
+	if c.PaymentProvider != "chapa" && c.PaymentWebhookSecret == "" {
+		problems = append(problems, "PAYMENT_WEBHOOK_SECRET is required when APP_ENV=production")
+	}
+	if c.PaymentProvider == "chapa" && c.ChapaSecretKey == "" {
+		problems = append(problems, "CHAPA_SECRET_KEY is required when PAYMENT_PROVIDER=chapa")
+	}
+	if c.PaymentProvider == "chapa" && strings.Contains(c.ChapaSecretKey, "_TEST-") {
+		problems = append(problems, "CHAPA_SECRET_KEY is a test key: a production server needs the live key")
 	}
 	if len(c.JWTSecret) > 0 && len(c.JWTSecret) < 32 {
 		problems = append(problems, "JWT_SECRET must be at least 32 characters")

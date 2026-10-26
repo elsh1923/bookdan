@@ -42,6 +42,9 @@ function RoomCard({ room, nights, rooms, onSelect }: { room: RoomType; nights: n
   const { t } = useTranslation();
   // The hotel's extras (breakfast, non-refundable) show as choices; a room with none shows just its price.
   const options: RoomOption[] = room.options?.length ? room.options : [{ meal: 'room_only', refundable: true, price_santim: room.price_santim }];
+  // Guard against an older cached room that predates these fields, so the page never crashes.
+  const photos = room.photos ?? [];
+  const amenities = room.amenities ?? [];
   const [chosen, setChosen] = useState(optionKey(options[0]));
   const [gallery, setGallery] = useState(false);
   const option = options.find((o) => optionKey(o) === chosen) ?? options[0];
@@ -50,16 +53,16 @@ function RoomCard({ room, nights, rooms, onSelect }: { room: RoomType; nights: n
     <View style={{ backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.line, marginTop: spacing.md }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         {room.photo_thumb ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={t('property.photos', { count: room.photos.length })} onPress={() => setGallery(true)} style={{ marginRight: spacing.md }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('property.photos', { count: photos.length })} onPress={() => setGallery(true)} style={{ marginRight: spacing.md }}>
             <Photo uri={room.photo_thumb} name={room.name} style={{ width: 96, height: 96, borderRadius: radius.md }} />
             <View style={{ position: 'absolute', right: 4, bottom: 4, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-              <T variant="label" color="#fff">{room.photos.length}</T>
+              <T variant="label" color="#fff">{photos.length}</T>
             </View>
           </Pressable>
         ) : null}
         <View style={{ flex: 1 }}>
           <T variant="h3">{room.name}</T>
-          <T variant="small" color={colors.inkSoft}>{t('property.sleeps', { count: room.capacity })} · {room.amenities.join(' · ')}</T>
+          <T variant="small" color={colors.inkSoft}>{t('property.sleeps', { count: room.capacity })} · {amenities.join(' · ')}</T>
           {room.rooms_left > 0 && room.rooms_left <= LOW_STOCK
             ? <T variant="label" color={colors.danger} style={{ marginTop: spacing.xs }}>⚑ {t('property.rooms_left', { count: room.rooms_left })}</T>
             : null}
@@ -83,7 +86,7 @@ function RoomCard({ room, nights, rooms, onSelect }: { room: RoomType; nights: n
           {price(total, room.currency)} {t('property.total_for', { nights: t('common.night', { count: nights }) })}
         </T>
       ) : null}
-      {room.photos.length ? <PhotoGallery photos={room.photos} visible={gallery} name={room.name} onClose={() => setGallery(false)} /> : null}
+      {photos.length ? <PhotoGallery photos={photos} visible={gallery} name={room.name} onClose={() => setGallery(false)} /> : null}
       <Button
         title={room.rooms_left >= rooms ? t('property.select_room') : room.rooms_left > 0 ? t('property.only_left', { count: room.rooms_left }) : t('results.sold_out')}
         disabled={room.rooms_left < rooms}

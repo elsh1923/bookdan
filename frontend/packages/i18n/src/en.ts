@@ -65,7 +65,11 @@ const en = {
   },
   home: {
     recently_viewed: 'Recently viewed',
-    welcome: 'Welcome to\nTimeless Luxury',
+    welcome: 'Find your perfect stay',
+    tagline: 'Hotels, guesthouses and lodges across Ethiopia',
+    featured: 'Featured for you',
+    deal_title: 'Book now, pay at the hotel',
+    deal_body: 'No card needed on many stays',
     dates: 'Dates',
     more: 'More stays',
     stays_in: 'Places to stay in {{city}}',

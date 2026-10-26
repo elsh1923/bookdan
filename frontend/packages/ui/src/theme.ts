@@ -11,10 +11,16 @@ export const colors = {
   charcoal: '#0F1B33',
   inkSoft: '#4B5B76',
   muted: '#7B8AA3',
-  line: '#E2E8F3',
+  line: '#E6EBF4',
+  hairline: '#EDF1F8', // faint separators inside cards
   surface: '#FFFFFF',
   background: '#FFFFFF',
+  canvas: '#F5F7FC', // soft page background that lifts white cards
   fill: '#F3F6FB', // cool grey-blue for inputs inside cards
+  deal: '#F97316', // saffron for offers and deals
+  dealInk: '#C2410C',
+  dealSoft: '#FFF3E8',
+  gold: '#F5A524', // premium / featured accents
   star: '#F5A524', // ratings
   favorite: '#F43F5E', // saved hearts
   danger: '#C0392B',
@@ -76,4 +82,8 @@ export const dark = {
 // Brand blue, for primary buttons. White text on every stop meets 4.5:1.
 export const gradients = {
   primary: ['#2F6FEB', '#2563EB', '#1D4ED8'] as const,
+  // Deep navy-to-blue band behind the home search card (the MakeMyTrip-style hero).
+  header: ['#0A1B4E', '#15316F', '#1E4AB8'] as const,
+  // Saffron, for the offers / deals strip.
+  deal: ['#FFA14A', '#F97316'] as const,
 };

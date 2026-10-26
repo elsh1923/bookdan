@@ -144,8 +144,14 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 	}
 	switch cfg.PaymentProvider {
 	case "dev", "":
+	case "chapa":
+		g, err := NewChapaGateway(cfg.ChapaSecretKey, cfg.ChapaWebhookSecret, cfg.PublicURL, "")
+		if err != nil {
+			return p, err
+		}
+		p.Gateway = g
 	default:
-		return p, errors.New("PAYMENT_PROVIDER " + cfg.PaymentProvider + " is not built yet")
+		return p, errors.New("PAYMENT_PROVIDER " + cfg.PaymentProvider + " is not built yet (use dev or chapa)")
 	}
 	switch cfg.PushProvider {
 	case "log", "":
