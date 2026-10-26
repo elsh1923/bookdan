@@ -3,7 +3,7 @@
     "name": "BookDan",
     "slug": "bookdan",
     "scheme": "hotelapp",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -43,6 +43,13 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "BookDan uses your location to show hotels near you."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "BookDan lets you add a photo of your ID from your gallery.",
+          "cameraPermission": "BookDan uses the camera to photograph your ID."
         }
       ]
     ],

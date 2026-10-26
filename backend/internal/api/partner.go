@@ -46,6 +46,8 @@ type partnerGuest struct {
 	IDType      string `json:"id_type"`
 	IDLast4     string `json:"id_last4"`
 	IDPurged    bool   `json:"id_purged"`
+	// IDPhotos says which sides of the guest's ID photo this booking carries (and are not erased yet). The pictures are fetched one at a time.
+	IDPhotos idPhotoSides `json:"id_photos"`
 }
 
 type partnerBooking struct {
@@ -84,6 +86,8 @@ type partnerBooking struct {
 // A hotel never sees a room that is only held: the guest has not paid or asked yet.
 const partnerSelect = `
 	SELECT b.id, b.code, b.status, b.guest_name, g.full_name, g.contact, g.nationality, g.id_type, g.id_last4, g.purged_at IS NOT NULL,
+	       EXISTS (SELECT 1 FROM booking_id_photos x WHERE x.booking_id = b.id AND x.side = 'front' AND x.purged_at IS NULL),
+	       EXISTS (SELECT 1 FROM booking_id_photos x WHERE x.booking_id = b.id AND x.side = 'back' AND x.purged_at IS NULL),
 	       rt.name, b.check_in, b.check_out, b.guests, b.rooms, b.total_santim, b.currency, b.paid_at, b.hotel_deadline_at, b.decline_reason,
 	       p.name, b.checked_in_at, CASE WHEN b.payment_method = 'pay_at_hotel' THEN b.total_santim ELSE 0 END, b.meal, b.refundable, b.children, coalesce(b.special_requests, ''), b.booked_for_other, coalesce(b.guest_phone, '')
 	FROM bookings b JOIN booking_guests g ON g.booking_id = b.id JOIN room_types rt ON rt.id = b.room_type_id
@@ -95,7 +99,7 @@ func scanPartner(row pgx.Row, multiHotel bool) (partnerBooking, error) {
 	var paid, deadline, checkedIn *time.Time
 	var hotel string
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.GuestName, &b.Guest.FullName, &b.Guest.Contact, &b.Guest.Nationality, &b.Guest.IDType,
-		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel, &checkedIn, &b.BalanceDue, &b.Meal, &b.Refundable, &b.Children, &b.SpecialRequests, &b.BookedForOther, &b.GuestPhone); err != nil {
+		&b.Guest.IDLast4, &b.Guest.IDPurged, &b.Guest.IDPhotos.Front, &b.Guest.IDPhotos.Back, &b.RoomName, &in, &out, &b.Guests, &b.Rooms, &b.Total, &b.Currency, &paid, &deadline, &b.DeclineReason, &hotel, &checkedIn, &b.BalanceDue, &b.Meal, &b.Refundable, &b.Children, &b.SpecialRequests, &b.BookedForOther, &b.GuestPhone); err != nil {
 		return b, err
 	}
 	if multiHotel {

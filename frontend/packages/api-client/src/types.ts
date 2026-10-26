@@ -11,6 +11,7 @@ import type {
   GuestProfile,
   GuestProfileInput,
   Identity,
+  IdSide,
   PaymentMethod,
   PartnerBooking,
   PartnerBookingList,
@@ -24,6 +25,12 @@ import type {
   SearchResponse,
   Voucher,
 } from '@bookdan/domain';
+
+/** How to show a protected picture: the address, plus the sign-in headers the server needs to give it out. */
+export interface ImageSource {
+  uri: string;
+  headers?: Record<string, string>;
+}
 
 export interface SearchParams {
   q?: string;
@@ -134,6 +141,15 @@ export interface Api extends AuthApi {
   saveProfile(input: GuestProfileInput): Promise<GuestProfile>;
   /** Removes the guest's saved ID details. */
   deleteProfile(): Promise<void>;
+  /**
+   * Adds or replaces one side of the guest's ID photo. imageBase64 is the picture (JPEG, PNG or WebP) as base64; the server stores an encrypted,
+   * re-drawn copy. Fails with INVALID_REQUEST for something that is not a usable picture.
+   */
+  uploadIdPhoto(side: IdSide, imageBase64: string): Promise<void>;
+  /** Removes one side of the guest's ID photo. */
+  deleteIdPhoto(side: IdSide): Promise<void>;
+  /** Where to load the guest's own ID photo from (null when there is none), so they can check what they added. */
+  idPhotoSource(side: IdSide): Promise<ImageSource | null>;
   /** Registers this phone for booking updates (the hotel confirmed or declined). Re-sent whenever the token changes. */
   registerPushToken(registration: PushRegistration): Promise<void>;
   /**
@@ -181,6 +197,11 @@ export interface PartnerApi extends AuthApi {
    * booking. Fails with GONE once the number was erased after the retention period.
    */
   revealGuestId(bookingId: string): Promise<{ id_number: string }>;
+  /**
+   * Where to load the guest's ID photo on one booking from. Audited on the server (every view is logged); only staff of the hotel that holds
+   * the booking. The picture request fails with GONE once it was erased after the retention period.
+   */
+  guestIdPhotoSource(bookingId: string, side: IdSide): Promise<ImageSource>;
   /** The hotel's bookings: those waiting for an answer, upcoming stays, and recent ones. Each carries the guest's profile (masked ID). */
   listBookings(): Promise<PartnerBookingList>;
   /** Accept a booking. Fails with DEADLINE_PASSED once the time to answer is over (the guest is refunded). */

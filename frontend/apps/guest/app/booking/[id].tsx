@@ -74,7 +74,7 @@ export default function BookingScreen() {
   const { refetch } = query;
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
   const confirmed = query.data?.status === 'CONFIRMED' || query.data?.status === 'CHECKED_IN';
-  const [method, setMethod] = useState<PaymentMethod>('telebirr');
+  const [method, setMethod] = useState<PaymentMethod>('chapa');
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
@@ -205,8 +205,7 @@ export default function BookingScreen() {
               </View>
             ) : null}
             <T variant="displaySm">{t('booking.choose_payment')}</T>
-            <PaymentOption icon="phone-portrait-outline" title={t('booking.telebirr')} selected={method === 'telebirr'} onPress={() => setMethod('telebirr')} />
-            <PaymentOption icon="card-outline" title={t('booking.chapa')} selected={method === 'chapa'} onPress={() => setMethod('chapa')} />
+            <PaymentOption icon="card-outline" title={t('booking.chapa')} note={t('booking.chapa_note')} selected={method === 'chapa'} onPress={() => setMethod('chapa')} />
             {b.pay_at_hotel && b.discount_santim === 0 ? (
               <PaymentOption icon="business-outline" title={t('booking.pay_at_hotel')} note={t('booking.pay_at_hotel_note')} selected={method === 'pay_at_hotel'} onPress={() => setMethod('pay_at_hotel')} />
             ) : null}

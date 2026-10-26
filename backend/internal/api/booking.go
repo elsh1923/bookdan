@@ -636,6 +636,11 @@ func (s *Server) createBooking(w http.ResponseWriter, r *http.Request) error {
 			bookingID, q.propertyID, contact, uid); err != nil {
 			return err
 		}
+		// The ID photos too, if the guest added any (also frozen: the hotel's copy never changes).
+		if _, err := tx.Exec(ctx, `INSERT INTO booking_id_photos (booking_id, property_id, side, data_enc) SELECT $1, $2, side, data_enc FROM guest_id_photos WHERE user_id = $3`,
+			bookingID, q.propertyID, uid); err != nil {
+			return err
+		}
 		_, err = tx.Exec(ctx, `UPDATE idempotency_keys SET response_status = 200, response_body = jsonb_build_object('booking_id', $3::text) WHERE user_id = $1 AND key = $2`, uid, key, bookingID)
 		return err
 	})

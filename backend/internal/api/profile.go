@@ -37,7 +37,14 @@ type profileOut struct {
 	IDLast4     string `json:"id_last4"`
 	Nationality string `json:"nationality"`
 	UpdatedAt   string `json:"updated_at"`
+	// IDPhotos says which sides the guest has added (the pictures themselves are fetched one at a time).
+	IDPhotos idPhotoSides `json:"id_photos"`
 	httpx.Meta
+}
+
+type idPhotoSides struct {
+	Front bool `json:"front"`
+	Back  bool `json:"back"`
 }
 
 type profileResponse struct {
@@ -58,6 +65,10 @@ func (s *Server) readProfile(r *http.Request, userID string) (*profileOut, error
 		return nil, err
 	}
 	p.UpdatedAt, p.Meta = at.UTC().Format(time.RFC3339), httpx.NowMeta()
+	if err := s.pool.QueryRow(r.Context(), `SELECT coalesce(bool_or(side = 'front'), false), coalesce(bool_or(side = 'back'), false) FROM guest_id_photos WHERE user_id = $1`, userID).
+		Scan(&p.IDPhotos.Front, &p.IDPhotos.Back); err != nil {
+		return nil, err
+	}
 	return &p, nil
 }
 
@@ -115,6 +126,9 @@ func (s *Server) putProfile(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) deleteProfile(w http.ResponseWriter, r *http.Request) error {
 	err := s.tx(r.Context(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(r.Context(), `DELETE FROM guest_profiles WHERE user_id = $1`, claimsFrom(r).Sub); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(r.Context(), `DELETE FROM guest_id_photos WHERE user_id = $1`, claimsFrom(r).Sub); err != nil {
 			return err
 		}
 		return s.audit(r, tx, "guest_profile_deleted", nil)

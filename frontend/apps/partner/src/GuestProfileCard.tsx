@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 import { ApiError } from '@bookdan/api-client';
-import { maskId, type PartnerBooking } from '@bookdan/domain';
+import { maskId, type IdSide, type PartnerBooking } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Button, Pop, T, colors, fonts, radius, spacing } from '@bookdan/ui';
 import { api } from './api';
@@ -19,6 +19,20 @@ function Line({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; la
   );
 }
 
+/** Loads a protected picture into memory as a data address, so it is never written to the phone's storage. */
+async function loadPicture(source: { uri: string; headers?: Record<string, string> }): Promise<string> {
+  const res = await fetch(source.uri, { headers: source.headers });
+  if (res.status === 410) throw new ApiError('GONE', 'erased');
+  if (!res.ok) throw new ApiError('SERVER', 'could not load');
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => (typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('unreadable')));
+    reader.onerror = () => reject(new Error('unreadable'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
  * The guest's profile as they saved it in the guest app: name, nationality, how to reach them, and their ID. The ID shows
  * masked; "Show ID number" asks the server for the full number (which writes an audit entry). The number lives only in
@@ -30,9 +44,23 @@ export function GuestProfileCard({ booking }: { booking: PartnerBooking }) {
   const [number, setNumber] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<string | null>(null); // the ID photo on screen, as a data address (memory only)
+  const [photoBusy, setPhotoBusy] = useState<IdSide | null>(null);
 
   // A different booking, or leaving the screen, always clears the number.
-  useEffect(() => () => setNumber(null), [booking.id]);
+  useEffect(() => () => { setNumber(null); setPhoto(null); }, [booking.id]);
+
+  async function showPhoto(side: IdSide) {
+    setPhotoBusy(side);
+    setError(null);
+    try {
+      setPhoto(await loadPicture(await api.guestIdPhotoSource(booking.id, side)));
+    } catch (e) {
+      setError(e instanceof ApiError && e.code === 'GONE' ? t('partner.guest_photo_erased') : t('partner.guest_photo_failed'));
+    } finally {
+      setPhotoBusy(null);
+    }
+  }
 
   async function reveal() {
     setBusy(true);
@@ -70,6 +98,18 @@ export function GuestProfileCard({ booking }: { booking: PartnerBooking }) {
       ) : (
         <Button variant="secondary" icon="eye-outline" title={t('partner.guest_show_id')} onPress={reveal} loading={busy} style={{ marginTop: spacing.sm }} />
       )}
+      {photo ? (
+        <View style={{ marginTop: spacing.md }}>
+          <Image source={{ uri: photo }} resizeMode="contain" accessibilityLabel={t('partner.guest_photo_front')} style={{ width: '100%', aspectRatio: 1.5, borderRadius: radius.md, backgroundColor: colors.fill }} />
+          <T variant="small" color={colors.warning} style={{ marginTop: spacing.xs }}>{t('partner.guest_photo_note')}</T>
+          <Button variant="secondary" icon="eye-off-outline" title={t('partner.guest_photo_hide')} onPress={() => setPhoto(null)} style={{ marginTop: spacing.sm }} />
+        </View>
+      ) : g.id_photos?.front || g.id_photos?.back ? (
+        <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
+          {g.id_photos?.front ? <Button variant="secondary" icon="image-outline" title={t('partner.guest_photo_front')} onPress={() => showPhoto('front')} loading={photoBusy === 'front'} /> : null}
+          {g.id_photos?.back ? <Button variant="secondary" icon="image-outline" title={t('partner.guest_photo_back')} onPress={() => showPhoto('back')} loading={photoBusy === 'back'} /> : null}
+        </View>
+      ) : null}
       {error ? <T variant="small" color={colors.danger} style={{ marginTop: spacing.sm }}>✕ {error}</T> : null}
     </View>
   );
