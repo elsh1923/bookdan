@@ -3,6 +3,8 @@ import type { Resources } from './en';
 // First draft. A native speaker must review before launch (spec section 11).
 const am: Resources = {
   common: {
+    from_time: 'ከ {{time}}',
+    until_time: 'እስከ {{time}}',
     taxes_extra: '+ ግብር በክፍያ ጊዜ',
     room_one: '{{count}} ክፍል',
     room_other: '{{count}} ክፍሎች',

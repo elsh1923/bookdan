@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -6,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { ALL_AMENITIES, nightsBetween, type Amenity, type PropertyType, type SearchSort } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, Chip, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
+import { Button, Chip, EmptyState, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { HotelMap } from '../src/HotelMap';
 import { Photo } from '../src/Photo';
 import { PropertyCard } from '../src/PropertyCard';
@@ -47,6 +48,21 @@ function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () =
         {children}
       </View>
     </Modal>
+  );
+}
+
+/** A filter pill with a small icon in front of its label (sort and filters), in the same style as the other chips. */
+function IconChip({ icon, label, selected, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={{ minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: selected ? colors.primary : colors.line, backgroundColor: selected ? colors.primarySoft : colors.surface }}
+    >
+      <Ionicons name={icon} size={16} color={selected ? colors.primaryInk : colors.inkSoft} />
+      <T variant="small" color={selected ? colors.primaryInk : colors.ink}>{label}</T>
+    </Pressable>
   );
 }
 
@@ -174,21 +190,30 @@ export default function Results() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-      <View style={{ paddingTop: spacing.lg, paddingBottom: spacing.sm }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg }}>
-          <Pressable accessibilityLabel="Back" onPress={() => router.back()} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-            <T variant="h2">←</T>
+      <View style={{ paddingTop: spacing.md, paddingBottom: spacing.sm }}>
+        {/* The search as one bar: tap it to change the place, dates or guests. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('search.heading')}
+          onPress={() => router.push('/search')}
+          style={[{ marginHorizontal: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }, shadow.card]}
+        >
+          <Pressable accessibilityLabel="Back" onPress={() => router.back()} hitSlop={8} style={{ width: 36, height: 36, justifyContent: 'center' }}>
+            <Ionicons name="arrow-back" size={22} color={colors.ink} />
           </Pressable>
           <View style={{ flex: 1 }}>
             <T variant="h3" numberOfLines={1}>{p.q || (near ? t('results.near_me') : t('results.title'))}</T>
-            <T variant="small" color={colors.inkSoft}>
+            <T variant="label" color={colors.muted} numberOfLines={1}>
               {shortDate(p.in, months)} – {shortDate(p.out, months)} · {t('common.night', { count: nights })} · {t('common.guest', { count: Number(p.guests) || 1 })}{Number(p.rooms) > 1 ? ` · ${t('common.room', { count: Number(p.rooms) })}` : ''}
             </T>
           </View>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}>
-          <Chip label={`${t('results.sort')}: ${t(`results.sort_${sort}`)}`} selected={sort !== 'recommended'} onPress={() => setShowSort(true)} />
-          <Chip label={`${t('results.filters')}${filterCount ? ` (${filterCount})` : ''}`} selected={filterCount > 0} onPress={() => setShowFilters(true)} />
+          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="search" size={18} color={colors.primaryInk} />
+          </View>
+        </Pressable>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+          <IconChip icon="swap-vertical-outline" label={`${t('results.sort')}: ${t(`results.sort_${sort}`)}`} selected={sort !== 'recommended'} onPress={() => setShowSort(true)} />
+          <IconChip icon="options-outline" label={`${t('results.filters')}${filterCount ? ` (${filterCount})` : ''}`} selected={filterCount > 0} onPress={() => setShowFilters(true)} />
           <Chip label={t('results.quick_rating')} selected={quickRating} onPress={() => setFilters({ ...filters, min_rating: quickRating ? 0 : 4 })} />
           <Chip label={t('filters.breakfast')} selected={filters.breakfast} onPress={() => setFilters({ ...filters, breakfast: !filters.breakfast })} />
           <Chip label={t('amenity.wifi')} selected={filters.amenities.includes('wifi')} onPress={() => setFilters({ ...filters, amenities: filters.amenities.includes('wifi') ? filters.amenities.filter((a) => a !== 'wifi') : [...filters.amenities, 'wifi'] })} />

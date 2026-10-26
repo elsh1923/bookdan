@@ -1,5 +1,7 @@
 const en = {
   common: {
+    from_time: 'from {{time}}',
+    until_time: 'until {{time}}',
     taxes_extra: '+ taxes at checkout',
     room_one: '{{count}} room',
     room_other: '{{count}} rooms',

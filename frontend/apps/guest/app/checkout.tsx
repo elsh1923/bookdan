@@ -5,15 +5,16 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
-import { maskId, newIdempotencyKey } from '@bookdan/domain';
+import { maskId, newIdempotencyKey, type Quote } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Animated, Button, Chip, EmptyState, FadeIn, Pop, ProgressFill, StepTransition, T, colors, radius, spacing } from '@bookdan/ui';
+import { Animated, Button, Chip, EmptyState, FadeIn, Pop, ProgressFill, StepTransition, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
 import { useAuth } from '../src/auth';
 import { usePrefs } from '../src/store';
 import { CouponBox } from '../src/CouponBox';
 import { Field } from '../src/Field';
 import { PolicyCard } from '../src/RoomOptions';
+import { Photo } from '../src/Photo';
 import { FOOTER_CLEARANCE, StickyFooter } from '../src/StickyFooter';
 import { price, shortDate } from '../src/format';
 import { useProfile, useQuote } from '../src/queries';
@@ -23,6 +24,42 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: spacing.md }}>
       <T variant={strong ? 'displaySm' : 'body'} color={strong ? colors.ink : colors.inkSoft} style={{ flex: 1, marginRight: spacing.md }}>{label}</T>
       <T variant={strong ? 'displaySm' : 'body'} color={colors.ink}>{value}</T>
+    </View>
+  );
+}
+
+/** The stay in one card: the hotel, the dates with their check-in and check-out times, and who is coming. */
+function StaySummary({ q, months }: { q: Quote; months: string[] }) {
+  const { t } = useTranslation();
+  const children = q.children > 0 ? ` · ${t('search.children', { count: q.children })}` : '';
+  return (
+    <View style={[{ marginHorizontal: spacing.lg, marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }, shadow.card]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+        <Photo uri={q.photo_url} name={q.property_name} style={{ width: 84, height: 84, borderRadius: radius.md }} />
+        <View style={{ flex: 1 }}>
+          <T variant="h2" numberOfLines={2}>{q.property_name}</T>
+          <T variant="small" color={colors.inkSoft} numberOfLines={2}>{q.room_name}</T>
+        </View>
+      </View>
+      <View style={{ height: 1, backgroundColor: colors.hairline, marginVertical: spacing.md }} />
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flex: 1 }}>
+          <T variant="label" color={colors.muted}>{t('search.check_in').toUpperCase()}</T>
+          <T variant="h3">{shortDate(q.check_in, months)}</T>
+          <T variant="small" color={colors.inkSoft}>{t('common.from_time', { time: q.check_in_time })}</T>
+        </View>
+        <View style={{ paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line }}>
+          <T variant="label" color={colors.inkSoft}>{t('common.night', { count: q.nights }).toUpperCase()}</T>
+        </View>
+        <View style={{ flex: 1, alignItems: 'flex-end' }}>
+          <T variant="label" color={colors.muted}>{t('search.check_out').toUpperCase()}</T>
+          <T variant="h3">{shortDate(q.check_out, months)}</T>
+          <T variant="small" color={colors.inkSoft}>{t('common.until_time', { time: q.check_out_time })}</T>
+        </View>
+      </View>
+      <View style={{ height: 1, backgroundColor: colors.hairline, marginVertical: spacing.md }} />
+      <T variant="label" color={colors.muted}>{t('search.guests').toUpperCase()}</T>
+      <T variant="h3">{t('common.guest', { count: q.guests })} · {t('common.room', { count: q.rooms })}{children}</T>
     </View>
   );
 }
@@ -242,18 +279,7 @@ export default function Checkout() {
           <T variant="display" style={{ paddingHorizontal: spacing.lg }}>{t(step === 0 ? 'checkout.step_review_title' : step === 1 ? 'checkout.step_guest_title' : 'checkout.step_pay_title')}</T>
           <Stepper step={step} labels={[t('checkout.step_review'), t('checkout.step_guest'), t('checkout.step_pay')]} />
 
-          {step !== 1 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingTop: spacing.lg }}>
-              <StayTile icon="bed-outline" title={q.property_name} line1={q.room_name} />
-              <StayTile
-                icon="calendar-outline"
-                title={t('search.check_in')}
-                line1={`${shortDate(q.check_in, months)} – ${shortDate(q.check_out, months)}`}
-                line2={t('common.night', { count: q.nights })}
-              />
-              <StayTile icon="people-outline" title={t('search.guests')} line1={t('common.guest', { count: q.guests })} line2={`${t('common.room', { count: q.rooms })}${q.children > 0 ? ` · ${t('search.children', { count: q.children })}` : ''}`} />
-            </ScrollView>
-          ) : null}
+          {step !== 1 ? <StaySummary q={q} months={months} /> : null}
 
           {step === 0 ? (
             <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }}>

@@ -143,6 +143,10 @@ type quoteOut struct {
 	CouponCode *string `json:"coupon_code"`
 	Discount   int64   `json:"discount_santim"`
 	ListTotal  int64   `json:"list_total_santim"`
+	// The hotel's first photo (a small copy, empty when it has none) and its check-in and check-out times, for the review screen.
+	PhotoURL     *string `json:"photo_url"`
+	CheckInTime  string  `json:"check_in_time"`
+	CheckOutTime string  `json:"check_out_time"`
 }
 
 func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
@@ -189,8 +193,14 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 	var propName, roomName string
 	var capacity int
 	var payAtHotel bool
-	err := s.pool.QueryRow(ctx, `SELECT p.name, rt.name, rt.capacity, p.pay_at_hotel FROM room_types rt JOIN properties p ON p.id = rt.property_id
-		WHERE rt.id = $1 AND p.id = $2 AND p.status = 'active'`, in.RoomTypeID, in.PropertyID).Scan(&propName, &roomName, &capacity, &payAtHotel)
+	var coverID *string
+	var checkInTime, checkOutTime string
+	err := s.pool.QueryRow(ctx, `SELECT p.name, rt.name, rt.capacity, p.pay_at_hotel,
+		(SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id AND pp.room_type_id IS NULL ORDER BY pp.position, pp.created_at LIMIT 1),
+		to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI')
+		FROM room_types rt JOIN properties p ON p.id = rt.property_id
+		WHERE rt.id = $1 AND p.id = $2 AND p.status = 'active'`, in.RoomTypeID, in.PropertyID).
+		Scan(&propName, &roomName, &capacity, &payAtHotel, &coverID, &checkInTime, &checkOutTime)
 	if err == pgx.ErrNoRows || isBadUUID(err) {
 		return errNotFound
 	}
@@ -251,6 +261,7 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 		// A booking with a coupon is paid online: nobody could fund the discount on money collected at the hotel.
 		PayAtHotel: payAtHotel && coupon == nil,
 		Meal:       opt.Meal, Refundable: opt.Refundable, CouponCode: couponCode, Discount: price.Discount, ListTotal: price.Total + price.Discount, Children: in.Children,
+		PhotoURL: photoLink(s, coverID), CheckInTime: checkInTime, CheckOutTime: checkOutTime,
 	})
 	return nil
 }
@@ -674,4 +685,13 @@ func (s *Server) settleChapaPending(ctx context.Context, id, userID string) {
 			slog.Warn("chapa check from the app failed", "ref", ref, "err", err)
 		}
 	}
+}
+
+// photoLink is the address of a hotel's photo (the small copy), or nil when the hotel has none.
+func photoLink(s *Server, id *string) *string {
+	if id == nil {
+		return nil
+	}
+	u := s.photoURL(*id, "thumb")
+	return &u
 }

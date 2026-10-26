@@ -60,6 +60,11 @@
     "updates": {
       "url": "https://u.expo.dev/caae1dbf-2f8c-4699-ae24-aceff012952e",
       "checkAutomatically": "ON_LOAD"
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B192C"
     }
   }
 }

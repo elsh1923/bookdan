@@ -184,6 +184,10 @@ export const QuoteSchema = z.object({
   list_total_santim: z.number().int().default(0),
   /** How many of the guests are children (the rest are adults). */
   children: z.number().int().default(0),
+  /** The hotel's first photo (small), null when it has none; and the check-in and check-out times (Addis Ababa time). */
+  photo_url: z.string().nullable().default(null),
+  check_in_time: z.string().default('14:00'),
+  check_out_time: z.string().default('12:00'),
   server_time: z.string(),
 });
 

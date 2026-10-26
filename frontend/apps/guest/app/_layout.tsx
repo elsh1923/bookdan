@@ -9,7 +9,7 @@ import { getLocales } from 'expo-localization';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { i18next, initI18n, pickLanguage } from '@bookdan/i18n';
 import { DisplayFontContext, colors, fonts } from '@bookdan/ui';
@@ -17,6 +17,7 @@ import { PERSISTED_QUERY_KEYS, queryClient, queryPersister } from '../src/api';
 import { usePaymentRecovery } from '../src/payment';
 import { usePushUpdates } from '../src/notifications';
 import { UpdateBanner } from '../src/UpdateBanner';
+import { LaunchScreen } from '../src/LaunchScreen';
 import { usePrefs } from '../src/store';
 
 export default function RootLayout() {
@@ -42,11 +43,7 @@ export default function RootLayout() {
   }, [effective]);
 
   if (!fontsLoaded || !hydrated) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <LaunchScreen />;
   }
 
   return (
