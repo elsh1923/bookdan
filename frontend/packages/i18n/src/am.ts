@@ -53,6 +53,7 @@ const am: Resources = {
     gps_failed: 'አካባቢዎን ማግኘት አልቻልንም። እንደገና ይሞክሩ፣ ወይም ቦታ ይጻፉ።',
     rooms: 'ክፍሎች',
     start: 'ፍለጋ ይጀምሩ',
+    title: 'ሆቴሎች እና ሆምስቴይ',
     heading: 'የት ማረፍ ይፈልጋሉ?',
     placeholder: 'ምልክት ቦታ፣ ከተማ ወይም የሆቴል ስም',
     use_gps: 'የእኔን ቦታ ተጠቀም',

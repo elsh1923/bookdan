@@ -136,8 +136,8 @@ func (c Config) Validate() error {
 	if c.PaymentProvider == "chapa" && c.ChapaSecretKey == "" {
 		problems = append(problems, "CHAPA_SECRET_KEY is required when PAYMENT_PROVIDER=chapa")
 	}
-	if c.PaymentProvider == "chapa" && strings.Contains(c.ChapaSecretKey, "_TEST-") {
-		problems = append(problems, "CHAPA_SECRET_KEY is a test key: a production server needs the live key")
+	if c.PaymentProvider == "chapa" && strings.Contains(strings.ToUpper(c.ChapaSecretKey), "TEST") {
+		problems = append(problems, "CHAPA_SECRET_KEY is a test key: a production server needs the live key (its name has no TEST in it)")
 	}
 	if len(c.JWTSecret) > 0 && len(c.JWTSecret) < 32 {
 		problems = append(problems, "JWT_SECRET must be at least 32 characters")

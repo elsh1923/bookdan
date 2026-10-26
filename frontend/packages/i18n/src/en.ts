@@ -50,6 +50,7 @@ const en = {
     gps_failed: 'We could not find your location. Try again, or type a place.',
     rooms: 'Rooms',
     start: 'Start your search',
+    title: 'Hotels & Homestays',
     heading: 'Where are you staying?',
     placeholder: 'Landmark, city or hotel name',
     use_gps: 'Use my location',

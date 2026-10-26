@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { addDays, nightsBetween, todayAddis, type Suggestion } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
@@ -25,6 +26,40 @@ function useDebounced<V>(value: V, ms: number): V {
   return v;
 }
 
+/** The date row shows the day ("26 Oct '26") and, under it, the weekday (weekdays start on Monday). */
+function dayLabel(iso: string, months: string[], weekdays: string[]): { day: string; weekday: string } {
+  const [y, m, d] = iso.split('-').map(Number);
+  return {
+    day: `${d} ${months[m - 1]} '${String(y).slice(2)}`,
+    weekday: weekdays[(new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7],
+  };
+}
+
+/** One side of the date row: the day in bold, the weekday under it. */
+function DateSide({ iso, months, weekdays, align }: { iso: string; months: string[]; weekdays: string[]; align: 'left' | 'right' }) {
+  const { day, weekday } = dayLabel(iso, months, weekdays);
+  return (
+    <View style={{ flex: 1, alignItems: align === 'left' ? 'flex-start' : 'flex-end' }}>
+      <T variant="h3" numberOfLines={1}>{day}</T>
+      <T variant="label" color={colors.muted}>{weekday}</T>
+    </View>
+  );
+}
+
+/** Shows the typed part of a place in bold, the way the suggestion list does. */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim().toLowerCase();
+  const i = q ? text.toLowerCase().indexOf(q) : -1;
+  if (i < 0) return <T numberOfLines={1}>{text}</T>;
+  return (
+    <T numberOfLines={1}>
+      {text.slice(0, i)}
+      <Text style={{ fontFamily: fonts.bold }}>{text.slice(i, i + q.length)}</Text>
+      {text.slice(i + q.length)}
+    </T>
+  );
+}
+
 function Counter({ label, value, onChange, min, max }: { label: string; value: string; onChange: (d: number) => void; min?: boolean; max?: boolean }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 56, borderBottomWidth: 1, borderBottomColor: colors.line }}>
@@ -42,24 +77,26 @@ function Counter({ label, value, onChange, min, max }: { label: string; value: s
   );
 }
 
-function Tile({ icon, label, value, sub, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; sub?: string | null; onPress: () => void }) {
+/** One tappable line of the search card: an icon and bold text. It takes the free width, so long text never pushes other buttons off the card. */
+function Row({ icon, onPress, label, children }: { icon: keyof typeof Ionicons.glyphMap; onPress: () => void; label: string; children: React.ReactNode }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value}`} onPress={onPress} style={{ flex: 1, minWidth: 150, backgroundColor: colors.fill, borderRadius: radius.md, padding: spacing.md }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-        <Ionicons name={icon} size={16} color={colors.inkSoft} />
-        <T variant="label" color={colors.muted}>{label}</T>
-      </View>
-      <T variant="h3" style={{ marginTop: 2 }} numberOfLines={2}>{value}</T>
-      {sub ? <T variant="label" color={colors.muted}>{sub}</T> : null}
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 60, paddingHorizontal: spacing.md }}>
+      <Ionicons name={icon} size={22} color={colors.inkSoft} />
+      {children}
     </Pressable>
   );
 }
 
+function Divider() {
+  return <View style={{ height: 1, backgroundColor: colors.line, marginHorizontal: spacing.md }} />;
+}
+
+// Places get a map pin, as in the suggestion list of the big travel apps; a hotel gets a building.
 const KIND_ICON: Record<Suggestion['kind'], keyof typeof Ionicons.glyphMap> = {
-  landmark: 'flag-outline',
+  landmark: 'location-outline',
   area: 'location-outline',
-  city: 'business-outline',
-  hotel: 'bed-outline',
+  city: 'location-outline',
+  hotel: 'business-outline',
 };
 
 export default function SearchSheet() {
@@ -67,6 +104,7 @@ export default function SearchSheet() {
   const router = useRouter();
   const { recentSearches, addRecent, clearRecent } = usePrefs();
   const months = t('months.short', { returnObjects: true }) as unknown as string[];
+  const weekdays = t('weekdays.short', { returnObjects: true }) as unknown as string[];
   const lang = i18n.language === 'am' ? 'am' : 'en';
 
   // Defaults: tonight plus one, two adults, one room.
@@ -79,6 +117,7 @@ export default function SearchSheet() {
   const [rooms, setRooms] = useState(1);
   const [pickDates, setPickDates] = useState(false);
   const [pickGuests, setPickGuests] = useState(false);
+  const [pickPlace, setPickPlace] = useState(false);
   const guests = adults + children;
   const nights = nightsBetween(checkIn, checkOut);
 
@@ -90,6 +129,7 @@ export default function SearchSheet() {
   const stay = { in: checkIn, out: checkOut, guests: String(guests), children: String(children), rooms: String(rooms) };
   const go = (query: string) => {
     addRecent(query);
+    setPickPlace(false);
     router.replace({ pathname: '/results', params: { q: query, ...stay } });
   };
   const pick = (s: Suggestion) => {
@@ -124,63 +164,54 @@ export default function SearchSheet() {
   const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
   const typed = debouncedQ.length > 0;
   const popular = !typed ? (suggest.data ?? []).map(name) : [];
-  const dateSummary = `${shortDate(checkIn, months)} – ${shortDate(checkOut, months)}`;
+  const roomsLine = `${t('common.room', { count: rooms })}, ${t('search.adults', { count: adults })} & ${t('search.children', { count: children })}`;
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <T variant="h1" style={{ flex: 1 }}>{t('search.heading')}</T>
-          <Pressable accessibilityLabel={t('common.cancel')} onPress={close} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, borderWidth: 1, borderColor: colors.line }}>
-            <Ionicons name="close" size={22} color={colors.ink} />
-          </Pressable>
-        </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }} edges={['top']}>
+      {/* Title bar: back, the page name, and the BookDan mark. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface }}>
+        <Pressable accessibilityLabel={t('common.cancel')} onPress={close} hitSlop={8} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="arrow-back" size={24} color={colors.ink} />
+        </Pressable>
+        <T variant="h2" style={{ flex: 1 }}>{t('search.title')}</T>
+        <Image source={require('../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 32, height: 32, borderRadius: 8 }} />
+      </View>
 
-        <View style={[{ marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md }, shadow.card]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.fill, borderRadius: radius.md, paddingHorizontal: spacing.md }}>
-            <Ionicons name="search" size={18} color={colors.ink} />
-            <TextInput
-              autoFocus
-              value={q}
-              onChangeText={setQ}
-              placeholder={t('search.placeholder')}
-              placeholderTextColor={colors.muted}
-              returnKeyType="search"
-              onSubmitEditing={() => go(q)}
-              style={{ flex: 1, minHeight: 52, paddingHorizontal: spacing.sm, fontFamily: fonts.regular, fontSize: 15, color: colors.ink }}
-            />
-          </View>
-          {typed ? (suggest.data ?? []).map((s) => (
-            <Pressable key={`${s.kind}-${s.text}-${s.property_id ?? ''}`} accessibilityRole="button" onPress={() => pick(s)} style={{ minHeight: 52, justifyContent: 'center', paddingHorizontal: spacing.sm }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                <Ionicons name={KIND_ICON[s.kind]} size={18} color={colors.inkSoft} />
-                <View style={{ flex: 1 }}>
-                  <T numberOfLines={1}>{name(s)}</T>
-                  <T variant="label" color={colors.muted} numberOfLines={1}>{s.kind === 'hotel' ? `${t('search.suggest_hotel')} · ${s.subtitle}` : s.subtitle}</T>
-                </View>
-              </View>
+      <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
+        <View style={[{ backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: spacing.xs, borderWidth: 1, borderColor: colors.line }, shadow.card]}>
+          {/* Where: tapping opens the place search. Near Me finds hotels close to the phone. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingRight: spacing.sm }}>
+            <Row icon="search" label={t('search.heading')} onPress={() => setPickPlace(true)}>
+              <T variant="h3" numberOfLines={1} color={q.trim() ? colors.ink : colors.muted} style={{ flex: 1 }}>{q.trim() || t('search.placeholder')}</T>
+            </Row>
+            <Pressable onPress={useGps} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 40, paddingHorizontal: spacing.md, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.line }}>
+              <Ionicons name="locate-outline" size={16} color={colors.inkSoft} />
+              <T variant="small" color={colors.inkSoft}>{locating ? t('search.locating') : t('search.use_gps')}</T>
             </Pressable>
-          )) : null}
-
-          <Pressable onPress={useGps} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.sm }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Ionicons name="navigate-outline" size={16} color={colors.primaryInk} />
-              <T color={colors.primaryInk} variant="small">{locating ? t('search.locating') : t('search.use_gps')}</T>
-            </View>
-          </Pressable>
-
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-            <Tile icon="calendar-outline" label={t('search.dates')} value={dateSummary} sub={`${t('common.night', { count: nights })}${ethiopianLine(checkIn, lang) ? ` · ${ethiopianLine(checkIn, lang)}` : ''}`} onPress={() => setPickDates(true)} />
-            <Tile
-              icon="people-outline"
-              label={t('search.travellers')}
-              value={`${t('common.room', { count: rooms })} · ${t('search.adults', { count: adults })}`}
-              sub={children > 0 ? t('search.children', { count: children }) : null}
-              onPress={() => setPickGuests(true)}
-            />
           </View>
+          <Divider />
 
-          <Button title={t('search.submit')} onPress={() => go(q)} style={{ marginTop: spacing.md }} />
+          {/* When: check-in and check-out with the number of nights between them. */}
+          <Row icon="calendar-outline" label={t('search.dates')} onPress={() => setPickDates(true)}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <DateSide iso={checkIn} months={months} weekdays={weekdays} align="left" />
+              <View style={{ paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line }}>
+                <T variant="label" color={colors.inkSoft}>{t('common.night', { count: nights }).toUpperCase()}</T>
+              </View>
+              <DateSide iso={checkOut} months={months} weekdays={weekdays} align="right" />
+            </View>
+          </Row>
+          {ethiopianLine(checkIn, lang) ? <T variant="label" color={colors.muted} style={{ paddingLeft: 58, marginBottom: spacing.xs }}>{ethiopianLine(checkIn, lang)}</T> : null}
+          <Divider />
+
+          {/* Who: rooms, adults and children. */}
+          <Row icon="person-outline" label={t('search.travellers')} onPress={() => setPickGuests(true)}>
+            <T variant="h3" numberOfLines={1} style={{ flex: 1 }}>{roomsLine}</T>
+          </Row>
+
+          <View style={{ padding: spacing.md, paddingTop: spacing.sm }}>
+            <Button title={t('search.submit').toUpperCase()} onPress={() => go(q)} />
+          </View>
         </View>
 
         {recentSearches.length > 0 ? (
@@ -202,6 +233,65 @@ export default function SearchSheet() {
           </View>
         </View>
       </ScrollView>
+
+      {/* The place search: type, then pick a suggestion or search the text as it is. */}
+      <Modal visible={pickPlace} animationType="slide" onRequestClose={() => setPickPlace(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={['top']}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.line }}>
+            <Pressable accessibilityLabel={t('common.cancel')} onPress={() => setPickPlace(false)} hitSlop={8} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="arrow-back" size={24} color={colors.ink} />
+            </Pressable>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', height: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.primary, paddingHorizontal: spacing.md }}>
+              <TextInput
+                autoFocus
+                value={q}
+                onChangeText={setQ}
+                placeholder={t('search.placeholder')}
+                placeholderTextColor={colors.muted}
+                returnKeyType="search"
+                onSubmitEditing={() => go(q)}
+                style={{ flex: 1, fontFamily: fonts.regular, fontSize: 16, color: colors.ink }}
+              />
+              {q.length > 0 ? (
+                <Pressable accessibilityLabel={t('common.cancel')} onPress={() => setQ('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={20} color={colors.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {q.trim().length > 0 ? (
+              <Pressable accessibilityRole="button" onPress={() => go(q.trim())} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 56, paddingHorizontal: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.line }}>
+                <Ionicons name="search" size={20} color={colors.inkSoft} />
+                <T style={{ flex: 1 }} numberOfLines={1}>{q.trim()}</T>
+                <Ionicons name="chevron-forward" size={20} color={colors.primaryInk} />
+              </Pressable>
+            ) : null}
+
+            {!typed && (suggest.data ?? []).length > 0 ? (
+              <T variant="label" color={colors.muted} style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>{t('search.popular').toUpperCase()}</T>
+            ) : null}
+
+            {(suggest.data ?? []).map((s) => (
+              <Pressable
+                key={`${s.kind}-${s.text}-${s.property_id ?? ''}`}
+                accessibilityRole="button"
+                onPress={() => pick(s)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 64, paddingHorizontal: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.hairline }}
+              >
+                <Ionicons name={KIND_ICON[s.kind]} size={22} color={colors.inkSoft} />
+                <View style={{ flex: 1 }}>
+                  <Highlight text={name(s)} query={q} />
+                  <T variant="small" color={colors.muted} numberOfLines={1}>
+                    {s.kind === 'hotel' ? `${t('search.suggest_hotel')} · ${s.subtitle}` : s.subtitle}
+                  </T>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       {/* The calendar: tap the check-in day, then the check-out day. */}
       <Modal visible={pickDates} animationType="slide" onRequestClose={() => setPickDates(false)}>
