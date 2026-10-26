@@ -4,10 +4,6 @@ import {
   NotoSansEthiopic_700Bold,
   useFonts,
 } from '@expo-google-fonts/noto-sans-ethiopic';
-import {
-  PlayfairDisplay_500Medium,
-  PlayfairDisplay_700Bold,
-} from '@expo-google-fonts/playfair-display';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { getLocales } from 'expo-localization';
 import { Stack } from 'expo-router';
@@ -28,8 +24,8 @@ export default function RootLayout() {
     NotoSansEthiopic_400Regular,
     NotoSansEthiopic_500Medium,
     NotoSansEthiopic_700Bold,
-    PlayfairDisplay_500Medium,
-    PlayfairDisplay_700Bold,
+    CormorantGaramond_600SemiBold: require('@expo-google-fonts/cormorant-garamond/600SemiBold/CormorantGaramond_600SemiBold.ttf'),
+    CormorantGaramond_700Bold: require('@expo-google-fonts/cormorant-garamond/700Bold/CormorantGaramond_700Bold.ttf'),
   });
   usePushUpdates();
   usePaymentRecovery(); // an interrupted payment takes the guest back to its booking on the next launch

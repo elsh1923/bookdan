@@ -66,6 +66,7 @@ const en = {
   },
   home: {
     recently_viewed: 'Recently viewed',
+    see_all: 'See all',
     welcome: 'Find your perfect stay',
     tagline: 'Hotels, guesthouses and lodges across Ethiopia',
     featured: 'Featured for you',

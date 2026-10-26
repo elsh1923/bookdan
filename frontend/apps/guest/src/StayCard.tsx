@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, View } from 'react-native';
 import type { SearchItem } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Animated, PressableScale, T, colors, dark, radius, spacing, useBounce } from '@bookdan/ui';
+import { Animated, PressableScale, T, colors, dark, fonts, radius, spacing, useBounce } from '@bookdan/ui';
 import { Photo } from './Photo';
 import { price } from './format';
 import { usePrefs } from './store';
@@ -32,15 +32,17 @@ export function StayCard({ item, width, height, large, onPress }: {
           colors={['rgba(5,10,20,0)', 'rgba(5,10,20,0.88)']}
           style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '65%' }}
         />
+        {/* Rating badge: a small pill with a star and the score, top-left on the photo. */}
+        {item.rating ? (
+          <View style={{ position: 'absolute', top: spacing.sm, left: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: 'rgba(11,25,44,0.72)' }}>
+            <Ionicons name="star" size={12} color={colors.star} />
+            <T variant="label" color="#FFFFFF">{item.rating.toFixed(1)}</T>
+          </View>
+        ) : null}
         <View style={{ position: 'absolute', left: spacing.md, right: spacing.md, bottom: spacing.md }}>
-          {stars > 0 ? (
-            <View style={{ flexDirection: 'row', gap: 2, marginBottom: 4 }}>
-              {Array.from({ length: stars }, (_, i) => <Ionicons key={i} name="star" size={large ? 14 : 11} color={colors.star} />)}
-            </View>
-          ) : null}
           <T variant={large ? 'displaySm' : 'h3'} color={dark.text} numberOfLines={2}>{item.name}</T>
           <T variant="small" color={dark.textSoft}>
-            {t('common.from')} {price(item.from_price_santim, item.currency)}
+            {t('common.from')} <T variant="small" color={dark.text} style={{ fontFamily: fonts.bold }}>{price(item.from_price_santim, item.currency)}</T>
           </T>
         </View>
       </PressableScale>

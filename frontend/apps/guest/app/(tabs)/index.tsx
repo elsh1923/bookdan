@@ -10,8 +10,12 @@ import type { PropertyType, SearchItem } from '@bookdan/domain';
 import { addDays, todayAddis } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, gradients, radius, shadow, spacing } from '@bookdan/ui';
+import { useAuth } from '../../src/auth';
+import { price, shortDate } from '../../src/format';
+import { splitBookings } from '../../src/bookingHistory';
 import { StayCard } from '../../src/StayCard';
-import { useAllProperties } from '../../src/queries';
+import { StatusBadge } from '../../src/StatusBadge';
+import { useAllProperties, useBookings } from '../../src/queries';
 import { usePrefs } from '../../src/store';
 
 type Category = PropertyType | 'all';
@@ -27,7 +31,15 @@ function hashUnit(id: string, seed: number): number {
   return ((x ^ (x >>> 15)) >>> 0) / 2 ** 32;
 }
 
-function Pill({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+const CATEGORY_ICON: Record<Category, keyof typeof Ionicons.glyphMap> = {
+  all: "apps-outline",
+  hotel: "business-outline",
+  guesthouse: "home-outline",
+  lodge: "bonfire-outline",
+  resort: "sunny-outline",
+};
+
+function Pill({ label, icon, selected, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; selected: boolean; onPress: () => void }) {
   return (
     <PressableScale
       onPress={onPress}
@@ -43,7 +55,10 @@ function Pill({ label, selected, onPress }: { label: string; selected: boolean; 
       {selected ? (
         <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
       ) : null}
-      <T variant="small" color={selected ? '#FFFFFF' : colors.inkSoft} style={{ paddingHorizontal: spacing.md }}>{label}</T>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md }}>
+        <Ionicons name={icon} size={15} color={selected ? "#FFFFFF" : colors.inkSoft} />
+        <T variant="small" color={selected ? "#FFFFFF" : colors.inkSoft}>{label}</T>
+      </View>
     </PressableScale>
   );
 }
@@ -98,6 +113,15 @@ export default function Home() {
   // Hotels the guest looked at before, newest first, for a quick way back.
   const viewedIds = usePrefs((s) => s.viewed);
   const recent = useMemo(() => viewedIds.map((id) => all.items.find((i) => i.id === id)).filter((x): x is SearchItem => !!x).slice(0, 6), [viewedIds, all.items]);
+
+  // The guest's own trips on the home page: the stays to come first, then the latest history.
+  const token = useAuth((s) => s.token);
+  const trips = useBookings(!!token);
+  const months = t('months.short', { returnObjects: true }) as unknown as string[];
+  const recentTrips = useMemo(() => {
+    const { upcoming, past } = splitBookings(trips.data ?? [], today);
+    return [...upcoming, ...past].slice(0, 3);
+  }, [trips.data, today]);
 
   const open = (item: SearchItem) =>
     router.push({ pathname: '/property/[id]', params: { id: item.id, in: today, out: checkOut, guests: '1' } });
@@ -168,7 +192,7 @@ export default function Home() {
         {/* Category filter */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm }}>
           {CATEGORIES.map((c) => (
-            <Pill key={c} label={c === 'all' ? t('common.all') : t(`type.${c}`)} selected={category === c} onPress={() => setCategory(c)} />
+            <Pill key={c} icon={CATEGORY_ICON[c]} label={c === 'all' ? t('common.all') : t(`type.${c}`)} selected={category === c} onPress={() => setCategory(c)} />
           ))}
         </ScrollView>
 
@@ -185,10 +209,40 @@ export default function Home() {
           </LinearGradient>
         </View>
 
+        {token && recentTrips.length > 0 ? (
+          <View style={{ marginTop: spacing.xl }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md }}>
+              <T variant="displaySm" color={colors.ink}>{t('bookings.title')}</T>
+              <Pressable accessibilityRole="button" onPress={() => router.navigate('/bookings')} hitSlop={12}>
+                <T variant="small" color={colors.primaryInk}>{t('home.see_all')}</T>
+              </Pressable>
+            </View>
+            <View style={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
+              {recentTrips.map((b) => (
+                <PressableScale
+                  key={b.id}
+                  accessibilityRole="button"
+                  onPress={() => router.push({ pathname: '/booking/[id]', params: { id: b.id } })}
+                  scaleTo={0.98}
+                  style={[{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.line }, shadow.card]}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm }}>
+                    <T variant="h3" style={{ flex: 1 }} numberOfLines={1}>{b.property_name}</T>
+                    <StatusBadge status={b.status} />
+                  </View>
+                  <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>
+                    {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {price(b.total_santim, b.currency)}
+                  </T>
+                </PressableScale>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         {all.isPending ? (
           <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg }}>
-            <Skeleton width={wideWidth} height={Math.round(wideWidth * 0.78)} radius={radius.lg} />
-            <Skeleton width={wideWidth} height={Math.round(wideWidth * 0.78)} radius={radius.lg} />
+            <Skeleton width={wideWidth} height={Math.round(wideWidth * 0.5625)} radius={radius.lg} />
+            <Skeleton width={wideWidth} height={Math.round(wideWidth * 0.5625)} radius={radius.lg} />
           </View>
         ) : all.isError ? (
           <EmptyState icon="⚠️" title={t('results.error_title')} body={t('results.error_body')} actionLabel={t('common.retry')} onAction={() => all.refetch()} />
@@ -199,7 +253,7 @@ export default function Home() {
             <SectionTitle>{t('home.featured')}</SectionTitle>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
               {featured.map((item, i) => (
-                <Reveal key={item.id} index={i}><StayCard item={item} large width={wideWidth} height={Math.round(wideWidth * 0.78)} onPress={() => open(item)} /></Reveal>
+                <Reveal key={item.id} index={i}><StayCard item={item} large width={wideWidth} height={Math.round(wideWidth * 0.5625)} onPress={() => open(item)} /></Reveal>
               ))}
             </ScrollView>
 

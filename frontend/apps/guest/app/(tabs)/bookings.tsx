@@ -4,6 +4,7 @@ import { RefreshControl, SectionList, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Booking } from '@bookdan/domain';
 import { todayAddis } from '@bookdan/domain';
+import { splitBookings } from '../../src/bookingHistory';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { useAuth } from '../../src/auth';
@@ -11,17 +12,6 @@ import { price, shortDate } from '../../src/format';
 import { useBookings } from '../../src/queries';
 import { StatusBadge } from '../../src/StatusBadge';
 import { pruneVouchers } from '../../src/voucherStore';
-
-// Stays that are still to come or in progress. Anything else (finished, cancelled, declined, no-show) is history.
-const ACTIVE = new Set(['HELD', 'PAID_AWAITING_HOTEL', 'CONFIRMED', 'CHECKED_IN', 'NEEDS_RELOCATION', 'DISPUTED']);
-
-/** Splits the guest's bookings into the stays still to come and the history, newest first in each. */
-function split(items: Booking[], today: string) {
-  const upcoming = items.filter((b) => ACTIVE.has(b.status) && b.check_out >= today);
-  const past = items.filter((b) => !upcoming.includes(b));
-  const byCheckIn = (a: Booking, b: Booking) => (a.check_in < b.check_in ? -1 : a.check_in > b.check_in ? 1 : 0);
-  return { upcoming: upcoming.sort(byCheckIn), past: past.sort((a, b) => byCheckIn(b, a)) };
-}
 
 // The guest's bookings: the stays to come first, then the history of past stays.
 export default function Bookings() {
@@ -36,7 +26,7 @@ export default function Bookings() {
   }, [query.data]);
 
   const sections = useMemo(() => {
-    const { upcoming, past } = split(query.data ?? [], todayAddis());
+    const { upcoming, past } = splitBookings(query.data ?? [], todayAddis());
     return [
       { key: 'upcoming', title: t('bookings.upcoming'), data: upcoming },
       { key: 'past', title: t('bookings.past'), data: past },

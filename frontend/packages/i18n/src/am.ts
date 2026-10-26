@@ -69,6 +69,7 @@ const am: Resources = {
   },
   home: {
     recently_viewed: 'በቅርቡ ያዩዋቸው',
+    see_all: 'ሁሉንም ተመልከት',
     welcome: 'የሚመጥንዎትን ማረፊያ ያግኙ',
     tagline: 'በመላው ኢትዮጵያ ሆቴሎች፣ ጌስትሃውሶች እና ሎጆች',
     featured: 'ለእርስዎ የተመረጡ',

@@ -15,6 +15,7 @@
     "@bookdan/domain": "*",
     "@bookdan/i18n": "*",
     "@bookdan/ui": "*",
+    "@expo-google-fonts/cormorant-garamond": "^0.4.1",
     "@expo-google-fonts/noto-sans-ethiopic": "^0.4.2",
     "@expo-google-fonts/playfair-display": "^0.4.2",
     "@expo/metro-runtime": "~57.0.17",

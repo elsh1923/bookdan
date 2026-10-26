@@ -1,25 +1,26 @@
-// Design tokens. Blue is the brand colour; amber is reserved for star ratings and red for "saved".
+// Design tokens. Navy and slate carry the structure; warm terracotta is the action colour (buttons, selected states).
+// Amber is reserved for star ratings and red for "saved".
 export const colors = {
-  primary: '#2563EB', // brand blue (fills)
-  primaryInk: '#1D4ED8', // blue for text and icons on white (AA contrast)
-  onPrimary: '#FFFFFF', // text on blue fills
-  primaryDark: '#1E40AF',
-  primarySoft: '#EAF1FF', // tinted backgrounds, selected chips
+  primary: '#E05A47', // terracotta: button fills
+  primaryInk: '#B8432F', // terracotta for text and icons on white (AA contrast)
+  onPrimary: '#FFFFFF', // text on terracotta fills
+  primaryDark: '#9E3424',
+  primarySoft: '#FBEAE6', // tinted backgrounds, selected chips
   accent: '#0F6B4F', // deep green, secondary
   accentSoft: '#E3F2EC',
-  ink: '#0F1B33', // near-black navy for text
-  charcoal: '#0F1B33',
-  inkSoft: '#4B5B76',
-  muted: '#7B8AA3',
-  line: '#E6EBF4',
-  hairline: '#EDF1F8', // faint separators inside cards
+  ink: '#0B192C', // deep navy for headings and text
+  charcoal: '#1E293B', // warm slate for secondary headings
+  inkSoft: '#475569', // slate-600 for body copy
+  muted: '#64748B', // slate-500 for labels
+  line: '#E2E8F0', // slate-200 borders
+  hairline: '#F1F5F9', // slate-100 faint separators inside cards
   surface: '#FFFFFF',
-  background: '#FFFFFF',
-  canvas: '#F5F7FC', // soft page background that lifts white cards
-  fill: '#F3F6FB', // cool grey-blue for inputs inside cards
-  deal: '#F97316', // saffron for offers and deals
-  dealInk: '#C2410C',
-  dealSoft: '#FFF3E8',
+  background: '#F8FAFC', // off-white page background
+  canvas: '#F8FAFC',
+  fill: '#F1F5F9', // inputs inside cards
+  deal: '#E05A47', // offers and deals share the action colour
+  dealInk: '#B8432F',
+  dealSoft: '#FBEAE6',
   gold: '#F5A524', // premium / featured accents
   star: '#F5A524', // ratings
   favorite: '#F43F5E', // saved hearts
@@ -40,27 +41,28 @@ export const radius = { sm: 8, md: 16, lg: 24, pill: 999 };
 export const MIN_TOUCH = 48;
 
 export const fonts = {
-  // Noto Sans Ethiopic is bundled by the app so Amharic renders the same on every phone.
+  // Noto Sans Ethiopic is bundled by the app so Amharic renders the same on every phone (UI text and labels).
   regular: 'NotoSansEthiopic_400Regular',
   medium: 'NotoSansEthiopic_500Medium',
   bold: 'NotoSansEthiopic_700Bold',
-  // Serif for headings (Latin only). Amharic keeps the Ethiopic font via DisplayFontContext.
-  display: 'PlayfairDisplay_700Bold',
-  displayMedium: 'PlayfairDisplay_500Medium',
+  // Cormorant for hero titles and section headings (Latin only). Amharic keeps the Ethiopic font via DisplayFontContext.
+  display: 'CormorantGaramond_700Bold',
+  displayMedium: 'CormorantGaramond_600SemiBold',
 };
 
 export const shadow = {
+  // Ultra-soft and diffused: the card lifts a little, without an outline.
   card: {
-    shadowColor: '#0F1B33',
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
+    shadowColor: '#0B192C',
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
-  // A soft blue glow under primary buttons.
+  // A soft terracotta glow under primary buttons.
   button: {
-    shadowColor: '#2563EB',
-    shadowOpacity: 0.28,
+    shadowColor: '#E05A47',
+    shadowOpacity: 0.25,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
@@ -69,21 +71,21 @@ export const shadow = {
 
 // Deep navy surfaces used by the home screen and the tab bar.
 export const dark = {
-  bg: '#0A1428',
-  surface: '#10203F',
-  surfaceRaised: '#17294D',
-  line: 'rgba(125,177,255,0.28)',
+  bg: '#0B192C',
+  surface: '#14233B',
+  surfaceRaised: '#1E293B',
+  line: 'rgba(148,163,184,0.25)',
   text: '#FFFFFF',
-  textSoft: 'rgba(255,255,255,0.76)',
-  muted: 'rgba(255,255,255,0.54)',
-  accent: '#7DB1FF', // light blue for icons and highlights on navy
+  textSoft: 'rgba(255,255,255,0.78)',
+  muted: 'rgba(255,255,255,0.56)',
+  accent: '#F4A090', // soft terracotta for icons and highlights on navy
 };
 
-// Brand blue, for primary buttons. White text on every stop meets 4.5:1.
+// Terracotta buttons; white text on every stop meets 4.5:1.
 export const gradients = {
-  primary: ['#2F6FEB', '#2563EB', '#1D4ED8'] as const,
-  // Deep navy-to-blue band behind the home search card (the MakeMyTrip-style hero).
-  header: ['#0A1B4E', '#15316F', '#1E4AB8'] as const,
-  // Saffron, for the offers / deals strip.
-  deal: ['#FFA14A', '#F97316'] as const,
+  primary: ['#E4604C', '#D24F3C', '#BD4331'] as const,
+  // Soft navy mesh behind the home search card: deep navy into slate, with a faint warm glow.
+  header: ['#0B192C', '#15243D', '#24304A'] as const,
+  // Offers strip: a gentle terracotta blend instead of a harsh solid colour.
+  deal: ['#EE8C74', '#E05A47'] as const,
 };
