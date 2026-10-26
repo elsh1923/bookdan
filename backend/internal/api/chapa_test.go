@@ -188,7 +188,8 @@ func TestChapaPaymentsAreConfirmedWithChapa(t *testing.T) {
 	t.Run("the webhook needs Chapa's signature", func(t *testing.T) {
 		id := book(46, "chapa-hook")
 		ref := start(id)
-		fake.answer("SUCCESS", price(id), "ETB")
+		fake.answer("PENDING", 0, "ETB") // until the signed webhook arrives, Chapa still says pending (set first: reading the price asks Chapa)
+		fake.answer("PENDING", price(id), "ETB")
 		body := []byte(`{"webhook_type":"payment","merchant_reference":"` + ref + `","status":"success"}`)
 		post := func(sig string) int {
 			req, _ := http.NewRequest("POST", srv2.URL+"/v1/webhooks/payments/chapa", strings.NewReader(string(body)))
@@ -212,6 +213,7 @@ func TestChapaPaymentsAreConfirmedWithChapa(t *testing.T) {
 		if s := status(id); s != "HELD" {
 			t.Fatalf("a refused webhook must change nothing, got %s", s)
 		}
+		fake.answer("SUCCESS", price(id), "ETB")
 		mac := hmac.New(sha256.New, []byte(webhookSecret))
 		mac.Write(body)
 		if code := post(hex.EncodeToString(mac.Sum(nil))); code != 200 {

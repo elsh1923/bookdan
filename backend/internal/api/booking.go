@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"strings"
@@ -408,6 +409,7 @@ func (s *Server) loadBooking(ctx context.Context, q interface {
 }
 
 func (s *Server) getBooking(w http.ResponseWriter, r *http.Request) error {
+	s.settleChapaPending(r.Context(), chi.URLParam(r, "id"), claimsFrom(r).Sub)
 	b, err := s.loadBooking(r.Context(), s.pool, chi.URLParam(r, "id"), claimsFrom(r).Sub)
 	if err != nil {
 		return err
@@ -653,4 +655,28 @@ func (s *Server) createBooking(w http.ResponseWriter, r *http.Request) error {
 	}
 	respond(w, http.StatusOK, b)
 	return nil
+}
+
+// settleChapaPending asks Chapa about this guest\x27s pending card or bank payment, so a booking moves on as soon as the guest is
+// back in the app even if Chapa\x27s own notice is late or never arrives. Only the guest\x27s own booking is checked. Errors are logged,
+// not returned: the booking still shows its current state.
+func (s *Server) settleChapaPending(ctx context.Context, id, userID string) {
+	rows, err := s.pool.Query(ctx, `SELECT p.provider_ref FROM payments p JOIN bookings b ON b.id = p.booking_id
+		WHERE p.booking_id = $1 AND b.user_id = $2 AND p.provider = 'chapa' AND p.status = 'pending' AND p.provider_ref <> ''`, id, userID)
+	if err != nil {
+		return
+	}
+	var refs []string
+	for rows.Next() {
+		var ref string
+		if rows.Scan(&ref) == nil {
+			refs = append(refs, ref)
+		}
+	}
+	rows.Close()
+	for _, ref := range refs {
+		if err := s.chapaSettle(ctx, ref); err != nil && err != errNotFound {
+			slog.Warn("chapa check from the app failed", "ref", ref, "err", err)
+		}
+	}
 }
