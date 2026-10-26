@@ -16,7 +16,7 @@ import {
   type Identity,
 } from '@bookdan/domain';
 import { z } from 'zod';
-import { ApiError, type Api, type AuthApi, type ImageSource, type PartnerApi, type SearchParams, type Tokens } from './types';
+import { ApiError, type Api, type AuthApi, type PartnerApi, type SearchParams, type Tokens } from './types';
 
 /**
  * The real client: the same Api and PartnerApi contracts as the mocks, over HTTP to the Go backend (backend/api/openapi.yaml).
@@ -115,16 +115,7 @@ function createCore(o: HttpOptions) {
       await request('POST', '/auth/logout', null, { refresh_token: refreshToken });
     },
   };
-  // A protected picture is loaded by the image component itself, so it needs the same sign-in headers as any other request.
-  async function imageSource(path: string): Promise<ImageSource> {
-    const deviceId = typeof o.deviceId === 'string' ? o.deviceId : await o.deviceId();
-    return {
-      uri: base + path,
-      headers: { 'X-App': o.app, 'X-Device-Id': deviceId, 'X-Platform': o.platform, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    };
-  }
-
-  return { request, auth, imageSource };
+  return { request, auth };
 }
 
 function searchQuery(p: SearchParams): string {
@@ -152,7 +143,7 @@ const ProfileEnvelope = z.object({ profile: GuestProfileSchema.nullable() });
 const PayResponse = z.object({ booking: BookingSchema, session: PaymentSessionSchema.nullable() });
 
 export function createHttpApi(options: HttpOptions): Api {
-  const { request, auth, imageSource } = createCore({ ...options, app: 'guest' });
+  const { request, auth } = createCore({ ...options, app: 'guest' });
   return {
     ...auth,
     search: (p) => request('GET', `/search?${searchQuery(p)}`, SearchResponseSchema),
@@ -178,13 +169,6 @@ export function createHttpApi(options: HttpOptions): Api {
     deleteProfile: async () => {
       await request('DELETE', '/me/profile', null);
     },
-    uploadIdPhoto: async (side, image) => {
-      await request('PUT', `/me/id-photo/${side}`, null, { image }, {}, 60_000);
-    },
-    deleteIdPhoto: async (side) => {
-      await request('DELETE', `/me/id-photo/${side}`, null);
-    },
-    idPhotoSource: (side) => imageSource(`/me/id-photo/${side}`),
     registerPushToken: async (r) => {
       await request('PUT', '/me/devices/push-token', null, r);
     },
@@ -196,14 +180,13 @@ export function createHttpApi(options: HttpOptions): Api {
 }
 
 export function createHttpPartnerApi(options: HttpOptions): PartnerApi {
-  const { request, auth, imageSource } = createCore({ ...options, app: 'partner' });
+  const { request, auth } = createCore({ ...options, app: 'partner' });
   return {
     ...auth,
     registerPushToken: async (r) => {
       await request('PUT', '/partner/devices/push-token', null, r);
     },
     revealGuestId: (id) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/guest/reveal`, z.object({ id_number: z.string() })),
-    guestIdPhotoSource: (id, side) => imageSource(`/partner/bookings/${encodeURIComponent(id)}/guest/id-photo/${side}`),
     listBookings: () => request('GET', '/partner/bookings', PartnerBookingListSchema),
     acceptBooking: (id) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/accept`, PartnerBookingSchema),
     declineBooking: (id, reason) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/decline`, PartnerBookingSchema, { reason }),

@@ -156,7 +156,6 @@ export function createMockApi(opts: MockOptions = {}): Api {
   // and the app never gets it back; this mock keeps it so the hotel's copy can be shown in demos.
   interface ProfileRow { full_name: string; id_type: GuestProfile['id_type']; id_number: string; nationality: string; updated_at: string }
   const profiles = new Map<string, ProfileRow>();
-  const idPhotos = new Map<string, string>(); // "identity|side" -> base64, in memory only
 
   // ---- optional persistence (demo only)
   let hydration: Promise<void> | null = null;
@@ -224,10 +223,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
 
   // What the guest gets back about their own profile: never the full number.
   const toProfile = (p: ProfileRow): GuestProfile =>
-    GuestProfileSchema.parse({
-      full_name: p.full_name, id_type: p.id_type, id_last4: idLast4(p.id_number), nationality: p.nationality, updated_at: p.updated_at, server_time: new Date().toISOString(),
-      id_photos: { front: idPhotos.has(`${identityOf()}|front`), back: idPhotos.has(`${identityOf()}|back`) },
-    });
+    GuestProfileSchema.parse({ full_name: p.full_name, id_type: p.id_type, id_last4: idLast4(p.id_number), nationality: p.nationality, updated_at: p.updated_at, server_time: new Date().toISOString() });
 
   const roomsLeft = (propertyId: string, roomId: string) => {
     const room = SEED.find((x) => x.id === propertyId)?.rooms.find((x) => x.id === roomId);
@@ -339,26 +335,9 @@ export function createMockApi(opts: MockOptions = {}): Api {
       identityOf(); // the mock has nobody to send to; it only checks the guest is signed in
     },
 
-    async uploadIdPhoto(side, imageBase64) {
-      await gate();
-      idPhotos.set(`${identityOf()}|${side}`, imageBase64);
-    },
-
-    async deleteIdPhoto(side) {
-      await gate();
-      idPhotos.delete(`${identityOf()}|${side}`);
-    },
-
-    async idPhotoSource(side) {
-      await gate();
-      const data = idPhotos.get(`${identityOf()}|${side}`);
-      return data ? { uri: `data:image/jpeg;base64,${data}` } : null;
-    },
-
     async deleteProfile() {
       await gate();
       profiles.delete(identityOf());
-      for (const side of ['front', 'back']) idPhotos.delete(`${identityOf()}|${side}`);
       await persist();
     },
 

@@ -156,7 +156,7 @@ export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi 
       // The profile the guest saved in the guest app, as the hotel sees it: the ID is masked to its last four.
       guest: {
         full_name: r.guest.name, contact: r.guest.contact, nationality: r.guest.nationality,
-        id_type: r.guest.id_type, id_last4: idLast4(r.guest.id_number), id_purged: !!r.guest.purged, id_photos: { front: false, back: false },
+        id_type: r.guest.id_type, id_last4: idLast4(r.guest.id_number), id_purged: !!r.guest.purged,
       },
       room_name: r.room_name,
       check_in: r.check_in, check_out: addDays(r.check_in, r.nights), nights: r.nights, guests: r.guests, rooms: r.rooms ?? 1,
@@ -224,12 +224,6 @@ export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi 
       const items = [...rows.values()].map(view);
       await persist();
       return PartnerBookingListSchema.parse({ property: HOTEL, items, server_time: new Date().toISOString() });
-    },
-
-    async guestIdPhotoSource(bookingId) {
-      await gate();
-      find(bookingId);
-      throw new ApiError('NOT_FOUND', 'The demo has no ID photos');
     },
 
     async revealGuestId(bookingId) {

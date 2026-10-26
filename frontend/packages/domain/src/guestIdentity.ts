@@ -29,11 +29,6 @@ export function maskId(last4: string): string {
   return `•••• ${last4}`;
 }
 
-/** Which sides of an ID photo exist. A card has a front and a back; a passport only a front. */
-export const IdPhotoSidesSchema = z.object({ front: z.boolean(), back: z.boolean() });
-export type IdPhotoSides = z.infer<typeof IdPhotoSidesSchema>;
-export type IdSide = keyof IdPhotoSides;
-
 /** What the guest types in. The full ID number travels only in this direction, to the server. */
 export const GuestProfileInputSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
@@ -53,8 +48,6 @@ export const GuestProfileSchema = z.object({
   id_last4: z.string(),
   nationality: z.string(),
   updated_at: z.string(),
-  /** Which sides of the ID photo the guest added (the pictures are fetched one at a time). */
-  id_photos: IdPhotoSidesSchema.default({ front: false, back: false }),
   server_time: z.string(),
 });
 export type GuestProfile = z.infer<typeof GuestProfileSchema>;
@@ -77,7 +70,5 @@ export const BookingGuestSchema = z.object({
   id_last4: z.string(),
   /** True once the full number was erased after the retention period; only the last four remain. */
   id_purged: z.boolean(),
-  /** Which sides of the guest's ID photo came with this booking and are not erased yet. */
-  id_photos: IdPhotoSidesSchema.default({ front: false, back: false }),
 });
 export type BookingGuest = z.infer<typeof BookingGuestSchema>;

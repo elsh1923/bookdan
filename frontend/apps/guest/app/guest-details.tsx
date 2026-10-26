@@ -11,7 +11,6 @@ import { Button, Chip, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
 import { useAuth } from '../src/auth';
 import { Field } from '../src/Field';
-import { IdPhotoSlot } from '../src/IdPhotoSlot';
 import { useProfile } from '../src/queries';
 
 /**
@@ -47,7 +46,6 @@ export default function GuestDetails() {
   if (!token) return <Redirect href={{ pathname: '/signin', params: { next: '/guest-details' } }} />;
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
-  const refreshProfile = () => qc.invalidateQueries({ queryKey: ['profile'] });
 
   async function save() {
     const next: typeof errors = {};
@@ -138,12 +136,6 @@ export default function GuestDetails() {
           />
 
           <Field label={t('details.nationality')} value={nationality} onChangeText={setNationality} autoComplete="off" error={errors.nationality} />
-
-          <T variant="displaySm" style={{ marginTop: spacing.xl }}>{t('details.photo_title')}</T>
-          <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('details.photo_hint')}</T>
-          {idType === 'passport' ? <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('details.photo_passport_note')}</T> : null}
-          <IdPhotoSlot side="front" label={t('details.photo_front')} exists={!!profile.data?.id_photos?.front} onChanged={refreshProfile} />
-          {idType !== 'passport' ? <IdPhotoSlot side="back" label={t('details.photo_back')} exists={!!profile.data?.id_photos?.back} onChanged={refreshProfile} /> : null}
 
           {errors.form ? (
             <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.dangerSoft }}>

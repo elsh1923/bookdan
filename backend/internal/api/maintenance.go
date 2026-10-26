@@ -65,14 +65,6 @@ func (s *Server) eraseOldIDs(ctx context.Context) {
 		return
 	}
 	dead = tag.RowsAffected()
-	// The ID photos go on the same schedule as the numbers: the hotel's copy of a real stay after the retention period, and the copy of a
-	// booking that never happened after 7 days.
-	if _, err := s.pool.Exec(ctx, `UPDATE booking_id_photos p SET data_enc = NULL, purged_at = now() FROM bookings b
-		WHERE b.id = p.booking_id AND p.purged_at IS NULL
-		  AND (b.check_out < $1::date OR (b.status IN ('EXPIRED', 'DECLINED_REFUNDED', 'CANCELLED_REFUNDED') AND coalesce(b.cancelled_at, b.created_at) < now() - interval '7 days'))`, cutoff); err != nil {
-		slog.Error("erasing old ID photos failed", "err", err)
-		return
-	}
 	if stays+dead > 0 {
 		slog.Info("guest ID numbers erased", "after_stays", stays, "never_happened", dead)
 		if _, err := s.pool.Exec(ctx, `INSERT INTO audit_log (action, details) VALUES ('id_numbers_erased', jsonb_build_object('after_stays', $1::bigint, 'never_happened', $2::bigint, 'retention_days', $3::int))`, stays, dead, days); err != nil {

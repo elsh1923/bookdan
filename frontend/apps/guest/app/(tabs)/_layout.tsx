@@ -30,7 +30,7 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: t('tabs.search'), tabBarIcon: icon('home-outline') }} />
-      <Tabs.Screen name="bookings" options={{ href: null }} />
+      <Tabs.Screen name="bookings" options={{ title: t('tabs.bookings'), tabBarIcon: icon('receipt-outline') }} />
       <Tabs.Screen name="wishlist" options={{ title: t('tabs.wishlists'), tabBarIcon: icon('heart-outline') }} />
       <Tabs.Screen name="profile" options={{ title: t('tabs.profile'), tabBarIcon: icon('person-outline') }} />
     </Tabs>

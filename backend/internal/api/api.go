@@ -122,9 +122,6 @@ func (s *Server) Routes(root chi.Router) {
 			r.Get("/me/profile", s.h(s.getProfile))
 			r.Put("/me/profile", s.h(s.putProfile))
 			r.Delete("/me/profile", s.h(s.deleteProfile))
-			r.Put("/me/id-photo/{side}", s.h(s.putIDPhoto))
-			r.Get("/me/id-photo/{side}", s.h(s.getIDPhoto))
-			r.Delete("/me/id-photo/{side}", s.h(s.deleteIDPhoto))
 		})
 
 		r.Route("/partner", func(r chi.Router) {
@@ -142,7 +139,6 @@ func (s *Server) Routes(root chi.Router) {
 			r.Post("/checkin/lookup", s.h(s.partnerCheckinLookup))
 			r.Get("/earnings", s.h(s.partnerEarnings))
 			r.Post("/bookings/{id}/guest/reveal", s.h(s.partnerReveal))
-			r.Get("/bookings/{id}/guest/id-photo/{side}", s.h(s.partnerIDPhoto))
 		})
 
 		// Payment results arrive here, signed by the gateway. The development gateway page is served only outside production.

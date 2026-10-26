@@ -1,7 +1,9 @@
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { RefreshControl, SectionList, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { Booking } from '@bookdan/domain';
+import { todayAddis } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { useAuth } from '../../src/auth';
@@ -10,7 +12,18 @@ import { useBookings } from '../../src/queries';
 import { StatusBadge } from '../../src/StatusBadge';
 import { pruneVouchers } from '../../src/voucherStore';
 
-// E3 adds the offline voucher on confirmed bookings.
+// Stays that are still to come or in progress. Anything else (finished, cancelled, declined, no-show) is history.
+const ACTIVE = new Set(['HELD', 'PAID_AWAITING_HOTEL', 'CONFIRMED', 'CHECKED_IN', 'NEEDS_RELOCATION', 'DISPUTED']);
+
+/** Splits the guest's bookings into the stays still to come and the history, newest first in each. */
+function split(items: Booking[], today: string) {
+  const upcoming = items.filter((b) => ACTIVE.has(b.status) && b.check_out >= today);
+  const past = items.filter((b) => !upcoming.includes(b));
+  const byCheckIn = (a: Booking, b: Booking) => (a.check_in < b.check_in ? -1 : a.check_in > b.check_in ? 1 : 0);
+  return { upcoming: upcoming.sort(byCheckIn), past: past.sort((a, b) => byCheckIn(b, a)) };
+}
+
+// The guest's bookings: the stays to come first, then the history of past stays.
 export default function Bookings() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
@@ -21,6 +34,14 @@ export default function Bookings() {
   useEffect(() => {
     if (query.data) pruneVouchers(query.data).catch(() => undefined);
   }, [query.data]);
+
+  const sections = useMemo(() => {
+    const { upcoming, past } = split(query.data ?? [], todayAddis());
+    return [
+      { key: 'upcoming', title: t('bookings.upcoming'), data: upcoming },
+      { key: 'past', title: t('bookings.past'), data: past },
+    ].filter((s) => s.data.length > 0);
+  }, [query.data, t]);
 
   const title = <T variant="h1" style={{ padding: spacing.lg }}>{t('bookings.title')}</T>;
 
@@ -49,14 +70,18 @@ export default function Bookings() {
       ) : query.isError ? (
         <EmptyState icon="⚠️" title={t('bookings.error_title')} body={t('results.error_body')} actionLabel={t('common.retry')} onAction={() => query.refetch()} />
       ) : (
-        <FlatList
-          data={query.data}
+        <SectionList
+          sections={sections}
           keyExtractor={(b) => b.id}
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
+          stickySectionHeadersEnabled={false}
           refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} tintColor={colors.primary} />}
           ListEmptyComponent={
             <EmptyState icon="🎫" title={t('bookings.empty_title')} body={t('bookings.empty_body')} actionLabel={t('bookings.find')} onAction={() => router.navigate('/')} />
           }
+          renderSectionHeader={({ section }) => (
+            <T variant="h3" color={colors.inkSoft} style={{ marginTop: spacing.md, marginBottom: spacing.sm }}>{section.title}</T>
+          )}
           renderItem={({ item: b, index }) => (
             <Reveal index={index}>
             <PressableScale
