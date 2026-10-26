@@ -6,7 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { nightsBetween, type Amenity, type RoomOption, type RoomType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Animated, Badge, Button, Chip, EmptyState, Reveal, T, colors, radius, spacing, useBounce } from '@bookdan/ui';
-import { useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { Extrapolation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Photo } from '../../src/Photo';
 import { PhotoCarousel, PhotoGallery } from '../../src/PhotoCarousel';
 import { RatingSummary } from '../../src/RatingSummary';
@@ -38,6 +38,17 @@ const LOW_STOCK = 3; // "Only 3 left" appears at this many rooms or fewer
 
 type Section = 'overview' | 'amenities' | 'reviews' | 'rules';
 
+/** A small tag on a room: what comes with it, such as breakfast or free cancellation. */
+function RoomTag({ label, tone }: { label: string; tone?: 'good' | 'warn' }) {
+  const good = tone === 'good';
+  const warn = tone === 'warn';
+  return (
+    <View style={{ paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.pill, borderWidth: 1, borderColor: good ? colors.success : warn ? colors.warning : colors.line, backgroundColor: good ? colors.successSoft : warn ? colors.warningSoft : colors.surface }}>
+      <T variant="label" color={good ? colors.success : warn ? colors.warning : colors.inkSoft}>{label}</T>
+    </View>
+  );
+}
+
 function RoomCard({ room, nights, rooms, onSelect }: { room: RoomType; nights: number; rooms: number; onSelect: (o: RoomOption) => void }) {
   const { t } = useTranslation();
   // The hotel's extras (breakfast, non-refundable) show as choices; a room with none shows just its price.
@@ -62,7 +73,12 @@ function RoomCard({ room, nights, rooms, onSelect }: { room: RoomType; nights: n
         ) : null}
         <View style={{ flex: 1 }}>
           <T variant="h3">{room.name}</T>
-          <T variant="small" color={colors.inkSoft}>{t('property.sleeps', { count: room.capacity })} · {amenities.join(' · ')}</T>
+          <T variant="small" color={colors.inkSoft}>{t('property.sleeps', { count: room.capacity })}</T>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs }}>
+            {option.meal === 'breakfast' ? <RoomTag label={t('property.tag_breakfast_incl')} tone="good" /> : null}
+            {option.refundable ? <RoomTag label={t('property.tag_free_cancel')} tone="good" /> : <RoomTag label={t('property.tag_nonref')} tone="warn" />}
+            {amenities.slice(0, 2).map((a) => <RoomTag key={a} label={a} />)}
+          </View>
           {room.rooms_left > 0 && room.rooms_left <= LOW_STOCK
             ? <T variant="label" color={colors.danger} style={{ marginTop: spacing.xs }}>⚑ {t('property.rooms_left', { count: room.rooms_left })}</T>
             : null}
@@ -129,6 +145,11 @@ export default function PropertyScreen() {
       ],
     };
   });
+
+  // The top bar (back, name, share, save) fades in once the photo has scrolled away.
+  const barStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [heroHeight * 0.55, heroHeight * 0.8], [0, 1], Extrapolation.CLAMP),
+  }));
 
   useEffect(() => { if (p.id) addRecentlyViewed(p.id); }, [p.id, addRecentlyViewed]);
 
@@ -294,8 +315,8 @@ export default function PropertyScreen() {
           <View {...mark('amenities')}>
             <T variant="displaySm" style={{ marginTop: spacing.xl }}>{t('property.tab_amenities')}</T>
             {/* Amenity icons, each with a caption (never icon alone) */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.md }}>
-              {(allAmenities ? prop.amenities : prop.amenities.slice(0, 8)).map((a) => (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.md, marginTop: spacing.md, paddingRight: spacing.lg }}>
+              {prop.amenities.map((a) => (
                 <View key={a} style={{ alignItems: 'center', width: 72 }}>
                   <View style={{ width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name={AMENITY_ICON[a]} size={22} color={colors.primaryInk} />
@@ -303,12 +324,7 @@ export default function PropertyScreen() {
                   <T variant="label" color={colors.inkSoft} numberOfLines={2} style={{ textAlign: 'center', marginTop: spacing.xs }}>{t(`amenity.${a}`)}</T>
                 </View>
               ))}
-            </View>
-            {prop.amenities.length > 8 ? (
-              <Pressable accessibilityRole="button" onPress={() => setAllAmenities(!allAmenities)} style={{ minHeight: 44, justifyContent: 'center', marginTop: spacing.sm }}>
-                <T color={colors.primaryInk}>{allAmenities ? t('property.amenities_less') : t('property.amenities_all', { count: prop.amenities.length })}</T>
-              </Pressable>
-            ) : null}
+            </ScrollView>
           </View>
 
           <T variant="displaySm" style={{ marginTop: spacing.xl }}>{t('property.nearby')}</T>
@@ -365,6 +381,20 @@ export default function PropertyScreen() {
           </View>
         </View>
       </Animated.ScrollView>
+
+      {/* Sticky top bar: back, the hotel's name, share and save. It fades in as the photo scrolls away. */}
+      <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingTop: insets.top + 6, paddingBottom: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.hairline }, barStyle]}>
+        <Pressable accessibilityLabel={t('common.back')} onPress={() => router.back()} hitSlop={8} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="chevron-back" size={24} color={colors.ink} />
+        </Pressable>
+        <T variant="h3" numberOfLines={1} style={{ flex: 1 }}>{prop.name}</T>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('property.share')} hitSlop={8} onPress={() => Share.share({ message: t('property.share_message', { name: prop.name, area: `${prop.area}, ${prop.city}`, rating: prop.rating ? `★ ${prop.rating.toFixed(1)} · ${prop.review_count} ${t('property.tab_reviews').toLowerCase()}\n` : '' }) }).catch(() => undefined)} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="share-social-outline" size={22} color={colors.ink} />
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('wishlist.save')} accessibilityState={{ selected: saved }} hitSlop={8} onPress={() => { if (!saved) heart.bounce(); toggleSaved(prop.id); }} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+          <Animated.View style={heart.style}><Ionicons name={saved ? 'heart' : 'heart-outline'} size={22} color={saved ? colors.favorite : colors.ink} /></Animated.View>
+        </Pressable>
+      </Animated.View>
 
       <StickyFooter>
         {cheapest !== null && cheapestRoom ? (

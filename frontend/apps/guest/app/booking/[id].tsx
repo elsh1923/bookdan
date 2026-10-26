@@ -175,10 +175,10 @@ export default function BookingScreen() {
         </View>
 
         {held && remaining !== null ? (
-          <View style={{ backgroundColor: remaining < 120_000 ? colors.warningSoft : colors.primarySoft, borderRadius: radius.md, padding: spacing.lg, alignItems: 'center' }}>
-            <T variant="label" color={colors.inkSoft}>{t('booking.time_left').toUpperCase()}</T>
-            <T numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 40, lineHeight: 52, fontFamily: fonts.bold, fontVariant: ['tabular-nums'] }} color={remaining < 120_000 ? colors.warning : colors.primaryInk}>
-              {formatCountdown(remaining)}
+          <View accessibilityLabel={t('booking.time_left')} style={{ alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: remaining < 120_000 ? colors.warningSoft : colors.primarySoft }}>
+            <Ionicons name="timer-outline" size={16} color={remaining < 120_000 ? colors.warning : colors.primaryInk} />
+            <T variant="small" color={remaining < 120_000 ? colors.warning : colors.primaryInk} style={{ fontFamily: fonts.bold, fontVariant: ['tabular-nums'] }}>
+              {t('booking.pay_before')} {formatCountdown(remaining)}
             </T>
           </View>
         ) : null}
@@ -206,6 +206,14 @@ export default function BookingScreen() {
             ) : null}
             <T variant="displaySm">{t('booking.choose_payment')}</T>
             <PaymentOption icon="card-outline" title={t('booking.chapa')} note={t('booking.chapa_note')} selected={method === 'chapa'} onPress={() => setMethod('chapa')} />
+            {/* The ways the guest can pay on Chapa's page, as small badges (text only). */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: -spacing.xs }}>
+              {['Telebirr', 'CBE Birr', 'M-Pesa', 'Bank', 'Visa / Mastercard'].map((name) => (
+                <View key={name} style={{ paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }}>
+                  <T variant="label" color={colors.inkSoft}>{name}</T>
+                </View>
+              ))}
+            </View>
             {b.pay_at_hotel && b.discount_santim === 0 ? (
               <PaymentOption icon="business-outline" title={t('booking.pay_at_hotel')} note={t('booking.pay_at_hotel_note')} selected={method === 'pay_at_hotel'} onPress={() => setMethod('pay_at_hotel')} />
             ) : null}

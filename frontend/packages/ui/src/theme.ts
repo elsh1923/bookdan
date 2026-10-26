@@ -13,6 +13,7 @@ export const colors = {
   inkSoft: '#475569', // slate-600 for body copy
   muted: '#64748B', // slate-500 for labels
   line: '#E2E8F0', // slate-200 borders
+  borderStrong: '#CBD5E1', // slate-300, the outline of secondary buttons
   hairline: '#F1F5F9', // slate-100 faint separators inside cards
   surface: '#FFFFFF',
   background: '#F8FAFC', // off-white page background
@@ -59,12 +60,12 @@ export const shadow = {
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
-  // A soft terracotta glow under primary buttons.
+  // A soft terracotta lift under primary buttons: visible, but not a glow.
   button: {
     shadowColor: '#E05A47',
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
 };

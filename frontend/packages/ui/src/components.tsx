@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import React, { createContext, useContext } from 'react';
 import {
   ActivityIndicator,
@@ -13,7 +12,7 @@ import {
   StyleProp,
 } from 'react-native';
 import { PressableScale } from './motion';
-import { colors, fonts, gradients, MIN_TOUCH, radius, shadow, spacing } from './theme';
+import { colors, fonts, radius, shadow, spacing } from './theme';
 
 type Variant = 'display' | 'displaySm' | 'h1' | 'h2' | 'h3' | 'body' | 'small' | 'label';
 
@@ -81,26 +80,21 @@ export function Button({
       scaleTo={0.96}
       style={[
         styles.button,
-        variant === 'secondary' && { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary },
+        // Primary: a solid terracotta fill with a soft lift. Secondary: white with a fine slate border. Ghost: text only.
+        primary && { backgroundColor: colors.primary },
+        variant === 'secondary' && { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
+        variant === 'ghost' && { minHeight: 44, paddingHorizontal: spacing.md },
         primary && !disabled && shadow.button,
         { opacity: disabled ? 0.5 : 1 },
         style,
       ]}
     >
-      {primary ? (
-        <LinearGradient
-          colors={gradients.primary}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: radius.md }}
-        />
-      ) : null}
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          {icon ? <Ionicons name={icon} size={20} color={fg} /> : null}
-          <T variant="h3" color={fg} style={{ textAlign: 'center' }}>{title}</T>
+          {icon ? <Ionicons name={icon} size={19} color={fg} /> : null}
+          <T variant="h3" color={fg} style={{ textAlign: 'center', fontFamily: fonts.medium, letterSpacing: 0.2 }}>{title}</T>
         </View>
       )}
     </PressableScale>
@@ -185,9 +179,9 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: MIN_TOUCH,
+    minHeight: 54, // a comfortable tap target, a little taller than the old buttons
     paddingHorizontal: spacing.xl,
-    borderRadius: radius.md,
+    borderRadius: 14, // softly rounded, between the chips and the cards
     alignItems: 'center',
     justifyContent: 'center',
   },
