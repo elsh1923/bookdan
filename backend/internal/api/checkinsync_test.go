@@ -34,6 +34,7 @@ func TestCheckInsMadeOfflineAreAppliedWhenTheHotelIsBackOnline(t *testing.T) {
 
 	// A stay that is under way: the guest's voucher was scanned an hour ago while the hotel had no internet.
 	id, ref, token, _ := confirmedBooking(t, g, hotel, 0, 2, fmt.Sprintf("off-1-%d", n))
+	defer releaseNights(id)
 	at := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
 	r := syncCheckins(desk, map[string]string{"token": token, "at": at})
 	if r.status != 200 || strings.Join(resultsOf(r), ",") != "checked_in" {
@@ -72,7 +73,8 @@ func TestOfflineCheckInsThatCannotBeAppliedAreReportedOneByOne(t *testing.T) {
 	desk := receptionist(t, admin, "off2desk") // staff of Meskel only
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, _, good, _ := confirmedBooking(t, g, hotel, 0, 2, fmt.Sprintf("off2-1-%d", n))
+	gid, _, good, _ := confirmedBooking(t, g, hotel, 0, 2, fmt.Sprintf("off2-1-%d", n))
+	defer releaseNights(gid)
 	cid, _, cancelled, _ := confirmedBooking(t, g, hotel, 40, 42, fmt.Sprintf("off2-2-%d", n))
 	if c := g.do("POST", "/bookings/"+cid+"/cancel", nil); c.status != 200 {
 		t.Fatalf("cancel: %d", c.status)

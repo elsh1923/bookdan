@@ -688,7 +688,7 @@ const en = {
     nothing_paid: 'You have not paid anything online, so there is nothing to refund.',
     keep: 'Keep booking',
     confirm: 'Yes, cancel',
-    too_late: 'The stay has started, so it can no longer be cancelled here. Please contact the hotel.',
+    too_late: 'This stay has started or is over, so it can no longer be cancelled here. Please contact the hotel.',
     failed: 'We could not cancel it. Please try again.',
   },
   review: {

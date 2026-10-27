@@ -416,8 +416,8 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 		b.CanCancel, b.RefundIfCancelled = true, paid
 	}
 	// What cancelling would do right now (the server decides; the app only shows it).
-	checkInAt, until := cancelWindow(in)
-	if open := s.now().Before(checkInAt); open && (b.Status == "PAID_AWAITING_HOTEL" || b.Status == "CONFIRMED") {
+	_, until := cancelWindow(in)
+	if open := s.now().Before(cancelDeadline(out)); open && (b.Status == "PAID_AWAITING_HOTEL" || b.Status == "CONFIRMED") {
 		b.CanCancel = true
 		// A non-refundable booking gets nothing back once the hotel has confirmed it (before that, everything).
 		if b.Status == "PAID_AWAITING_HOTEL" || (b.Refundable && !s.now().After(until)) {

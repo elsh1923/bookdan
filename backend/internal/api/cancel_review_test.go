@@ -2,8 +2,10 @@ package api_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ledgerNetFor returns, per account, what a booking's money entries add up to.
@@ -258,4 +260,44 @@ func TestReviewsNeedACompletedStayAndComeOncePerBooking(t *testing.T) {
 	if prop := d.body["property"].(map[string]any); prop["rating"] == nil || prop["review_count"].(float64) < 1 {
 		t.Fatalf("the hotel's rating must include it: %v", prop["rating"])
 	}
+}
+
+// A guest who booked for tonight (or whose check-in time has passed) but has not been checked in can still cancel: no refund, and the hotel, which kept
+// the room, can be paid for it.
+func TestAGuestNotYetCheckedInCanStillCancelWithNoRefundAndTheHotelIsPaid(t *testing.T) {
+	admin := adminClient(t)
+	guest := newClient(t, "guest")
+	guest.signIn("email", uniqueEmail("c6"))
+	withProfile(guest)
+	hotel := hotelFor(t)
+	id, _, _, _ := confirmedBooking(t, guest, hotel, 0, 2, fmt.Sprintf("key-cancel-6-%d", time.Now().UnixNano())) // check-in today: inside the 48 hours
+	b := guest.do("GET", "/bookings/"+id, nil)
+	if b.body["can_cancel"] != true || b.num("refund_if_cancelled_santim") != 0 {
+		t.Fatalf("until the guest is checked in the app offers cancelling, with no refund: %s", b.raw)
+	}
+	_, upcoming0, _, _ := hotelMoney(t, admin, meskel)
+	ready0, _, _, _ := hotelMoney(t, admin, meskel)
+	r := guest.do("POST", "/bookings/"+id+"/cancel", nil)
+	if r.status != 200 || r.str("status") != "CANCELLED_REFUNDED" || r.num("refund_santim") != 0 {
+		t.Fatalf("cancel: %d %s", r.status, r.raw)
+	}
+	ready1, upcoming1, _, _ := hotelMoney(t, admin, meskel)
+	if ready1 <= ready0 || upcoming1 >= upcoming0 {
+		t.Errorf("the hotel keeps its share and it becomes payable: ready %d -> %d, upcoming %d -> %d", ready0, ready1, upcoming0, upcoming1)
+	}
+
+	// Once the hotel has checked the guest in there is no cancelling.
+	id2, _, _, _ := confirmedBooking(t, guest, hotel, 0, 2, fmt.Sprintf("key-cancel-6b-%d", time.Now().UnixNano()))
+	defer releaseNights(id2)
+	if c := hotel.do("POST", "/partner/bookings/"+id2+"/check-in", nil); c.status != 200 {
+		t.Fatalf("check-in: %d %s", c.status, c.raw)
+	}
+	if x := guest.do("POST", "/bookings/"+id2+"/cancel", nil); x.status != 409 {
+		t.Errorf("a checked-in guest cannot cancel: %d %s", x.status, x.raw)
+	}
+}
+
+// releaseNights gives a booking's rooms back after a test that needed a stay under way today, so the tests that follow find the 5 rooms free.
+func releaseNights(id string) {
+	pool.Exec(context.Background(), `UPDATE inventory i SET booked = booked - 1 FROM bookings b WHERE b.id = $1 AND i.room_type_id = b.room_type_id AND i.night >= b.check_in AND i.night < b.check_out AND i.booked > 0`, id)
 }

@@ -16,7 +16,8 @@ import (
 // Cancellation rules (decided by the owner):
 //   - before the hotel has answered, the guest can cancel and gets everything back;
 //   - once the hotel has confirmed, a full refund until 48 hours before check-in, nothing after that;
-//   - check-in time is 12:00 Addis Ababa time on the check-in date; from then on a booking can no longer be cancelled;
+//   - a guest the hotel has not checked in yet can still cancel after check-in time, until the check-in window closes (06:00 on the check-out day);
+//     with no refund, because the refund stops 48 hours before check-in. Once the hotel has checked the guest in, or the stay is over, there is no cancel;
 //   - a booking paid at the hotel has no deposit, so there is nothing to refund.
 const (
 	freeCancelBeforeCheckIn = 48 * time.Hour
@@ -27,6 +28,12 @@ const (
 func cancelWindow(checkIn time.Time) (checkInAt, fullRefundUntil time.Time) {
 	checkInAt = time.Date(checkIn.Year(), checkIn.Month(), checkIn.Day(), checkInHour, 0, 0, 0, time.UTC).Add(-3 * time.Hour)
 	return checkInAt, checkInAt.Add(-freeCancelBeforeCheckIn)
+}
+
+// cancelDeadline is the last moment a guest who has not been checked in can still cancel: 06:00 Addis Ababa time on the check-out date, the same moment
+// the hotel's check-in window closes.
+func cancelDeadline(checkOut time.Time) time.Time {
+	return time.Date(checkOut.Year(), checkOut.Month(), checkOut.Day(), 6, 0, 0, 0, time.UTC).Add(-3 * time.Hour)
 }
 
 // unbookRooms gives back rooms that were already confirmed (booked), as opposed to held.
@@ -55,10 +62,11 @@ func (s *Server) cancelBooking(w http.ResponseWriter, r *http.Request) error {
 			return fail(http.StatusConflict, codeInvalidState, "This booking cannot be cancelled")
 		}
 		now := s.now()
-		checkInAt, until := cancelWindow(in)
-		// A guest whose hotel cannot host them may always cancel, and is refunded in full.
-		if status != "NEEDS_RELOCATION" && !now.Before(checkInAt) {
-			return fail(http.StatusConflict, codeCancelTooLate, "The stay has started, so the booking can no longer be cancelled here. Contact the hotel.")
+		_, until := cancelWindow(in)
+		// A guest whose hotel cannot host them may always cancel, and is refunded in full. Otherwise cancelling stays possible until the guest is
+		// checked in (a CHECKED_IN booking is not in the list above) or the check-in window has closed.
+		if status != "NEEDS_RELOCATION" && !now.Before(cancelDeadline(out)) {
+			return fail(http.StatusConflict, codeCancelTooLate, "The stay is over, so the booking can no longer be cancelled here. Contact the hotel.")
 		}
 
 		// How much comes back: everything while the hotel has not answered; after it confirmed, everything until 48 hours before check-in.

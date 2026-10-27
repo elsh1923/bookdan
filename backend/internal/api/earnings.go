@@ -17,7 +17,7 @@ import (
 // For each online-paid booking the ledger holds the hotel's share (property_payable), BookDan's commission and the VAT on it.
 // A cancelled booking reverses all of it, so its share is zero. A hotel's money is in one of three states:
 //   - upcoming: a confirmed stay that has not happened yet (the guest can still cancel, so it is not payable);
-//   - ready:    the guest has checked in, or the stay is over: payable;
+//   - ready:    the guest has checked in, or the stay is over, or the guest cancelled too late for a refund (the hotel keeps its share): payable;
 //   - paid:     already transferred to the hotel (hotel_payouts).
 // What BookDan owes the hotel today is ready minus paid. Bookings paid at the hotel never pass through BookDan, so they are not here.
 
@@ -29,7 +29,7 @@ const bookingMoneySQL = `
 	       coalesce(sum(-e.amount_santim) FILTER (WHERE e.account_code = 'vat_on_commission_payable'), 0)::bigint AS vat,
 	       coalesce(sum(e.amount_santim) FILTER (WHERE e.account_code IN ('guest_deposits_held', 'coupon_expense') AND t.kind = 'booking_confirmed'), 0)::bigint AS gross,
 	       coalesce(sum(e.amount_santim) FILTER (WHERE e.account_code = 'coupon_expense' AND t.kind = 'booking_confirmed'), 0)::bigint AS discount,
-	       (b.status IN ('CHECKED_IN', 'COMPLETED', 'NO_SHOW') OR (b.status = 'CONFIRMED' AND b.check_out <= (now() AT TIME ZONE 'Africa/Addis_Ababa')::date)) AS ready
+	       (b.status IN ('CHECKED_IN', 'COMPLETED', 'NO_SHOW', 'CANCELLED_REFUNDED') OR (b.status = 'CONFIRMED' AND b.check_out <= (now() AT TIME ZONE 'Africa/Addis_Ababa')::date)) AS ready
 	FROM bookings b JOIN ledger_transactions t ON t.booking_id = b.id JOIN ledger_entries e ON e.transaction_id = t.id
 	WHERE ($1::uuid[] IS NULL OR b.property_id = ANY($1::uuid[]))
 	GROUP BY b.id
