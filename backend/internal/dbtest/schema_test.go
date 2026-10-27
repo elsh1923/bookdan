@@ -533,8 +533,8 @@ func TestEveryTableHasRowLevelSecurity(t *testing.T) {
 func TestReferenceDataIsInPlace(t *testing.T) {
 	var accounts int
 	conn.QueryRow(`SELECT count(*) FROM app.ledger_accounts`).Scan(&accounts)
-	if accounts != 7 { // six for the money flow, plus the cost of coupons
-		t.Fatalf("expected 7 ledger accounts, got %d", accounts)
+	if accounts != 8 { // six for the money flow, plus the cost of coupons and the cost of disputes BookDan settles itself
+		t.Fatalf("expected 8 ledger accounts, got %d", accounts)
 	}
 	var confirmed bool
 	if err := conn.QueryRow(`SELECT confirmed FROM app.pricing_config`).Scan(&confirmed); err != nil || confirmed {

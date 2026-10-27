@@ -63,6 +63,8 @@ func (s *Server) checkinState(ctx context.Context, q querier, id string) (string
 		return "cancelled", nil
 	case "PAID_AWAITING_HOTEL":
 		return "waiting", nil
+	case "DISPUTED":
+		return "disputed", nil
 	}
 	return "not_ready", nil
 }
@@ -72,6 +74,7 @@ var checkinRefusals = map[string]string{
 	"ended":     "This stay is over: it can no longer be checked in.",
 	"cancelled": "This booking was cancelled or declined.",
 	"waiting":   "The hotel has not accepted this booking yet. Accept it first.",
+	"disputed":  "The guest has opened a dispute about this booking. BookDan support is looking into it: do not check the guest in until it is settled.",
 	"not_ready": "This booking cannot be checked in.",
 }
 

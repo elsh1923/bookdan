@@ -117,11 +117,19 @@ func (s *Server) Routes(root chi.Router) {
 			r.Post("/bookings/{id}/pay", s.h(s.payBooking))
 			r.Post("/bookings/{id}/cancel", s.h(s.cancelBooking))
 			r.Post("/bookings/{id}/review", s.h(s.submitReview))
+			r.Post("/bookings/{id}/dispute", s.h(s.raiseDispute))
 			r.Get("/bookings/{id}/voucher", s.h(s.voucher))
 			r.Put("/me/devices/push-token", s.h(s.registerPushToken("guest")))
 			r.Get("/me/profile", s.h(s.getProfile))
 			r.Put("/me/profile", s.h(s.putProfile))
 			r.Delete("/me/profile", s.h(s.deleteProfile))
+			r.Delete("/me/account", s.h(s.deleteAccount))
+			r.Get("/me/export", s.h(s.exportAccount))
+			r.Post("/support/tickets", s.h(s.createTicket))
+			r.Get("/support/tickets", s.h(s.listTickets))
+			r.Get("/support/tickets/{id}", s.h(s.getTicket))
+			r.Post("/support/tickets/{id}/messages", s.h(s.replyTicket))
+			r.Post("/support/tickets/{id}/close", s.h(s.closeTicket))
 		})
 
 		r.Route("/partner", func(r chi.Router) {
@@ -197,6 +205,16 @@ func (s *Server) authenticate(app string) func(http.Handler) http.Handler {
 			}
 			c, err := s.keys.VerifyJWT(token, s.now())
 			if err != nil || c.App != app {
+				return errAuth
+			}
+			// A valid signature is not enough: the account must still be active and the phone not revoked, so signing out, closing an account or
+			// suspending a user ends access at once, not when the token expires.
+			var live bool
+			if err := s.pool.QueryRow(r.Context(), `SELECT u.status = 'active' AND (d.id IS NULL OR d.revoked_at IS NULL) FROM users u
+				LEFT JOIN devices d ON d.id = NULLIF($2, '')::uuid WHERE u.id = $1`, c.Sub, c.Dev).Scan(&live); err != nil || !live {
+				if err != nil && err != pgx.ErrNoRows {
+					return err
+				}
 				return errAuth
 			}
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), claimsKey, c)))

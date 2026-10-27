@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Pressable, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ApiError } from '@bookdan/api-client';
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES, useTranslation } from '@bookdan/i18n';
 import { maskId } from '@bookdan/domain';
 import { Badge, Button, Chip, PressableScale, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
@@ -13,6 +14,23 @@ import { usePrefs } from '../../src/store';
 
 export default function Profile() {
   const { t, i18n } = useTranslation();
+  // Closing the account is permanent, so it asks twice: a plain question, then the explanation of what goes and what stays.
+  const askDelete = () =>
+    Alert.alert(t('account.delete_title'), t('account.delete_body'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('account.delete_confirm'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.deleteAccount();
+            await signOutAndWipe();
+          } catch (e) {
+            Alert.alert(t('account.delete_title'), e instanceof ApiError && e.code === 'ACTIVE_BOOKINGS' ? t('account.delete_active') : t('results.error_body'));
+          }
+        },
+      },
+    ]);
   const { setLanguage, currency, setCurrency } = usePrefs();
   const router = useRouter();
   const identity = useAuth((s) => s.identity);
@@ -43,6 +61,17 @@ export default function Profile() {
       </PressableScale>
       </Reveal>
 
+      <Reveal index={3}>
+      <PressableScale scaleTo={0.98} onPress={() => router.push('/support')} accessibilityRole="button" style={{ marginTop: spacing.md, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }}>
+        <Ionicons name="chatbubbles-outline" size={22} color={colors.primaryInk} />
+        <View style={{ flex: 1 }}>
+          <T variant="h3">{t('support.title')}</T>
+          <T variant="small" color={colors.inkSoft}>{t('support.entry_sub')}</T>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+      </PressableScale>
+      </Reveal>
+
       <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('profile.language').toUpperCase()}</T>
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
         {SUPPORTED_LANGUAGES.map((l) => (
@@ -60,6 +89,7 @@ export default function Profile() {
           <>
             <T color={colors.inkSoft}>{t('auth.signed_in_as', { who: identity.value })}</T>
             <Button variant="secondary" title={t('auth.sign_out')} onPress={() => { signOutAndWipe(); }} style={{ marginTop: spacing.sm }} />
+            <Button variant="ghost" title={t('account.delete')} onPress={askDelete} style={{ marginTop: spacing.xs }} />
           </>
         ) : (
           <Button variant="secondary" title={t('bookings.sign_in')} onPress={() => router.push('/signin')} />

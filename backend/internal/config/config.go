@@ -47,7 +47,9 @@ type Config struct {
 	// The admin web page (/admin). It is off unless ADMIN_PASSWORD is set. Platform admins are the emails in ADMIN_EMAILS and sign in
 	// with that password. Hotel owners may also use it for their own hotels, signing in with a code, but only when ADMIN_OWNERS=true:
 	// turn that on only when sign-in codes are real (a fixed demo code would let anyone in).
-	AdminEmails   []string
+	AdminEmails []string
+	// SupportEmail is where payment problems (and later guest tickets) are also sent, besides the admins. Optional.
+	SupportEmail  string
 	AdminPassword string
 	AdminOwners   bool
 	// PartnerAppURL is where hotel staff download the BookDan Partner app (a link to the APK today, the Play Store later). It goes in invitation emails.
@@ -55,6 +57,10 @@ type Config struct {
 	// IDRetentionDays is how many days after check-out a hotel keeps the full ID number of a guest before it is erased (the type and the last
 	// four characters stay). 0 = never erased. How long the law requires is the owner's decision (docs/design.md, DECISION 5).
 	IDRetentionDays int
+	// RateReadPerMin and RateWritePerMin limit requests per client address per minute: reading hotels, and taking rooms or money. 0 = off in
+	// development and tests; production uses 600 and 60 when these are unset.
+	RateReadPerMin  int
+	RateWritePerMin int
 	// PaymentWebhookSecret signs payment-gateway callbacks (HMAC-SHA256 of the body).
 	PaymentWebhookSecret string
 	// ChapaSecretKey is the secret key from the Chapa dashboard (Settings, API). Required when PAYMENT_PROVIDER=chapa. ChapaWebhookSecret is the optional
@@ -90,10 +96,13 @@ func Load() Config {
 		PushProvider:         get("PUSH_PROVIDER", "log"),
 		FCMServiceAccountB64: get("FCM_SERVICE_ACCOUNT_B64", ""),
 		AdminEmails:          splitList(get("ADMIN_EMAILS", "")),
+		SupportEmail:         get("SUPPORT_EMAIL", ""),
 		AdminPassword:        get("ADMIN_PASSWORD", ""),
 		AdminOwners:          get("ADMIN_OWNERS", "false") == "true",
 		PartnerAppURL:        get("PARTNER_APP_URL", ""),
 		IDRetentionDays:      atoi(get("ID_RETENTION_DAYS", "0")),
+		RateReadPerMin:       atoi(get("RATE_LIMIT_READ_PER_MIN", "0")),
+		RateWritePerMin:      atoi(get("RATE_LIMIT_WRITE_PER_MIN", "0")),
 		PaymentWebhookSecret: get("PAYMENT_WEBHOOK_SECRET", ""),
 		ChapaSecretKey:       get("CHAPA_SECRET_KEY", ""),
 		ChapaWebhookSecret:   get("CHAPA_WEBHOOK_SECRET", ""),

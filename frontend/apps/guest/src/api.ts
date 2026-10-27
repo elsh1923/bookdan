@@ -36,6 +36,7 @@ export const api: Api = {
   getProfile: withRefresh(raw.getProfile),
   saveProfile: withRefresh(raw.saveProfile),
   deleteProfile: withRefresh(raw.deleteProfile),
+  deleteAccount: withRefresh(raw.deleteAccount),
   createQuote: withRefresh(raw.createQuote),
   createHold: withRefresh(raw.createHold),
   startPayment: withRefresh(raw.startPayment),

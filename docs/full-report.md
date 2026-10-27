@@ -1,0 +1,129 @@
+# BookDan: full status report (27 October 2026)
+
+Covers the backend, the guest app, the partner (hotel) app and the admin portal. Sources: the audit (`audit-phase-a.md`), the logic review (`logic-review.md`), and a hands-on browser test of all three front ends on 27 October.
+
+## 1. What exists
+
+| Part | What it does | State |
+|---|---|---|
+| Backend (Go, PostgreSQL) | Search, quotes, holds, payments, hotel answers, cancellations, refunds, ledger, check-in, reviews, notifications, admin API | Built, tested, deployed on Render + Supabase |
+| Guest app (Expo, Android first) | Search with filters and map, hotel page, checkout with review card, Chapa payment, bookings (upcoming/past), saved, voucher with QR, reviews, other dates, account export and deletion, English and Amharic | Built; tested in a browser and on a phone earlier |
+| Partner app (Expo) | Hotel staff sign-in, booking list, accept/decline, QR and PIN check-in, rooms chart and blocks, earnings, alerts, English and Amharic | Built; tested in a browser |
+| Admin portal (web, `/admin`) | Hotels, rooms, prices, photos, map pin, staff, business and payout details, coupons, payouts, payment issues | Built; tested in a browser |
+
+## 2. Test results
+
+**Backend automated tests:** every package passes. The audit suite has 55 tests: 54 pass, 1 skipped (non-Latin names, needs a UTF-8 database).
+
+| Area | Result |
+|---|---|
+| Search (words, filters, dates, past and far-future dates, paging, 1,000 searches with 100 workers) | Pass |
+| Pricing, coupons (any letter case), currency | Pass |
+| Booking creation, holds, idempotency | Pass |
+| Concurrency: 60 guests at once, 20 simultaneous cancels, accept racing cancel | Pass; no oversold room, one refund |
+| Payments: duplicate, late and out-of-order results, amount mismatch alert, refund retry | Pass (after fixing F1) |
+| Cancellation and refunds | Pass |
+| Authorization (guest, hotel, admin, deleted or revoked accounts) | Pass |
+| Hotel side, notifications sent once, mail outage does not undo a booking | Pass |
+| Reviews: bounds, ownership, one per stay | Pass |
+| Logs hold no tokens or query secrets | Pass |
+| Rate limits and security headers | Pass |
+
+**Bugs found and fixed during this work** (all covered by tests now):
+1. Money received after a payment was recorded as failed was ignored (F1).
+2. Hiding a hotel with future bookings gave the admin no warning (F2).
+3. Earlier audit: 8 failures (search validation, past and far dates, logout and suspension not ending access at once, no payment-mismatch alert, and others). All fixed.
+
+**Hands-on browser test (27 October):**
+- Admin portal: hide-hotel warning and confirm, payment issues screen, hotel list. Works.
+- Partner app: sign-in, bookings, check-in, rooms, earnings, settings. Works.
+- Guest app: home, results, "other dates that work", opening an alternative stay, email sign-in, profile. Works.
+
+## 3. Not tested yet (and why)
+
+| Item | Why | What it needs |
+|---|---|---|
+| Real Chapa live payments | Only test mode and a fake Chapa were used | Chapa live activation, then one small real payment and refund |
+| Delete-account confirmation dialog | The dialog does nothing in a browser | One tap on an Android phone |
+| Real SMS and email delivery at scale | No SMS provider; email only checked with a test sender | Provider decision and real addresses |
+| Non-Latin hotel names in search (Amharic, Arabic) | The local test database is not UTF-8 | A check on Supabase or a UTF-8 test database |
+| Load against the real database | The 60-guest spike ran locally (p99 about 150 ms) | A staging copy of Supabase |
+| Push alerts on real phones with the latest build | Needs devices | A phone test |
+| Migration down and up with real data | Hard to automate | A manual rehearsal on a copy |
+| Backups and restore | Not set up | Supabase point-in-time recovery, then a restore test |
+| iOS | Android first | Apple developer account and a build |
+| Partner app visual redesign | Only fonts and colours changed | Design work |
+
+## 4. Features that are NOT built
+
+**Guest side**
+- Changing the dates of a booking.
+- Raising a dispute or complaint.
+- A support button, help chat or support tickets.
+- Phone (SMS) sign-in. Email sign-in only.
+- Offline use.
+- Paying with other currencies (ETB only).
+- Airport transfers and other add-ons.
+
+**Hotel side**
+- Hotel cancelling a confirmed booking, with a rule for what happens to the guest.
+- Relocating a guest to another hotel (the state exists in the database; nothing sets it).
+- Disputes (the state exists in the database; nothing sets it).
+- Offline check-in when the hotel has no internet.
+- Monthly statements for hotels.
+- Replying to guest reviews.
+- Hotel self-signup (admins create hotels).
+- A support channel for hotels.
+
+**Payments and money**
+- Pay at hotel records no commission and holds no money. The model (deposit plus balance at the hotel, or an invoice to the hotel) is undecided.
+- Direct Telebirr integration (Telebirr is reached through Chapa).
+- Partial refunds on a dispute; automated payouts to hotels (admin sees payouts; transfer is manual).
+
+**Admin and operations**
+- Admin "Calls" tab and hiding the hotel phone number until booking (agreed in principle, paused).
+- Analytics dashboard (revenue, conversion, cancellations).
+- Error monitoring, alerts, a minimum-app-version check, and metrics.
+- Paged lists (guests see the latest 100 bookings, hotels 200).
+- Automatic erasure of ID numbers after a retention period (needs the legal decision, then `ID_RETENTION_DAYS`).
+
+**Launch and legal**
+- Privacy policy, terms of service and store listings.
+- Legal confirmation that deleted accounts may keep the booking, ledger and the hotel's copy of the name.
+
+## 5. Decisions still owed by you
+1. Pay at hotel: how the commission (15%) is collected.
+2. Who handles disputes, hotel cancellations and date changes, and the rules.
+3. Legal retention period for ID numbers.
+4. SMS provider, or launch with email only.
+5. Email provider (Brevo is set; Resend was compared).
+6. Whether to build the Calls tab and support button before launch.
+
+## 6. Steps before launch
+1. Push the code and let Render deploy. Confirm it builds on Go 1.27.
+2. Migration 00022 is already applied on Supabase.
+3. On Render set `SUPPORT_EMAIL` and `ADMIN_EMAILS`.
+4. Publish the guest and partner updates (`eas update`); build a new guest APK for the native splash and logo icon.
+5. Chapa live activation, live key and webhook secret.
+6. Turn on Supabase backups and test a restore.
+7. Add error monitoring (for example Sentry).
+8. Privacy policy, terms, store listings.
+9. A real-money test: book, pay, accept, cancel and refund with one small amount.
+
+## 7. Known risks
+- The rate limit trusts the proxy's address headers; an edge limit is stronger.
+- No monitoring: problems would be found by users first.
+- Pay-at-hotel bookings earn no commission until the model is decided.
+- Guests who contact hotels directly can skip the platform; the Calls tab and masked contacts were the planned answer.
+
+## 8. Progress since this report (guest-side build plan)
+
+| Step | Feature | State |
+|---|---|---|
+| 1 | Support tickets (guest app, admin Support tab, emails, deletion erases the guest's words) | Built and tested. Migration 00023 applied on Supabase. |
+| 2 | Disputes (booking frozen, admin decision: reject, refund with hotel paying, refund with BookDan paying; guest can withdraw) | Built and tested. Migration 00024 **not yet applied** on Supabase. |
+| 3 | Changing the dates of a booking | Not started |
+| 4 | Display currencies | Not started |
+| 5 | Phone (SMS) sign-in | Not started; needs an SMS provider decision |
+
+Known limits of disputes: no partial refunds; one dispute per booking; if the hotel was already paid out, "hotel pays" leaves it owing that amount against its next payout; hotels are not alerted on their phones when a dispute opens (the admin contacts them).

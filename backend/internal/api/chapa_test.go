@@ -28,6 +28,9 @@ type fakeChapa struct {
 	idem    string
 	verify  map[string]any
 	refunds []map[string]any
+	// failRefunds answers every refund with a server error until it is switched off, so a retry can be tested.
+	failRefunds bool
+	refundTries int
 }
 
 func (f *fakeChapa) handler() http.Handler {
@@ -47,6 +50,11 @@ func (f *fakeChapa) handler() http.Handler {
 	mux.HandleFunc("/v2/refunds", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if f.failRefunds {
+			f.refundTries++
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.refunds = append(f.refunds, body)
@@ -70,6 +78,7 @@ func TestChapaPaymentsAreConfirmedWithChapa(t *testing.T) {
 	const privateKey = "CHAPA_TEST_PRIV_abc"
 	const webhookSecret = "whsec-test"
 	cfg := config.Config{Env: "test", DemoMode: true, PublicURL: "http://example.test", PaymentProvider: "chapa", ChapaSecretKey: privateKey,
+		AdminPassword: "correct-horse-battery-staple", AdminEmails: []string{"admin@bookdan.test"}, SupportEmail: "support@bookdan.test",
 		DemoAccountDomains: []string{"bookdan.test", "example.com", "example.org"}}
 	gw, err := api.NewChapaGateway(privateKey, webhookSecret, cfg.PublicURL, chapaSrv.URL)
 	if err != nil {
@@ -168,6 +177,71 @@ func TestChapaPaymentsAreConfirmedWithChapa(t *testing.T) {
 		ret(ref)
 		if s := status(id); s != "HELD" {
 			t.Fatalf("a short payment must not confirm the booking, got %s", s)
+		}
+	})
+
+	t.Run("a payment that does not match is raised once for a person, who is emailed and can resolve it", func(t *testing.T) {
+		id := book(48, "chapa-issue")
+		ref := start(id)
+		fake.answer("SUCCESS", 100, "ETB") // far less than asked
+		var code string
+		pool.QueryRow(context.Background(), `SELECT code FROM bookings WHERE id = $1`, id).Scan(&code)
+		before := len(mails.to("admin@bookdan.test"))
+		ret(ref)
+		ret(ref) // checked again: nothing is raised or sent twice
+		status(id)
+		if s := status(id); s != "HELD" {
+			t.Fatalf("a mismatched payment must not confirm the booking: %s", s)
+		}
+		var issues int
+		pool.QueryRow(context.Background(), `SELECT count(*) FROM payment_issues WHERE booking_id = $1 AND kind = 'amount_mismatch' AND resolved_at IS NULL`, id).Scan(&issues)
+		if issues != 1 {
+			t.Fatalf("exactly one open issue is raised: %d", issues)
+		}
+		for _, to := range []string{"admin@bookdan.test", "support@bookdan.test"} {
+			var mine []sentMail
+			for _, m := range mails.to(to) {
+				if strings.Contains(m.subject, code) {
+					mine = append(mine, m)
+				}
+			}
+			if len(mine) != 1 || !strings.Contains(mine[0].text, "NOT confirmed") {
+				t.Fatalf("%s is emailed exactly once about %s: %v", to, code, mine)
+			}
+		}
+		_ = before
+
+		admin := adminClient(t)
+		list := admin.do("GET", "/admin/payment-issues", nil)
+		var issueID string
+		for _, it := range list.body["issues"].([]any) {
+			if m := it.(map[string]any); m["booking_code"] == code {
+				issueID = m["id"].(string)
+				if m["resolved_at"] != nil || m["kind"] != "amount_mismatch" {
+					t.Fatalf("the issue is open: %v", m)
+				}
+			}
+		}
+		if issueID == "" {
+			t.Fatalf("the admin list shows the issue: %s", list.raw)
+		}
+		if r := guest.do("GET", "/admin/payment-issues", nil); r.status != 401 && r.status != 403 {
+			t.Fatalf("a guest must not see payment issues: %d", r.status)
+		}
+		if r := admin.do("POST", "/admin/payment-issues/"+issueID+"/resolve", map[string]string{"note": "x"}); r.status != 400 {
+			t.Fatalf("a resolution needs a real note: %d", r.status)
+		}
+		if r := admin.do("POST", "/admin/payment-issues/"+issueID+"/resolve", map[string]string{"note": "Refunded the guest in Chapa, called to explain"}); r.status != 200 {
+			t.Fatalf("resolve: %d %s", r.status, r.raw)
+		}
+		if r := admin.do("POST", "/admin/payment-issues/"+issueID+"/resolve", map[string]string{"note": "again"}); r.status != 409 {
+			t.Fatalf("an issue is resolved once: %d", r.status)
+		}
+		after := admin.do("GET", "/admin/payment-issues", nil)
+		for _, it := range after.body["issues"].([]any) {
+			if m := it.(map[string]any); m["id"] == issueID && (m["resolved_at"] == nil || m["resolved_by"] != "admin@bookdan.test") {
+				t.Fatalf("the resolution records when and by whom: %v", m)
+			}
 		}
 	})
 

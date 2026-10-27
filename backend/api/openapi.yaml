@@ -57,7 +57,14 @@ paths:
   /search:
     get:
       summary: Search properties by landmark, city, name or coordinates
-      responses: { "200": { description: OK } }
+      description: |
+        Dates are optional. With check_in and check_out, they must be today or later (Addis Ababa time) and at most 365 days ahead
+        (400 otherwise); the stay is 1 to 30 nights. Every hotel that matches the words and filters is listed; a hotel with no room for the
+        whole stay has available=false ("sold out for these dates"). On the first page, other_dates lists up to 10 such hotels with up to
+        3 stays each (windows: nearby dates or part of the stay) that the hotel can sell; nothing is held by a suggestion.
+        Without dates, hotels come back with a "from" price for tonight and dates_known=false: no claim is made about rooms.
+        Reads and bookings are rate-limited per address (429 TOO_MANY_REQUESTS with Retry-After): 600 and 60 a minute by default in production.
+      responses: { "200": { description: OK }, "400": { description: Bad dates or party size }, "429": { description: Too many requests } }
   /properties/{id}:
     get:
       summary: Property detail with room types, prices and reviews
@@ -144,6 +151,102 @@ paths:
       summary: Remove the guest's ID details
       description: Deletes the profile. Copies already given to hotels for requested stays stay until the retention job erases them.
       responses: { "200": { description: OK } }
+  /me/account:
+    delete:
+      summary: Close the guest's account
+      description: |
+        Body: {"confirm": "DELETE"}. Refused with 409 ACTIVE_BOOKINGS while a booking is held, paid, confirmed or checked in (cancel first).
+        Removes the profile and full ID number, the phone numbers and notes on bookings, the text of reviews, the sign-in codes; revokes every
+        session and phone at once (existing tokens stop working immediately); frees the email address (signing in with it later starts an
+        empty account). Bookings, the ledger and the hotel's copy of the guest's name are kept as records.
+      responses: { "200": { description: OK }, "400": { description: Missing confirmation }, "409": { description: ACTIVE_BOOKINGS } }
+  /me/export:
+    get:
+      summary: Everything the app holds about the guest, as one JSON document
+      description: email, phone, profile (ID masked to the last four characters), bookings and reviews. Never the full ID number.
+      responses: { "200": { description: OK } }
+  /bookings/{id}/dispute:
+    post:
+      summary: Challenge a charge or a stay
+      description: |
+        Body: {"reason": "not_as_described", "refused_entry", "charged_wrong", "no_show_wrong" or "other", "message": 10 to 2000 characters}.
+        The booking becomes DISPUTED (its money is held back from the hotel) and a support request of kind dispute carries the conversation
+        (booking.dispute_ticket_id). Allowed once per booking, from the start of the stay until 14 days after check-out (booking.can_dispute).
+        Closing the support request withdraws the dispute and the booking goes back to its status. 409: INVALID_STATE (the stay has not started),
+        DISPUTE_WINDOW_CLOSED, DISPUTE_EXISTS.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: The booking }, "400": { description: Invalid }, "404": { description: Not the guest's booking }, "409": { description: See above } }
+  /admin/support/tickets/{id}/resolve:
+    post:
+      summary: Settle a dispute (platform admin only)
+      description: |
+        Body: {"outcome": "rejected" | "refunded_hotel_pays" | "refunded_platform_pays", "note": 3 to 1000 characters, shown to the guest}.
+        rejected: the booking goes back to its status. refunded_hotel_pays: the guest is refunded in full and the hotel's share and the commission
+        are reversed (the booking is cancelled). refunded_platform_pays: the guest is refunded in full from BookDan's money (ledger expense
+        dispute_expense) and the hotel keeps its share. A refund needs an online payment (400 NO_PAYMENT otherwise). Partial refunds are not built.
+        The guest is emailed the decision. 409 when it is not a dispute or is already settled. Closing a dispute with /close is refused (DISPUTE_OPEN).
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "400": { description: Invalid }, "409": { description: Not an open dispute } }
+  /support/tickets:
+    post:
+      summary: Ask support a question or report a problem
+      description: |
+        Body: {"kind": "question" or "problem", "subject": 3 to 120 characters, "message": 1 to 2000 characters, "booking_id": optional, must be the guest's own booking (else 404)}.
+        409 TOO_MANY_TICKETS at five requests still waiting. The admins and SUPPORT_EMAIL are emailed.
+      responses: { "200": { description: "{id}" }, "400": { description: Invalid }, "404": { description: Not the guest's own booking }, "409": { description: TOO_MANY_TICKETS } }
+    get:
+      summary: The guest's own requests, newest activity first (at most 50)
+      responses: { "200": { description: "{tickets: [...]}" } }
+  /support/tickets/{id}:
+    get:
+      summary: One request with its messages (staff appear only as Support)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: "{ticket}" }, "404": { description: Not found, or not the guest's own } }
+  /support/tickets/{id}/messages:
+    post:
+      summary: Reply on a request (reopens an answered one)
+      description: 'Body: {"message": 1 to 2000 characters}. 409 INVALID_STATE when it is closed.'
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "404": { description: Not found }, "409": { description: Closed } }
+  /support/tickets/{id}/close:
+    post:
+      summary: Close a request (closing twice is harmless)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "404": { description: Not found } }
+  /admin/support/tickets:
+    get:
+      summary: The support queue (platform admin only)
+      description: Open requests first, then answered, then closed; at most 200. Includes the guest's contact.
+      responses: { "200": { description: "{tickets: [...]}" } }
+  /admin/support/tickets/{id}:
+    get:
+      summary: One request with its messages (platform admin only)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: "{ticket}" }, "404": { description: Not found } }
+  /admin/support/tickets/{id}/reply:
+    post:
+      summary: Answer a request; the guest is emailed (platform admin only)
+      description: 'Body: {"message": 1 to 2000 characters}. 409 when the request is closed.'
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "409": { description: Closed } }
+  /admin/support/tickets/{id}/close:
+    post:
+      summary: Close a request (platform admin only)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK } }
+  /admin/payment-issues:
+    get:
+      summary: Payments that need a person (platform admin only)
+      description: |
+        Today one kind, amount_mismatch: the gateway reports a payment whose amount or currency is not what was asked, so the booking was
+        NOT confirmed. Open issues first, then the last 50 resolved. The admins (ADMIN_EMAILS) and SUPPORT_EMAIL are emailed once when one is raised.
+      responses: { "200": { description: OK } }
+  /admin/payment-issues/{id}/resolve:
+    post:
+      summary: Mark a payment issue resolved (platform admin only)
+      description: 'Body: {"note": "what was decided"} (3 to 1000 characters). 409 if it is already resolved.'
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "400": { description: Note missing }, "409": { description: Already resolved } }
   /partner/bookings/{id}/guest/reveal:
     post:
       summary: Show the full ID number of the guest on one booking

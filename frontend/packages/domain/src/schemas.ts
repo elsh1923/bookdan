@@ -21,6 +21,16 @@ export const ALL_AMENITIES = AmenitySchema.options;
 /** A well-known place and how far it is from a hotel, in metres. */
 export const PlaceRefSchema = z.object({ name: z.string(), name_am: z.string().optional(), distance_m: z.number().int() });
 
+/** A stay a sold-out hotel can still offer: nearby dates, or part of the stay. The price is per night for the first night; the quote gives the exact total. */
+export const AltWindowSchema = z.object({
+  check_in: z.string(),
+  check_out: z.string(),
+  nights: z.number().int(),
+  from_price_santim: z.number().int(),
+  currency: CurrencySchema,
+});
+export type AltWindow = z.infer<typeof AltWindowSchema>;
+
 export const SearchItemSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -49,6 +59,8 @@ export const SearchItemSchema = z.object({
   nonrefundable: z.boolean().default(false),
   /** How many minutes the hotel usually takes to answer a request (null until it has answered a few). */
   reply_minutes: z.number().int().nullable().default(null),
+  /** Only in the "other dates" list: stays this hotel can still sell when it is full for the whole stay asked for. */
+  windows: z.array(AltWindowSchema).default([]),
 });
 
 /** One place suggestion as the guest types: a landmark, area or city to search for, or a hotel to open. */
@@ -73,6 +85,8 @@ export const SearchResponseSchema = z.object({
   price_min_santim: z.number().int().default(0),
   price_max_santim: z.number().int().default(0),
   facets: z.object({ types: z.record(z.number().int()).default({}), amenities: z.record(z.number().int()).default({}) }).default({ types: {}, amenities: {} }),
+  /** Hotels that are full for the dates asked but have rooms on nearby dates, each with the stays it can sell (first page only). */
+  other_dates: z.array(SearchItemSchema).default([]),
   server_time: z.string(),
 });
 
@@ -223,6 +237,9 @@ export const BookingSchema = z.object({
   /** Whether the guest may review this stay now (after check-out), and the review they wrote. */
   can_review: z.boolean().default(false),
   review: z.object({ rating: z.number().int(), text: z.string() }).nullable().default(null),
+  /** Whether the guest may open a dispute now (once per booking; from the start of the stay to 14 days after check-out), and their dispute, if any. */
+  can_dispute: z.boolean().default(false),
+  dispute_ticket_id: z.string().nullable().default(null),
   /** The hotel's check-in and check-out times (HH:MM). */
   check_in_time: z.string().default('14:00'),
   check_out_time: z.string().default('12:00'),
@@ -289,3 +306,45 @@ export const VoucherSchema = z.object({
 });
 
 export type Voucher = z.infer<typeof VoucherSchema>;
+
+/** Support: a guest writes to the platform and support answers. One ticket is one conversation, optionally about a booking. */
+export const SupportKindSchema = z.enum(['question', 'problem', 'dispute']);
+export const SupportStatusSchema = z.enum(['open', 'answered', 'closed']);
+export const SupportMessageSchema = z.object({
+  from_staff: z.boolean(),
+  author: z.string(),
+  body: z.string(),
+  created_at: z.string(),
+});
+export const SupportTicketSchema = z.object({
+  id: z.string(),
+  kind: SupportKindSchema,
+  subject: z.string(),
+  status: SupportStatusSchema,
+  booking_id: z.string().nullable(),
+  booking_code: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  preview: z.string().optional(),
+  /** Disputes: why it was opened, and how it ended (rejected, refunded_hotel_pays, refunded_platform_pays, withdrawn). */
+  reason: z.string().nullable().optional(),
+  outcome: z.string().nullable().optional(),
+  messages: z.array(SupportMessageSchema).optional(),
+});
+export const SupportTicketListSchema = z.object({ tickets: z.array(SupportTicketSchema) });
+export const SupportTicketDetailSchema = z.object({ ticket: SupportTicketSchema });
+export const SupportTicketCreatedSchema = z.object({ id: z.string() });
+
+export const DISPUTE_REASONS = ['not_as_described', 'refused_entry', 'charged_wrong', 'no_show_wrong', 'other'] as const;
+export type DisputeReason = (typeof DISPUTE_REASONS)[number];
+
+export type SupportKind = z.infer<typeof SupportKindSchema>;
+export type SupportMessage = z.infer<typeof SupportMessageSchema>;
+export type SupportTicket = z.infer<typeof SupportTicketSchema>;
+/** What a guest can start: dispute is raised from a booking (not here). */
+export interface NewSupportTicket {
+  kind: 'question' | 'problem';
+  subject: string;
+  message: string;
+  booking_id?: string;
+}

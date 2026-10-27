@@ -2,7 +2,7 @@
 #   docker build -t bookdan-api .
 #   docker run --env-file .env -p 8080:8080 bookdan-api            # the API
 #   docker run --env-file .env bookdan-api /migrate up             # apply migrations
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

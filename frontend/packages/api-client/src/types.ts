@@ -10,7 +10,9 @@ import type {
   DeclineReason,
   GuestProfile,
   GuestProfileInput,
+  DisputeReason,
   Identity,
+  NewSupportTicket,
   PaymentMethod,
   PartnerBooking,
   PartnerBookingList,
@@ -22,6 +24,7 @@ import type {
   SearchSort,
   Suggestion,
   SearchResponse,
+  SupportTicket,
   Voucher,
 } from '@bookdan/domain';
 
@@ -134,6 +137,27 @@ export interface Api extends AuthApi {
   saveProfile(input: GuestProfileInput): Promise<GuestProfile>;
   /** Removes the guest's saved ID details. */
   deleteProfile(): Promise<void>;
+  /**
+   * Closes the guest's account for good (the profile and ID, phone numbers and notes on bookings, sessions). Fails with ACTIVE_BOOKINGS while a booking
+   * is held, paid, confirmed or checked in: cancel it first. Bookings and payment records are kept.
+   */
+  deleteAccount(): Promise<void>;
+  /**
+   * Help and support. A guest asks a question or reports a problem (optionally about their own booking) and support answers; the guest
+   * is emailed the answer. Starting one fails with TOO_MANY_TICKETS at five requests still waiting. A closed request takes no more messages.
+   */
+  listSupportTickets(): Promise<SupportTicket[]>;
+  /** One request with its messages (support's staff shown only as "Support"). */
+  getSupportTicket(id: string): Promise<SupportTicket>;
+  createSupportTicket(ticket: NewSupportTicket): Promise<{ id: string }>;
+  replySupportTicket(id: string, message: string): Promise<void>;
+  closeSupportTicket(id: string): Promise<void>;
+  /**
+   * Challenges a charge or a stay. The booking becomes DISPUTED (its money is held back from the hotel) and a support request carries the
+   * conversation (booking.dispute_ticket_id). Fails with INVALID_STATE before the stay has started, DISPUTE_WINDOW_CLOSED after
+   * 14 days past check-out, and DISPUTE_EXISTS when one was opened before. Closing the support request withdraws the dispute.
+   */
+  raiseDispute(bookingId: string, dispute: { reason: DisputeReason; message: string }): Promise<Booking>;
   /** Registers this phone for booking updates (the hotel confirmed or declined). Re-sent whenever the token changes. */
   registerPushToken(registration: PushRegistration): Promise<void>;
   /**

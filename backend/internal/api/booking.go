@@ -325,6 +325,10 @@ type bookingOut struct {
 	// Review: whether the guest may write one now, and the one they wrote.
 	CanReview bool       `json:"can_review"`
 	Review    *reviewOut `json:"review"`
+	// Dispute: whether the guest may open one now (once per booking, from the start of the stay until 14 days after check-out), and the
+	// guest's dispute on this booking, if any.
+	CanDispute      bool    `json:"can_dispute"`
+	DisputeTicketID *string `json:"dispute_ticket_id"`
 	// CheckInTime and CheckOutTime are the hotel's times (HH:MM, Addis Ababa).
 	CheckInTime  string `json:"check_in_time"`
 	CheckOutTime string `json:"check_out_time"`
@@ -349,7 +353,8 @@ const bookingSelect = `
 	                 FROM payments pay WHERE pay.booking_id = b.id ORDER BY pay.created_at DESC LIMIT 1), 'none'),
 	       COALESCE((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status = 'succeeded'), 0)::bigint,
 	       b.refund_santim, rv.rating, rv.text, to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI'),
-	       b.meal, b.refundable, cp.code, b.discount_santim, b.children, b.special_requests, b.booked_for_other, b.guest_phone
+	       b.meal, b.refundable, cp.code, b.discount_santim, b.children, b.special_requests, b.booked_for_other, b.guest_phone,
+	       (SELECT dt.id FROM support_tickets dt WHERE dt.booking_id = b.id AND dt.kind = 'dispute' ORDER BY dt.created_at DESC LIMIT 1)
 	FROM bookings b JOIN properties p ON p.id = b.property_id JOIN room_types rt ON rt.id = b.room_type_id
 	LEFT JOIN reviews rv ON rv.booking_id = b.id LEFT JOIN coupons cp ON cp.id = b.coupon_id`
 
@@ -363,10 +368,11 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.PropertyID, &b.PropertyName, &b.PropertyPhone, &b.Address, &b.RoomName,
 		&in, &out, &b.Guests, &b.Rooms, &b.GuestName, &b.Total, &b.Currency, &b.PaymentMethod, &b.PayAtHotel, &hold, &b.Payment,
 		&paid, &b.RefundSantim, &reviewRating, &reviewText, &b.CheckInTime, &b.CheckOutTime,
-		&b.Meal, &b.Refundable, &b.CouponCode, &b.DiscountSantim, &b.Children, &b.SpecialRequests, &b.BookedForOther, &b.GuestPhone); err != nil {
+		&b.Meal, &b.Refundable, &b.CouponCode, &b.DiscountSantim, &b.Children, &b.SpecialRequests, &b.BookedForOther, &b.GuestPhone, &b.DisputeTicketID); err != nil {
 		return b, err
 	}
 	b.CheckIn, b.CheckOut = pgDate(in), pgDate(out)
+	b.CanDispute = b.DisputeTicketID == nil && s.disputable(b.Status, b.CheckIn, b.CheckOut)
 	b.Nights = nightsBetween(b.CheckIn, b.CheckOut)
 	b.Meta = httpx.NowMeta()
 	// The status is derived from time as well, so a hold that ran out reads EXPIRED even before the sweeper has run.

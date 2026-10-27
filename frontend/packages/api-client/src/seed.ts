@@ -1,7 +1,7 @@
 import type { PropertyDetail } from '@bookdan/domain';
 
 // What the mock hotels are made of: the fields the server computes (rooms left, distance, nearest landmark) are added by the mock.
-type Seed = Omit<PropertyDetail['property'], 'rooms_left' | 'distance_m' | 'landmark' | 'check_in_time' | 'check_out_time' | 'breakfast' | 'nonrefundable' | 'reply_minutes' | 'description_am' | 'directions' | 'directions_am'> & { rooms: Omit<PropertyDetail['room_types'][number], 'options' | 'photos' | 'photo_thumb'>[]; reviews: PropertyDetail['reviews'] };
+type Seed = Omit<PropertyDetail['property'], 'rooms_left' | 'distance_m' | 'landmark' | 'check_in_time' | 'check_out_time' | 'breakfast' | 'nonrefundable' | 'reply_minutes' | 'description_am' | 'directions' | 'directions_am' | 'windows'> & { rooms: Omit<PropertyDetail['room_types'][number], 'options' | 'photos' | 'photo_thumb'>[]; reviews: PropertyDetail['reviews'] };
 
 const rules = ['Check-in from 12:00, check-out until 11:00', 'Valid ID required at check-in', 'No smoking inside rooms'];
 

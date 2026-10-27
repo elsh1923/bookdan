@@ -282,6 +282,30 @@ export default function BookingScreen() {
           }}
           style={{ marginTop: spacing.md }}
         />
+        {b.dispute_ticket_id ? (
+          <Button
+            variant="secondary"
+            icon="alert-circle-outline"
+            title={t('support.dispute_view')}
+            onPress={() => router.push({ pathname: '/support/[id]', params: { id: b.dispute_ticket_id as string } })}
+            style={{ marginTop: spacing.md }}
+          />
+        ) : b.can_dispute ? (
+          <Button
+            variant="secondary"
+            icon="alert-circle-outline"
+            title={t('support.dispute_open')}
+            onPress={() => router.push({ pathname: '/support/dispute', params: { booking: b.id, ref: b.reference } })}
+            style={{ marginTop: spacing.md }}
+          />
+        ) : null}
+        <Button
+          variant="ghost"
+          icon="chatbubbles-outline"
+          title={t('support.get_help')}
+          onPress={() => router.push({ pathname: '/support/new', params: { booking: b.id, ref: b.reference } })}
+          style={{ marginTop: spacing.sm }}
+        />
         <Button variant="ghost" title={t('booking.my_bookings')} onPress={goBookings} style={{ marginTop: spacing.sm }} />
       </ScrollView>
     </SafeAreaView>

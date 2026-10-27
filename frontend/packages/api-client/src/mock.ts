@@ -14,12 +14,14 @@ import {
   priceStay,
   type Booking,
   type GuestProfile,
+  type NewSupportTicket,
   type PaymentMethod,
   type PaymentSession,
   type PropertyDetail,
   type Quote,
   type SearchItem,
   type SearchResponse,
+  type SupportTicket,
   type Voucher,
 } from '@bookdan/domain';
 import { createMockAuth } from './mockAuth';
@@ -156,6 +158,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
   // and the app never gets it back; this mock keeps it so the hotel's copy can be shown in demos.
   interface ProfileRow { full_name: string; id_type: GuestProfile['id_type']; id_number: string; nationality: string; updated_at: string }
   const profiles = new Map<string, ProfileRow>();
+  const tickets: SupportTicket[] = [];
 
   // ---- optional persistence (demo only)
   let hydration: Promise<void> | null = null;
@@ -321,6 +324,23 @@ export function createMockApi(opts: MockOptions = {}): Api {
       return view(r);
     },
 
+    async raiseDispute(id, dispute) {
+      await gate();
+      const r = owned(id);
+      const v = view(r);
+      if (v.dispute_ticket_id) throw new ApiError('DISPUTE_EXISTS', 'Already disputed');
+      if (v.status !== 'CONFIRMED' && v.status !== 'CHECKED_IN' && v.status !== 'COMPLETED') throw new ApiError('INVALID_STATE', 'This booking cannot be disputed');
+      const now = new Date().toISOString();
+      const tid = `t${tickets.length + 1}`;
+      tickets.unshift({
+        id: tid, kind: 'dispute', subject: 'Dispute: ' + dispute.reason, status: 'open', booking_id: id, booking_code: v.reference, created_at: now, updated_at: now,
+        messages: [{ from_staff: false, author: 'guest', body: dispute.message, created_at: now }],
+      });
+      r.b = { ...r.b, status: 'DISPUTED', dispute_ticket_id: tid };
+      await persist();
+      return view(r);
+    },
+
     async submitReview(id, review) {
       await gate();
       const r = owned(id);
@@ -333,6 +353,58 @@ export function createMockApi(opts: MockOptions = {}): Api {
     async registerPushToken() {
       await gate();
       identityOf(); // the mock has nobody to send to; it only checks the guest is signed in
+    },
+
+    async listSupportTickets() {
+      await gate();
+      return tickets.map((t) => ({ ...t, messages: undefined, preview: t.messages?.[t.messages.length - 1]?.body.slice(0, 140) ?? '' }));
+    },
+
+    async getSupportTicket(id: string) {
+      await gate();
+      const t = tickets.find((x) => x.id === id);
+      if (!t) throw new ApiError('NOT_FOUND', 'Not found');
+      return t;
+    },
+
+    async createSupportTicket(n: NewSupportTicket) {
+      await gate();
+      if (tickets.filter((t) => t.status !== 'closed').length >= 5) throw new ApiError('TOO_MANY_TICKETS', 'Too many requests waiting');
+      const now = new Date().toISOString();
+      const id = `t${tickets.length + 1}`;
+      tickets.unshift({
+        id, kind: n.kind, subject: n.subject, status: 'open', booking_id: n.booking_id ?? null, booking_code: null, created_at: now, updated_at: now,
+        messages: [{ from_staff: false, author: 'guest', body: n.message, created_at: now }],
+      });
+      return { id };
+    },
+
+    async replySupportTicket(id: string, message: string) {
+      await gate();
+      const t = tickets.find((x) => x.id === id);
+      if (!t) throw new ApiError('NOT_FOUND', 'Not found');
+      if (t.status === 'closed') throw new ApiError('INVALID_STATE', 'Closed');
+      const now = new Date().toISOString();
+      t.messages = [...(t.messages ?? []), { from_staff: false, author: 'guest', body: message, created_at: now }];
+      t.status = 'open';
+      t.updated_at = now;
+    },
+
+    async closeSupportTicket(id: string) {
+      await gate();
+      const t = tickets.find((x) => x.id === id);
+      if (!t) throw new ApiError('NOT_FOUND', 'Not found');
+      t.status = 'closed';
+      t.updated_at = new Date().toISOString();
+    },
+
+    async deleteAccount() {
+      await gate();
+      const owner = identityOf();
+      const active = [...rows.values()].some((r) => ['HELD', 'PAID_AWAITING_HOTEL', 'CONFIRMED', 'CHECKED_IN'].includes(view(r).status));
+      if (active) throw new ApiError('ACTIVE_BOOKINGS', 'A booking is not finished');
+      profiles.delete(owner);
+      await persist();
     },
 
     async deleteProfile() {

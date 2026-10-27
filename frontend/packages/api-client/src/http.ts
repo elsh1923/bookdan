@@ -12,6 +12,9 @@ import {
   PropertyDetailSchema,
   QuoteSchema,
   SearchResponseSchema,
+  SupportTicketCreatedSchema,
+  SupportTicketDetailSchema,
+  SupportTicketListSchema,
   VoucherSchema,
   type Identity,
 } from '@bookdan/domain';
@@ -169,9 +172,22 @@ export function createHttpApi(options: HttpOptions): Api {
     deleteProfile: async () => {
       await request('DELETE', '/me/profile', null);
     },
+    listSupportTickets: async () => (await request('GET', '/support/tickets', SupportTicketListSchema)).tickets,
+    getSupportTicket: async (id) => (await request('GET', `/support/tickets/${encodeURIComponent(id)}`, SupportTicketDetailSchema)).ticket,
+    createSupportTicket: (t) => request('POST', '/support/tickets', SupportTicketCreatedSchema, t),
+    replySupportTicket: async (id, message) => {
+      await request('POST', `/support/tickets/${encodeURIComponent(id)}/messages`, null, { message });
+    },
+    closeSupportTicket: async (id) => {
+      await request('POST', `/support/tickets/${encodeURIComponent(id)}/close`, null);
+    },
+    deleteAccount: async () => {
+      await request('DELETE', '/me/account', null, { confirm: 'DELETE' });
+    },
     registerPushToken: async (r) => {
       await request('PUT', '/me/devices/push-token', null, r);
     },
+    raiseDispute: (id, d) => request('POST', `/bookings/${encodeURIComponent(id)}/dispute`, BookingSchema, d),
     cancelBooking: (id) => request('POST', `/bookings/${encodeURIComponent(id)}/cancel`, BookingSchema),
     submitReview: (id, review) => request('POST', `/bookings/${encodeURIComponent(id)}/review`, BookingSchema, review),
     getVoucher: (id) => request('GET', `/bookings/${encodeURIComponent(id)}/voucher`, VoucherSchema),

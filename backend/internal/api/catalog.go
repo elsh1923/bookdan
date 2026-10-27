@@ -63,6 +63,8 @@ type searchItem struct {
 	RoomsLeft int `json:"rooms_left"`
 	// DistanceM is the distance from the point the guest searched around (lat and lng in the request), when given.
 	DistanceM *int `json:"distance_m"`
+	// Windows are stays this hotel can still sell when it cannot sell the whole stay asked for (only in the "other dates" list).
+	Windows []altWindow `json:"windows,omitempty"`
 	// Landmark is the closest well-known place ("1.4 km to Bole Airport"), shown on the card.
 	Landmark                    *placeRef `json:"landmark"`
 	description, phone, address string
@@ -270,7 +272,7 @@ func distanceM(lat1, lng1, lat2, lng2 float64) int {
 const maxSearchCandidates = 500
 
 func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
-	checkIn, checkOut, guests, rooms, err := s.stay(r)
+	checkIn, checkOut, guests, rooms, datesKnown, err := s.searchStay(r)
 	if err != nil {
 		return err
 	}
@@ -354,6 +356,10 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 	for i := range all {
 		it := &all[i]
 		fillAvailability(it, rts[it.ID], guests, rooms)
+		if !datesKnown {
+			// No dates: the price is a "from" price and the hotel makes no claim about rooms.
+			it.Available, it.RoomsLeft = true, 0
+		}
 		it.ReplyMinutes = replies[it.ID]
 		if plan.hasPoint {
 			d := distanceM(plan.lat, plan.lng, it.Lat, it.Lng)
@@ -381,6 +387,17 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 	}
 	plan.order(items)
 
+	// On the first page, the hotels with no room for the whole stay that can still offer part of it, or nearby dates.
+	var other []searchItem
+	if offset == 0 && datesKnown {
+		if other, err = s.otherDates(r.Context(), items, checkIn, checkOut, guests, rooms); err != nil {
+			return err
+		}
+	}
+	if other == nil {
+		other = []searchItem{}
+	}
+
 	total := len(items)
 	next := (*string)(nil)
 	if offset > len(items) {
@@ -404,7 +421,11 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 		PriceMin int64 `json:"price_min_santim"`
 		PriceMax int64 `json:"price_max_santim"`
 		Facets   any   `json:"facets"`
-	}{httpx.NowMeta(), items, next, total, pmin, pmax, facets})
+		// OtherDates are sold-out hotels with stays that work nearby: the dates the hotel can sell, nothing held.
+		OtherDates []searchItem `json:"other_dates"`
+		// DatesKnown is false when the search had no dates: prices are "from" prices for tonight and nothing is claimed about rooms.
+		DatesKnown bool `json:"dates_known"`
+	}{httpx.NowMeta(), items, next, total, pmin, pmax, facets, other, datesKnown})
 	return nil
 }
 

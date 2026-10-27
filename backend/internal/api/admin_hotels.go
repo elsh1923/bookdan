@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -57,6 +58,8 @@ func (s *Server) adminListHotels(w http.ResponseWriter, r *http.Request) error {
 // ---- hotel details
 
 type hotelInput struct {
+	// ConfirmHide says the admin has seen the bookings still to come and wants the hotel taken off the list anyway.
+	ConfirmHide bool     `json:"confirm_hide"`
 	Name        string   `json:"name"`
 	Type        string   `json:"type"`
 	City        string   `json:"city"`
@@ -401,6 +404,41 @@ func (s *Server) adminCreateHotel(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
+// warnUpcomingBookings refuses to take a listed hotel off the list while guests have bookings that are not finished, unless the admin
+// confirms. The bookings stay valid either way; the refusal names them so the admin can call the hotel first.
+func (s *Server) warnUpcomingBookings(ctx context.Context, tx pgx.Tx, id string) error {
+	var current string
+	if err := tx.QueryRow(ctx, `SELECT status FROM properties WHERE id = $1`, id).Scan(&current); err != nil {
+		return err
+	}
+	if current != "active" {
+		return nil
+	}
+	rows, err := tx.Query(ctx, `SELECT code FROM bookings WHERE property_id = $1 AND status IN (`+activeBookingStatuses+`)
+		AND check_out >= `+"(now() AT TIME ZONE 'Africa/Addis_Ababa')::date"+` ORDER BY check_in LIMIT 6`, id)
+	if err != nil {
+		return err
+	}
+	var codes []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			rows.Close()
+			return err
+		}
+		codes = append(codes, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || len(codes) == 0 {
+		return err
+	}
+	list := strings.Join(codes, ", ")
+	if len(codes) == 6 {
+		list = strings.Join(codes[:5], ", ") + " and more"
+	}
+	return fail(http.StatusConflict, "HAS_UPCOMING_BOOKINGS", "This hotel has bookings that are not finished ("+list+"). Guests keep their bookings if you take it off the list; tell the hotel first.")
+}
+
 func (s *Server) adminUpdateHotel(w http.ResponseWriter, r *http.Request) error {
 	id := chi.URLParam(r, "id")
 	if err := s.canManage(r, id); err != nil {
@@ -432,6 +470,11 @@ func (s *Server) adminUpdateHotel(w http.ResponseWriter, r *http.Request) error 
 			}
 			if !ready {
 				return fail(http.StatusConflict, codeInvalidState, "Add a room with a price before publishing this hotel")
+			}
+		}
+		if in.Status != "active" && !in.ConfirmHide {
+			if err := s.warnUpcomingBookings(r.Context(), tx, id); err != nil {
+				return err
 			}
 		}
 		// Only a platform admin can mark a hotel verified.

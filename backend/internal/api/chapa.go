@@ -198,17 +198,18 @@ func (s *Server) chapaSettle(ctx context.Context, ref string) error {
 	if !ok {
 		return errNotFound
 	}
+	var payID, bookingID string
 	var amount int64
 	var cur, status string
-	err := s.pool.QueryRow(ctx, `SELECT amount_santim, currency, status FROM payments WHERE provider = 'chapa' AND provider_ref = $1`, ref).Scan(&amount, &cur, &status)
+	err := s.pool.QueryRow(ctx, `SELECT id, booking_id, amount_santim, currency, status FROM payments WHERE provider = 'chapa' AND provider_ref = $1`, ref).Scan(&payID, &bookingID, &amount, &cur, &status)
 	if err == pgx.ErrNoRows {
 		return errNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if status != "pending" {
-		return nil // already decided
+	if status != "pending" && status != "failed" {
+		return nil // already decided (a payment recorded as failed is checked again: the guest may have paid after all)
 	}
 	tx, err := g.verify(ctx, ref)
 	if err != nil {
@@ -219,6 +220,9 @@ func (s *Server) chapaSettle(ctx context.Context, ref string) error {
 		if tx.Amount != amount || tx.Currency != cur {
 			// Paid, but not the amount we asked for: never confirm a booking on it. A person looks at this one.
 			slog.Error("chapa payment does not match the booking", "ref", ref, "asked_santim", amount, "paid_santim", tx.Amount, "asked", cur, "paid", tx.Currency)
+			s.raisePaymentIssue(ctx, payID, bookingID, "amount_mismatch", map[string]any{
+				"asked_santim": amount, "asked_currency": cur, "paid_santim": tx.Amount, "paid_currency": tx.Currency, "gateway_ref": ref,
+			})
 			return nil
 		}
 		return s.processPaymentEvent(ctx, "chapa", "chapa_"+ref+"_succeeded", ref, "succeeded", []byte(`{"source":"chapa verify"}`))

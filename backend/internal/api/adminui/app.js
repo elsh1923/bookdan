@@ -48,6 +48,7 @@
         if (res.status === 401 && state.token) { signOut(); }
         var e = new Error((json.error && json.error.message) || 'Something went wrong (' + res.status + ')');
         e.status = res.status;
+        e.code = json.error && json.error.code;
         throw e;
       });
     }, function () { throw new Error('No connection to the server'); });
@@ -139,7 +140,7 @@
     }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
     return shell(h('div', {},
       h('div', { class: 'row between' }, h('h1', {}, 'Hotels'),
-        state.role === 'admin' ? h('span', {}, h('button', { class: 'secondary', onclick: function () { go('#/coupons'); } }, 'Coupons'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/payouts'); } }, 'Payouts'), ' ', h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel')) : null),
+        state.role === 'admin' ? h('span', {}, h('button', { class: 'secondary', onclick: function () { go('#/coupons'); } }, 'Coupons'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/payouts'); } }, 'Payouts'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/issues'); } }, 'Payment issues'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/support'); } }, 'Support'), ' ', h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel')) : null),
       holder));
   }
 
@@ -214,7 +215,12 @@
       if (isNaN(body.lat)) body.lat = null;
       if (isNaN(body.lng)) body.lng = null;
       if (state.role === 'admin') body.verified = f.verified.checked;
-      var req = isNew ? call('POST', '/admin/hotels', body) : call('PUT', '/admin/hotels/' + hotel.id, body);
+      var req = isNew ? call('POST', '/admin/hotels', body) : call('PUT', '/admin/hotels/' + hotel.id, body).catch(function (err) {
+        // Taking a hotel off the list while guests have bookings to come: show who is affected, and go ahead only on a clear yes.
+        if (err.code !== 'HAS_UPCOMING_BOOKINGS' || !confirm(err.message + '\n\nTake the hotel off the list anyway? Those bookings stay valid.')) throw err;
+        body.confirm_hide = true;
+        return call('PUT', '/admin/hotels/' + hotel.id, body);
+      });
       req.then(function (res) { btn.disabled = false; if (isNew) go('#/hotel/' + res.id); else { add(out, msg('ok', 'Saved.')); onSaved && onSaved(); } },
         function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
     } },
@@ -608,6 +614,117 @@
       holder, h('div', { class: 'card' }, h('h3', {}, 'Create a coupon'), form)));
   }
 
+  // ---- payment issues (platform admin): payments a person must look at
+  function issuesView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    function load() {
+      call('GET', '/admin/payment-issues').then(function (res) {
+        clear(holder);
+        if (!res.issues.length) { add(holder, h('div', { class: 'card' }, h('p', {}, 'No payment problems. Every payment matched what was asked.'))); return; }
+        res.issues.forEach(function (i) {
+          var d = i.details || {};
+          var card = h('div', { class: 'card' },
+            h('div', { class: 'row between' }, h('h3', {}, i.booking_code + ' · ' + i.hotel),
+              h('span', { class: 'chip ' + (i.resolved_at ? 'active' : 'draft') }, i.resolved_at ? 'Resolved' : 'Needs a person')),
+            h('p', {}, 'Guest: ' + i.guest_name),
+            h('p', {}, 'Asked: ' + etb(d.asked_santim) + ' · the gateway reports: ' + etb(d.paid_santim) + ' ' + (d.paid_currency || '')),
+            h('p', { class: 'muted' }, 'Raised ' + when(i.created_at) + (i.resolved_at ? ' · resolved by ' + i.resolved_by + ': ' + i.note : '')));
+          if (!i.resolved_at) {
+            var note = h('input', { placeholder: 'What did you decide? For example: refunded the guest and called them', maxlength: '1000' });
+            var out = h('div', {});
+            var btn = h('button', { onclick: function () {
+              btn.disabled = true; clear(out);
+              call('POST', '/admin/payment-issues/' + i.id + '/resolve', { note: note.value }).then(load, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+            } }, 'Mark resolved');
+            add(card, h('div', { class: 'field' }, h('label', {}, 'Decision'), note), btn, out);
+          }
+          add(holder, card);
+        });
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Payment issues'),
+      h('p', { class: 'soft' }, 'A guest paid, but the amount or currency is not what BookDan asked for. The booking is NOT confirmed. Decide with the guest whether to refund or ask for the difference, then write what you decided.'),
+      holder));
+  }
+
+  // ---- support (platform admin): guests' questions and problems
+  var kindLabel = { question: 'Question', problem: 'Problem', dispute: 'Dispute' };
+  function supportView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    call('GET', '/admin/support/tickets').then(function (res) {
+      clear(holder);
+      if (!res.tickets.length) { add(holder, h('div', { class: 'card' }, h('p', {}, 'No support requests yet.'))); return; }
+      res.tickets.forEach(function (t) {
+        var label = t.status === 'open' ? 'Needs an answer' : t.status === 'answered' ? 'Waiting for the guest' : 'Closed';
+        add(holder, h('div', { class: 'card', style: 'cursor:pointer', onclick: function () { go('#/support/' + t.id); } },
+          h('div', { class: 'row between' }, h('h3', {}, t.subject), h('span', { class: 'chip ' + (t.status === 'open' ? 'draft' : 'active') }, label)),
+          h('p', { class: 'muted' }, (kindLabel[t.kind] || t.kind) + ' · ' + t.guest + (t.booking_code ? ' · booking ' + t.booking_code : '') + ' · ' + when(t.updated_at)),
+          h('p', {}, t.preview)));
+      });
+    }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Support'),
+      h('p', { class: 'soft' }, 'Questions and problems from guests, newest activity first. Open one to answer it. The guest is emailed your answer.'), holder));
+  }
+
+  function ticketView(id) {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    function load() {
+      call('GET', '/admin/support/tickets/' + id).then(function (res) {
+        var t = res.ticket;
+        clear(holder);
+        add(holder, h('div', { class: 'card' },
+          h('div', { class: 'row between' }, h('h3', {}, t.subject), h('span', { class: 'chip ' + (t.status === 'closed' ? 'active' : 'draft') }, t.status)),
+          h('p', { class: 'muted' }, (kindLabel[t.kind] || t.kind) + ' · ' + t.guest + (t.booking_code ? ' · booking ' + t.booking_code : '') + ' · opened ' + when(t.created_at))));
+        if (t.kind === 'dispute' && t.booking) {
+          var bk = t.booking;
+          add(holder, h('div', { class: 'card' },
+            h('h3', {}, 'The booking'),
+            h('p', {}, bk.hotel + ' · ' + bk.check_in + ' to ' + bk.check_out + ' · status ' + bk.status + (bk.disputed_from ? ' (was ' + bk.disputed_from + ')' : '')),
+            h('p', {}, bk.paid_santim ? 'Paid online: ' + etb(bk.paid_santim) + (bk.status === 'CANCELLED_REFUNDED' ? ' (refunded)' : '') : 'Nothing was paid online.'),
+            t.reason ? h('p', { class: 'muted' }, 'Reason chosen by the guest: ' + t.reason) : null,
+            t.outcome ? h('p', {}, 'Outcome: ' + t.outcome) : null));
+        }
+        t.messages.forEach(function (m) {
+          add(holder, h('div', { class: 'card', style: m.from_staff ? 'background:var(--soft,#f3f6fb)' : '' },
+            h('p', { class: 'muted' }, (m.from_staff ? 'Support (' + m.author + ')' : 'Guest') + ' · ' + when(m.created_at)),
+            h('p', { style: 'white-space:pre-wrap' }, m.body)));
+        });
+        if (t.status !== 'closed') {
+          var box = h('textarea', { rows: '4', maxlength: '2000', placeholder: 'Write your answer' });
+          var out = h('div', {});
+          var send = h('button', { onclick: function () {
+            send.disabled = true; clear(out);
+            call('POST', '/admin/support/tickets/' + id + '/reply', { message: box.value }).then(load, function (err) { send.disabled = false; add(out, msg('err', err.message)); });
+          } }, 'Send answer');
+          var close = t.kind === 'dispute' ? null : h('button', { class: 'secondary', onclick: function () {
+            call('POST', '/admin/support/tickets/' + id + '/close').then(load, function (err) { add(out, msg('err', err.message)); });
+          } }, 'Close without answering');
+          add(holder, h('div', { class: 'card' }, h('div', { class: 'field' }, h('label', {}, 'Your answer'), box), send, close ? ' ' : null, close, out));
+          if (t.kind === 'dispute') {
+            var paid = t.booking && t.booking.paid_santim > 0;
+            var outcome = h('select', {},
+              h('option', { value: 'rejected' }, 'Reject: nothing changes, the booking goes back to what it was'),
+              paid ? h('option', { value: 'refunded_hotel_pays' }, 'Refund in full: the hotel pays (its share and our commission are reversed)') : null,
+              paid ? h('option', { value: 'refunded_platform_pays' }, 'Refund in full: BookDan pays (the hotel keeps its share)') : null);
+            var why = h('textarea', { rows: '3', maxlength: '1000', placeholder: 'The reason for your decision. The guest reads it.' });
+            var dout = h('div', {});
+            var decide = h('button', { onclick: function () {
+              if (!confirm('Settle this dispute? This closes it, and a refund cannot be undone.')) return;
+              decide.disabled = true; clear(dout);
+              call('POST', '/admin/support/tickets/' + id + '/resolve', { outcome: outcome.value, note: why.value }).then(load, function (err) { decide.disabled = false; add(dout, msg('err', err.message)); });
+            } }, 'Settle the dispute');
+            add(holder, h('div', { class: 'card' }, h('h3', {}, 'Decision'),
+              h('p', { class: 'soft' }, 'The booking stays frozen (no money is released to the hotel) until you decide. Partial refunds are not available yet.'),
+              h('div', { class: 'field' }, h('label', {}, 'Outcome'), outcome), h('div', { class: 'field' }, h('label', {}, 'Reason'), why), decide, dout));
+          }
+        }
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/support'); } }, '← All requests'), holder));
+  }
+
   // ---- routing
   function go(hash) { if (location.hash === hash) render(); else location.hash = hash; }
   function render() {
@@ -618,6 +735,9 @@
     else if (location.hash === '#/new' && state.role === 'admin') add(app, newView());
     else if (location.hash === '#/payouts' && state.role === 'admin') add(app, payoutsView());
     else if (location.hash === '#/coupons' && state.role === 'admin') add(app, couponsView());
+    else if (location.hash === '#/issues' && state.role === 'admin') add(app, issuesView());
+    else if (location.hash === '#/support' && state.role === 'admin') add(app, supportView());
+    else if (/^#\/support\/[0-9a-f-]{36}$/.test(location.hash) && state.role === 'admin') add(app, ticketView(location.hash.slice(10)));
     else add(app, listView());
   }
   window.addEventListener('hashchange', render);

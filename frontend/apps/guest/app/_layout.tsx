@@ -77,6 +77,10 @@ export default function RootLayout() {
           <Stack.Screen name="guest-details" options={{ presentation: 'modal' }} />
           <Stack.Screen name="mock-gateway/[session]" options={{ presentation: 'modal' }} />
           <Stack.Screen name="payment-return" />
+          <Stack.Screen name="support/index" />
+          <Stack.Screen name="support/new" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="support/[id]" />
+          <Stack.Screen name="support/dispute" options={{ presentation: 'modal' }} />
         </Stack>
           </View>
         </View>

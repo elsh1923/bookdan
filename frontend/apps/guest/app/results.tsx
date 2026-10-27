@@ -10,6 +10,7 @@ import { useTranslation } from '@bookdan/i18n';
 import { Button, Chip, EmptyState, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { HotelMap } from '../src/HotelMap';
 import { Photo } from '../src/Photo';
+import { OtherDates } from '../src/OtherDates';
 import { PropertyCard } from '../src/PropertyCard';
 import { price, shortDate } from '../src/format';
 import { useSearch, type SearchCriteria } from '../src/queries';
@@ -162,6 +163,8 @@ export default function Results() {
   const query = useSearch(criteria);
   const items = query.data?.pages.flatMap((pg) => pg.items) ?? [];
   const total = query.data?.pages[0]?.total ?? items.length;
+  // Hotels that are full for these dates but can offer nearby dates (the first page carries the list).
+  const otherDates = query.data?.pages[0]?.other_dates ?? [];
   const facets = query.data?.pages[0]?.facets;
   // The map shows every hotel, not just the first page.
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
@@ -274,7 +277,16 @@ export default function Results() {
           onEndReached={() => query.hasNextPage && !query.isFetchingNextPage && query.fetchNextPage()}
           onEndReachedThreshold={0.5}
           ListHeaderComponent={<T variant="h3" style={{ marginBottom: spacing.md }}>{t('results.showing', { count: total })}</T>}
-          ListFooterComponent={query.isFetchingNextPage ? <ActivityIndicator color={colors.primary} /> : null}
+          ListFooterComponent={(
+            <View>
+              {query.isFetchingNextPage ? <ActivityIndicator color={colors.primary} /> : null}
+              <OtherDates
+                hotels={otherDates}
+                months={months}
+                onPick={(h, w) => router.push({ pathname: '/property/[id]', params: { id: h.id, in: w.check_in, out: w.check_out, guests: p.guests, children: p.children ?? '0', rooms: p.rooms ?? '1' } })}
+              />
+            </View>
+          )}
           onRefresh={() => query.refetch()}
           refreshing={query.isRefetching && !query.isFetchingNextPage}
           extraData={i18n.language}

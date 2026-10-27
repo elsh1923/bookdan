@@ -23,7 +23,7 @@ type Pinger interface {
 // New builds the router. mount registers the real endpoints (see internal/api); with nil, every contract route answers 501.
 func New(cfg config.Config, db Pinger, mount func(chi.Router), mountRoot ...func(chi.Router)) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, requestLog, middleware.Recoverer, cors(cfg))
+	r.Use(middleware.RequestID, middleware.RealIP, requestLog, middleware.Recoverer, securityHeaders(cfg), cors(cfg), rateLimit(cfg))
 
 	for _, m := range mountRoot {
 		if m != nil {

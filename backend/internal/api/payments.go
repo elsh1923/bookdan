@@ -192,7 +192,12 @@ func (s *Server) processPaymentEvent(ctx context.Context, provider, eventID, pro
 		if err != nil {
 			return err
 		}
-		if payStatus == "pending" {
+		// A "failed" payment can still turn out to have been paid (results arrive late or out of order, or we closed it when the guest
+		// switched method). Money received is never ignored: it confirms a booking that is still held, otherwise it is refunded.
+		if payStatus == "failed" && status == "succeeded" {
+			slog.Warn("payment succeeded after it was recorded as failed", "payment", payID, "booking", bookingID, "booking_status", bookingStatus)
+		}
+		if payStatus == "pending" || (payStatus == "failed" && status == "succeeded") {
 			switch status {
 			case "failed":
 				if _, err := tx.Exec(ctx, `UPDATE payments SET status = 'failed' WHERE id = $1`, payID); err != nil {
