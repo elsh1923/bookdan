@@ -33,7 +33,7 @@ paths:
       description: |
         Body: { "type": "phone" | "email", "value": "+2519..." | "name@example.com" }. Phones are Ethiopian (+2519 or +2517);
         email is for visitors without an Ethiopian number and is lower-cased. At most 5 codes per identifier per 10 minutes (429 TOO_MANY_REQUESTS).
-        Codes last 5 minutes. Errors: INVALID_PHONE, INVALID_EMAIL.
+        Codes last 5 minutes. Errors: INVALID_PHONE, INVALID_EMAIL, SEND_FAILED (502: the provider could not send it), and 503 PHONE_SIGNIN_OFF when the server has phone sign-in switched off (OTP_PROVIDER=off): use email.
       responses: { "200": { description: Code sent } }
   /auth/otp/verify:
     post:
@@ -165,6 +165,85 @@ paths:
       summary: Everything the app holds about the guest, as one JSON document
       description: email, phone, profile (ID masked to the last four characters), bookings and reviews. Never the full ID number.
       responses: { "200": { description: OK } }
+  /rates:
+    get:
+      summary: Display exchange rates (public)
+      description: |
+        {"base": "ETB", "rates": [{"currency": "USD" or "EUR", "birr_per_unit": 148.5, "updated_at": ..., "stale": false}]}. Birr for one dollar or euro, set by a
+        platform admin. For display only: BookDan always charges and refunds in ETB. A rate not updated for 30 days is marked stale and the apps
+        ignore it (ETB only). An empty list means no rate is set. Cached for five minutes.
+      responses: { "200": { description: OK } }
+  /admin/rates:
+    get:
+      summary: The display rates with who set them (platform admin only)
+      responses: { "200": { description: OK } }
+  /admin/rates/{currency}:
+    put:
+      summary: Set the birr rate for USD or EUR (platform admin only)
+      description: |
+        Body: {"birr_per_unit": 1 to 10000, "confirm": optional}. A change of more than 30% from the current rate is refused with 409 RATE_JUMP
+        unless "confirm" is true (a guard against typos). 404 for any other currency (ETB is the base).
+      parameters: [{ name: currency, in: path, required: true, schema: { type: string, enum: [USD, EUR] } }]
+      responses: { "200": { description: OK }, "400": { description: Invalid rate }, "404": { description: Not USD or EUR }, "409": { description: RATE_JUMP } }
+  /bookings/{id}/call:
+    post:
+      summary: Log that the guest tapped "Call the hotel"
+      description: |
+        The hotel's number is not on its page (property.phone is empty): a guest gets it once a booking is CONFIRMED or CHECKED_IN (booking.property_phone, empty
+        before and after; also in the voucher and the confirmation email). This call logs a tap so the admin page can show how often guests call hotels. 409 before the
+        number is shown, 404 for someone else's booking. Best effort: the app never blocks the call on it.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "404": { description: Not the guest's booking }, "409": { description: Number not shown yet } }
+  /hotel-applications:
+    post:
+      summary: A hotel applies to be listed (public)
+      description: |
+        Body: {hotel_name, hotel_type, city, area, address, hotel_phone, description, rooms_count, pay_at_hotel, owner_name, owner_email, owner_phone, legal_name, license_number}.
+        The public page /apply posts here. The applicant gets a receipt by email and the admins are told. At most 5 applications per connection per hour (429) and 2 waiting per
+        email (409 APPLICATION_WAITING). A hidden field named website is a bot trap: filled, the call answers 200 and keeps nothing. {reference: "HA-XXXXXXXX"}.
+      responses: { "200": { description: Received }, "400": { description: Invalid }, "409": { description: Applications waiting }, "429": { description: Too many } }
+  /admin/applications:
+    get:
+      summary: Hotel applications, waiting ones first (platform admin only)
+      responses: { "200": { description: "{applications: [...]}" } }
+  /admin/applications/{id}/approve:
+    post:
+      summary: Approve an application (platform admin only)
+      description: Creates a DRAFT hotel (at Addis Ababa's centre until its pin is set), makes the applicant its owner, and emails them the invitation and the good news. {property_id}. 409 if decided already.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "404": { description: Unknown }, "409": { description: Already decided, or the email belongs to a platform admin } }
+  /admin/applications/{id}/reject:
+    post:
+      summary: Reject an application (platform admin only)
+      description: 'Body: {"note": 3 to 1000 characters}; the applicant is emailed the reason. 409 if decided already.'
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "400": { description: Reason missing }, "409": { description: Already decided } }
+  /admin/analytics:
+    get:
+      summary: Marketplace numbers for the last N days (platform admin only)
+      description: |
+        Query days (1 to 365, default 30; Addis Ababa days). The funnel (quotes, holds, paid, confirmed, completed), where bookings ended without a stay (expired, declined,
+        no answer, cancelled by guest, hotel or admin, no-shows), money in santim (gmv = the price of what hotels confirmed, commission and its VAT, refunds), new and
+        returning guests, what waits for a person now (open support requests, disputes, relocations, payment issues, bookings awaiting a hotel), a point per day
+        (bookings, confirmed, gmv), and per hotel (confirmed, value, requests, accepted, declined, no answer, average reply minutes, its own cancellations).
+      responses: { "200": { description: OK } }
+  /admin/calls:
+    get:
+      summary: Calls logged per hotel and the latest ones (platform admin only)
+      description: Query days (1 to 365, default 30). {hotels: [{id, name, calls, bookings_with_calls, confirmed_bookings, last_call_at}], recent: [{at, hotel, booking_code, guest_name, status}]}.
+      responses: { "200": { description: OK } }
+  /bookings/{id}/change-dates:
+    post:
+      summary: Move a confirmed booking to other dates, once, at the same price
+      description: |
+        Body: {"check_in": "YYYY-MM-DD", "check_out": "YYYY-MM-DD"}. Allowed (booking.can_change_dates) for a CONFIRMED, refundable booking with no coupon
+        that was not moved before, while both the old and the new check-in are more than 48 hours away. The same room type must be free on every
+        new night, and the new dates must cost exactly the same (base, service, VAT, total, deposit), so the payment and the ledger do not change.
+        The hotel is alerted and the guest is emailed; the first dates stay in original_check_in/out. Errors: 400 invalid dates; 404; 409 with code
+        INVALID_STATE, CHANGE_LIMIT, NON_REFUNDABLE, COUPON_NO_CHANGE, CHANGE_TOO_LATE, NEW_DATES_TOO_SOON, SOLD_OUT, or PRICE_DIFFERS (the message
+        carries the new price: cancel for free and book the new dates instead).
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: The updated booking }, "400": { description: Invalid dates }, "404": { description: Not the guest's booking }, "409": { description: See above } }
   /bookings/{id}/dispute:
     post:
       summary: Challenge a charge or a stay
@@ -176,6 +255,17 @@ paths:
         DISPUTE_WINDOW_CLOSED, DISPUTE_EXISTS.
       parameters: [{ $ref: "#/components/parameters/Id" }]
       responses: { "200": { description: The booking }, "400": { description: Invalid }, "404": { description: Not the guest's booking }, "409": { description: See above } }
+  /admin/support/tickets/{id}/refund:
+    post:
+      summary: Refund part of a booking's payment from a support request (platform admin only)
+      description: |
+        Body: {"payer": "hotel" | "platform", "amount_santim": more than 0 and less than the payment, "note": 3 to 1000 characters, shown to the guest}.
+        The booking must be confirmed (CONFIRMED, CHECKED_IN, COMPLETED or NO_SHOW) and the request not closed; an open dispute is settled with its own
+        decision. "hotel": the hotel's share, BookDan's commission and its VAT shrink in proportion; "platform": BookDan pays from its own money and the
+        hotel keeps its share. Several partial refunds are possible while money is left (409 REFUND_TOO_LARGE otherwise); a later cancellation refunds only
+        what is left. The money goes through the gateway and is retried until it is accepted. The guest is emailed.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "400": { description: Invalid amount, payer or reason, or nothing paid online }, "409": { description: Not refundable now, closed, dispute open, or REFUND_TOO_LARGE } }
   /admin/support/tickets/{id}/resolve:
     post:
       summary: Settle a dispute (platform admin only)
@@ -183,7 +273,9 @@ paths:
         Body: {"outcome": "rejected" | "refunded_hotel_pays" | "refunded_platform_pays", "note": 3 to 1000 characters, shown to the guest}.
         rejected: the booking goes back to its status. refunded_hotel_pays: the guest is refunded in full and the hotel's share and the commission
         are reversed (the booking is cancelled). refunded_platform_pays: the guest is refunded in full from BookDan's money (ledger expense
-        dispute_expense) and the hotel keeps its share. A refund needs an online payment (400 NO_PAYMENT otherwise). Partial refunds are not built.
+        dispute_expense) and the hotel keeps its share. refunded_partial_hotel_pays and refunded_partial_platform_pays refund only "amount_santim" (more than 0 and
+        less than the payment, and at most what is left) and the booking goes back to its status (see /admin/support/tickets/{id}/refund). A refund
+        needs an online payment (400 NO_PAYMENT otherwise).
         The guest is emailed the decision. 409 when it is not a dispute or is already settled. Closing a dispute with /close is refused (DISPUTE_OPEN).
       parameters: [{ $ref: "#/components/parameters/Id" }]
       responses: { "200": { description: OK }, "400": { description: Invalid }, "409": { description: Not an open dispute } }
@@ -247,6 +339,109 @@ paths:
       description: 'Body: {"note": "what was decided"} (3 to 1000 characters). 409 if it is already resolved.'
       parameters: [{ $ref: "#/components/parameters/Id" }]
       responses: { "200": { description: OK }, "400": { description: Note missing }, "409": { description: Already resolved } }
+  /partner/bookings/{id}/cancel:
+    post:
+      summary: The hotel cancels a confirmed booking (hotel owners only)
+      description: |
+        Body: {"reason": "overbooked" | "maintenance" | "emergency" | "other"}. Only for a CONFIRMED booking (or one waiting to be moved) whose stay is not over. The guest is
+        refunded in full (what is left after partial refunds) and the hotel bears it: its share, BookDan's commission and the VAT are reversed. Nights still to come
+        go back on sale. The guest is told by push and email, and support by email. 403 for a receptionist, 409 INVALID_STATE otherwise.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: The booking }, "400": { description: Unknown reason }, "403": { description: Not a hotel owner }, "404": { description: Not this hotel's booking }, "409": { description: Not cancellable } }
+  /partner/bookings/{id}/relocate:
+    post:
+      summary: The hotel reports that it cannot host the guest (any hotel staff)
+      description: |
+        Body: {"reason": ...} as for cancel. A CONFIRMED booking becomes NEEDS_RELOCATION and a support request of kind relocation is opened for the guest. The guest can
+        cancel at once for a full refund (even a non-refundable booking, and even late). Support finds another place and settles it with
+        POST /admin/support/tickets/{id}/relocation (restored or refunded).
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: The booking }, "400": { description: Unknown reason }, "404": { description: Not this hotel's booking }, "409": { description: Not confirmed, or the stay is over } }
+  /partner/bookings/{id}/dispute:
+    get:
+      summary: A guest's dispute about this booking, as the hotel sees it
+      description: The reason, what the guest wrote and the hotel's own statements. Never what support wrote. 404 when there is no dispute.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: "{dispute: {ticket_id, status, reason, messages: [{role, author, body, created_at}]}}" }, "404": { description: No dispute } }
+  /partner/bookings/{id}/dispute/statement:
+    post:
+      summary: The hotel's account of an open dispute
+      description: 'Body: {"message": 10 to 2000 characters}. Shown to support and to the guest as the hotel''s (role "hotel"). 409 when no dispute is open. Support is emailed.'
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "400": { description: Too short or long }, "409": { description: No open dispute } }
+  /admin/support/tickets/{id}/relocation:
+    post:
+      summary: Settle a relocation (platform admin only)
+      description: |
+        Body: {"outcome": "restored" | "refunded", "note": 3 to 1000 characters, shown to the guest}. restored: the booking is CONFIRMED again. refunded: the guest is
+        refunded in full and the hotel bears it. 409 when it is not an open relocation.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "400": { description: Invalid }, "409": { description: Not an open relocation } }
+  /partner/support/tickets:
+    post:
+      summary: Hotel staff write to BookDan support
+      description: |
+        Body as for guests: {"kind": "question" | "problem", "subject", "message", "booking_id": optional}. The booking must be one of the staff member's hotels
+        (404 otherwise) and not just a hold. The request is marked with the hotel; the admins and SUPPORT_EMAIL are emailed. At most five waiting requests.
+      responses: { "200": { description: "{id}" }, "400": { description: Invalid }, "404": { description: Not this hotel's booking }, "409": { description: TOO_MANY_TICKETS } }
+    get:
+      summary: The staff member's own requests
+      responses: { "200": { description: "{tickets: [...]}" } }
+  /partner/support/tickets/{id}:
+    get:
+      summary: One of the staff member's requests with its messages
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: "{ticket}" }, "404": { description: Not found, or a colleague's } }
+  /partner/support/tickets/{id}/messages:
+    post:
+      summary: Reply on a request
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "404": { description: Not found }, "409": { description: Closed } }
+  /partner/support/tickets/{id}/close:
+    post:
+      summary: Close a request
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "404": { description: Not found } }
+  /partner/reviews:
+    get:
+      summary: Reviews of the owner's hotels (hotel owners only)
+      description: The latest 100, those without a reply first. {reviews: [{id, hotel, author, rating, text, date, booking_code, reply: {text, date} | null}]}. 403 for a receptionist.
+      responses: { "200": { description: OK }, "403": { description: Not an owner } }
+  /partner/reviews/{id}/reply:
+    put:
+      summary: Write or replace the hotel's public reply to a review (hotel owners only)
+      description: 'Body: {"text": 3 to 1000 characters}. The reply shows under the review on the hotel page (reviews[].reply) and on the guest''s own booking (review.hotel_reply).'
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "400": { description: Invalid text }, "403": { description: Not an owner }, "404": { description: Not a review of the owner's hotels } }
+    delete:
+      summary: Remove the hotel's reply (hotel owners only)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "403": { description: Not an owner }, "404": { description: Not found } }
+  /partner/statements:
+    get:
+      summary: Monthly statements for the owner's hotels (hotel owners only)
+      description: |
+        Query: month=YYYY-MM (default last month; not a future month), property_id (one hotel), format=csv (one hotel only: a spreadsheet, amounts in birr, cells that
+        look like formulas are defused). {statements: [{hotel, month, opening_santim, closing_santim, online_gross/commission/vat/hotel_share, pay_at_hotel_collected/commission/vat,
+        paid_santim, received_santim, lines: [...], payouts: [...], receipts: [...]}]}. Lines are the stays that ended in the month (online ones with the hotel's share,
+        pay-at-hotel ones with the commission owed); opening + lines - paid + received = closing. Positive balances are owed to the hotel, negative to BookDan.
+        The owners are also emailed last month's statement once, after the month ends. 403 for a receptionist.
+      responses: { "200": { description: OK }, "400": { description: Bad month }, "403": { description: Not an owner }, "404": { description: Not the owner's hotel } }
+  /admin/hotels/{id}/statements:
+    get:
+      summary: A hotel's monthly statement (platform admin only)
+      description: Same shape and query (month, format=csv) as /partner/statements, for any hotel.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: OK }, "400": { description: Bad month }, "404": { description: Unknown hotel } }
+  /admin/hotels/{id}/receipts:
+    post:
+      summary: Record money a hotel paid BookDan (platform admin only)
+      description: |
+        Pay at hotel: when such a stay is completed BookDan books its commission and the VAT on it against the hotel (it reduces what BookDan owes the hotel;
+        balance.owes_santim is what a hotel owes when that is more). The hotel pays by transfer and this records it. Body: {"amount_santim", "reference", "note"}; the amount
+        cannot exceed what the hotel owes (409). Append-only, like a payout.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: "{receipt_id, balance}" }, "400": { description: Invalid }, "409": { description: More than the hotel owes } }
   /partner/bookings/{id}/guest/reveal:
     post:
       summary: Show the full ID number of the guest on one booking
@@ -274,14 +469,16 @@ paths:
     get:
       summary: Rooms and per-night states for the tape chart
       responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
-  /partner/sync/push:
+  /partner/checkin/sync:
     post:
-      summary: Apply queued offline actions; idempotent per action_id
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
-  /partner/sync/pull:
-    get:
-      summary: Changes since a cursor (bookings, rooms, cancelled codes)
-      responses: { "501": { $ref: "#/components/responses/NotImplemented" } }
+      summary: Send check-ins that were made offline
+      description: |
+        Body: {"items": [{"token": "the guest's voucher QR text", "at": "RFC 3339: when the guest was checked in, by the phone's clock"}]}, 1 to 100 at a time.
+        The partner app verifies the voucher signature on the phone (the public key is cached from GET /keys/voucher) and queues the check-in; this applies the queue
+        when the phone is online. The server verifies each voucher again, finds the booking, and applies the check-in only when the booking is still CONFIRMED and the moment
+        falls inside the stay. {results: [{reference, result}]} with result checked_in, already (a repeat is harmless), cancelled, wrong_hotel, invalid, not_found, too_early,
+        ended, not_ready or bad_time (a moment in the future or more than 30 days old). The recorded check-in time is the one sent.
+      responses: { "200": { description: One result per item }, "400": { description: No items, or more than 100 } }
   /partner/checkin/lookup:
     post:
       summary: Find the booking behind a guest voucher and say whether it can be checked in (changes nothing)

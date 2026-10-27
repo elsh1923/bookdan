@@ -17,6 +17,7 @@ import { FOOTER_CLEARANCE, StickyFooter } from '../../src/StickyFooter';
 import { price, shortDate } from '../../src/format';
 import { useProperty } from '../../src/queries';
 import { usePrefs } from '../../src/store';
+import { useDisplay } from '../../src/display';
 
 const AMENITY_ICON: Record<Amenity, keyof typeof Ionicons.glyphMap> = {
   generator: 'flash-outline',
@@ -114,6 +115,7 @@ function RoomCard({ room, nights, rooms, onSelect }: { room: RoomType; nights: n
 }
 
 export default function PropertyScreen() {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -288,15 +290,17 @@ export default function PropertyScreen() {
               <T color={colors.ink} style={{ marginTop: spacing.xs }}>{i18n.language === 'am' && prop.directions_am ? prop.directions_am : prop.directions}</T>
             </View>
           ) : null}
-          <Button
-            variant="secondary"
-            icon="call-outline"
-            title={t('property.call')}
-            onPress={async () => {
-              if (!(await callPhone(prop.phone))) Alert.alert(t('common.cannot_open_title'), t('common.cannot_open_body', { value: prop.phone }));
-            }}
-            style={{ marginTop: spacing.lg }}
-          />
+          {prop.phone ? (
+            <Button
+              variant="secondary"
+              icon="call-outline"
+              title={t('property.call')}
+              onPress={async () => {
+                if (!(await callPhone(prop.phone))) Alert.alert(t('common.cannot_open_title'), t('common.cannot_open_body', { value: prop.phone }));
+              }}
+              style={{ marginTop: spacing.lg }}
+            />
+          ) : null}
 
           <View {...mark('rooms')}>
             <T variant="displaySm" style={{ marginTop: spacing.xl }}>{t('property.rooms')}</T>
@@ -369,6 +373,12 @@ export default function PropertyScreen() {
                   {rv.verified ? <T variant="label" color={colors.success}>✓ {t('property.verified_stay')}</T> : null}
                 </View>
                 {rv.text ? <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{rv.text}</T> : null}
+                {rv.reply ? (
+                  <View style={{ marginTop: spacing.sm, marginLeft: spacing.md, paddingLeft: spacing.md, borderLeftWidth: 3, borderLeftColor: colors.line }}>
+                    <T variant="label" color={colors.muted}>{t('review.hotel_reply')} · {rv.reply.date}</T>
+                    <T color={colors.inkSoft} style={{ marginTop: 2 }}>{rv.reply.text}</T>
+                  </View>
+                ) : null}
               </View>
             ))}
           </View>

@@ -11,12 +11,13 @@ import { addDays, todayAddis } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, gradients, radius, shadow, spacing } from '@bookdan/ui';
 import { useAuth } from '../../src/auth';
-import { price, shortDate } from '../../src/format';
+import { priceExact as price, shortDate } from '../../src/format';
 import { splitBookings } from '../../src/bookingHistory';
 import { StayCard } from '../../src/StayCard';
 import { StatusBadge } from '../../src/StatusBadge';
 import { useAllProperties, useBookings } from '../../src/queries';
 import { usePrefs } from '../../src/store';
+import { useDisplay } from '../../src/display';
 
 type Category = PropertyType | 'all';
 const CATEGORIES: Category[] = ['all', 'hotel', 'guesthouse', 'lodge', 'resort'];
@@ -83,6 +84,7 @@ function SectionTitle({ children }: { children: string }) {
 }
 
 export default function Home() {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();

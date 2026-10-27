@@ -28,7 +28,16 @@ type Config struct {
 
 	// Providers. Each names an integration. "dev"/"log" are development stand-ins; production refuses them until the real
 	// integration has been written (see internal/api/providers.go).
-	OTPProvider string // SMS sign-in codes: log | (an SMS provider, to be built)
+	OTPProvider string // phone sign-in codes: log (prints the code) | africastalking | twilio | off (phone sign-in switched off; email only)
+	// SMSFrom is the sender: an approved sender id (Africa's Talking, optional) or a Twilio number, alphanumeric id or Messaging Service id (MG...).
+	SMSFrom string
+	// Africa's Talking: username and API key from its dashboard. ATSandbox uses its test environment (username "sandbox"); never in production.
+	ATUsername string
+	ATAPIKey   string
+	ATSandbox  bool
+	// Twilio: Account SID and Auth Token from its console.
+	TwilioSID   string
+	TwilioToken string
 	// EmailProvider sends sign-in codes by email: log (prints them) or smtp (Gmail with an app password, Brevo, Mailgun, SES...).
 	EmailProvider string // log | smtp | brevo (a web API: works where the mail ports are blocked)
 	BrevoAPIKey   string
@@ -48,6 +57,10 @@ type Config struct {
 	// with that password. Hotel owners may also use it for their own hotels, signing in with a code, but only when ADMIN_OWNERS=true:
 	// turn that on only when sign-in codes are real (a fixed demo code would let anyone in).
 	AdminEmails []string
+	// AlertWebhookURL and AlertEmails are where BookDan tells its operators about a panic, a burst of server errors or a refund that cannot be paid
+	// (see internal/ops). The webhook is a Slack, Discord or Teams incoming-webhook URL. With no ALERT_EMAIL the admins (ADMIN_EMAILS) are emailed.
+	AlertWebhookURL string
+	AlertEmails     []string
 	// SupportEmail is where payment problems (and later guest tickets) are also sent, besides the admins. Optional.
 	SupportEmail  string
 	AdminPassword string
@@ -84,6 +97,12 @@ func Load() Config {
 		VoucherSeedB64:       get("VOUCHER_SIGNING_SEED", ""),
 		PublicURL:            strings.TrimRight(get("PUBLIC_URL", "http://localhost:8080"), "/"),
 		OTPProvider:          get("OTP_PROVIDER", "log"),
+		SMSFrom:              get("SMS_FROM", ""),
+		ATUsername:           get("AT_USERNAME", ""),
+		ATAPIKey:             get("AT_API_KEY", ""),
+		ATSandbox:            get("AT_SANDBOX", "false") == "true",
+		TwilioSID:            get("TWILIO_ACCOUNT_SID", ""),
+		TwilioToken:          get("TWILIO_AUTH_TOKEN", ""),
 		EmailProvider:        get("EMAIL_PROVIDER", "log"),
 		BrevoAPIKey:          get("BREVO_API_KEY", ""),
 		SMTPHost:             get("SMTP_HOST", "smtp.gmail.com"),
@@ -97,6 +116,8 @@ func Load() Config {
 		FCMServiceAccountB64: get("FCM_SERVICE_ACCOUNT_B64", ""),
 		AdminEmails:          splitList(get("ADMIN_EMAILS", "")),
 		SupportEmail:         get("SUPPORT_EMAIL", ""),
+		AlertWebhookURL:      get("ALERT_WEBHOOK_URL", ""),
+		AlertEmails:          splitList(get("ALERT_EMAIL", "")),
 		AdminPassword:        get("ADMIN_PASSWORD", ""),
 		AdminOwners:          get("ADMIN_OWNERS", "false") == "true",
 		PartnerAppURL:        get("PARTNER_APP_URL", ""),
@@ -155,8 +176,21 @@ func (c Config) Validate() error {
 		problems = append(problems, "PUBLIC_URL must be an https URL when APP_ENV=production")
 	}
 	// These integrations have not been built yet: a production deploy must not silently use the stand-ins.
-	if c.OTPProvider == "log" {
-		problems = append(problems, "OTP_PROVIDER=log only prints SMS codes; build the SMS integration (internal/api/providers.go)")
+	switch c.OTPProvider {
+	case "off":
+	case "africastalking":
+		if c.ATUsername == "" || c.ATAPIKey == "" {
+			problems = append(problems, "AT_USERNAME and AT_API_KEY are required when OTP_PROVIDER=africastalking")
+		}
+		if c.ATSandbox || c.ATUsername == "sandbox" {
+			problems = append(problems, "Africa's Talking is set to its sandbox: a production server needs the live username and key and AT_SANDBOX off")
+		}
+	case "twilio":
+		if c.TwilioSID == "" || c.TwilioToken == "" || c.SMSFrom == "" {
+			problems = append(problems, "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and SMS_FROM are required when OTP_PROVIDER=twilio")
+		}
+	default:
+		problems = append(problems, "OTP_PROVIDER must be africastalking, twilio or off in production (log only prints phone codes)")
 	}
 	switch c.EmailProvider {
 	case "smtp":

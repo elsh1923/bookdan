@@ -4,7 +4,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { CheckinLookup, CheckinQuery } from '@bookdan/domain';
+import { ApiError } from '@bookdan/api-client';
+import { judgeVoucher, todayAddis, type CheckinLookup, type CheckinQuery, type VoucherPayload } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Button, Pop, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../../src/api';
@@ -12,6 +13,7 @@ import { StayLine } from '../../src/BookingCards';
 import { checkinErrorKey } from '../../src/checkin';
 import { Field } from '../../src/Field';
 import { price } from '../../src/format';
+import { useOffline } from '../../src/offline';
 
 /** Check in a guest: scan the QR code on their voucher, or type the booking reference and the PIN from the same screen. */
 export default function CheckinScreen() {
@@ -26,9 +28,16 @@ export default function CheckinScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const handled = useRef(false); // the camera reports the same code many times a second
+  // No internet: a genuine voucher can still be accepted on the phone, and the check-in is sent later.
+  const [offlineFound, setOfflineFound] = useState<{ payload: VoucherPayload; token: string } | null>(null);
+  const [savedOffline, setSavedOffline] = useState(false);
+  const queue = useOffline((s) => s.queue);
+  const problems = useOffline((s) => s.problems);
 
   const reset = () => {
     setFound(null);
+    setOfflineFound(null);
+    setSavedOffline(false);
     setDone(false);
     setError(null);
     setReference('');
@@ -41,10 +50,27 @@ export default function CheckinScreen() {
     try {
       setFound(await api.lookupCheckin(query));
     } catch (e) {
-      setError(t(checkinErrorKey(e)));
+      if (e instanceof ApiError && e.code === 'NETWORK' && 'token' in query) {
+        const off = useOffline.getState();
+        if (!off.publicKey) {
+          setError(t('partner.offline_no_key'));
+        } else {
+          const verdict = judgeVoucher(query.token, off.publicKey, off.hotelIds, Date.now(), todayAddis());
+          if (verdict.ok) setOfflineFound({ payload: verdict.payload, token: query.token });
+          else setError(t(`partner.offline_reason_${verdict.reason}`));
+        }
+      } else {
+        setError(t(checkinErrorKey(e)));
+      }
     } finally {
       setBusy(false);
     }
+  }
+
+  function saveOffline() {
+    if (!offlineFound) return;
+    useOffline.getState().enqueue({ token: offlineFound.token, reference: offlineFound.payload.code, at: new Date().toISOString() });
+    setSavedOffline(true);
   }
 
   async function confirm() {
@@ -101,7 +127,38 @@ export default function CheckinScreen() {
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
           <T variant="display">{t('partner.checkin_title')}</T>
 
-          {done && b ? (
+          {queue.length > 0 ? (
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.warningSoft }}>
+              <Ionicons name="cloud-upload-outline" size={20} color={colors.warning} />
+              <T style={{ flex: 1 }}>{t('partner.offline_waiting', { count: queue.length })}</T>
+            </View>
+          ) : null}
+          {problems.map((p) => (
+            <View key={p.reference} style={{ marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.danger, backgroundColor: colors.dangerSoft }}>
+              <T variant="h3" color={colors.danger}>{p.reference}</T>
+              <T color={colors.ink}>{t(`partner.offline_result_${p.result}`)}</T>
+              <Button variant="ghost" title={t('partner.offline_dismiss')} onPress={() => useOffline.getState().dismiss(p.reference)} />
+            </View>
+          ))}
+
+          {offlineFound ? (
+            <Reveal style={{ marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }}>
+              <T variant="h2">{offlineFound.payload.code}</T>
+              <T color={colors.inkSoft}>{offlineFound.payload.in} – {offlineFound.payload.out}</T>
+              <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+                <Ionicons name={savedOffline ? 'checkmark-circle' : 'cloud-offline-outline'} size={20} color={savedOffline ? colors.success : colors.warning} />
+                <T style={{ flex: 1 }} color={savedOffline ? colors.success : colors.ink}>{t(savedOffline ? 'partner.offline_saved' : 'partner.offline_body')}</T>
+              </View>
+              {savedOffline ? (
+                <Button title={t('partner.checkin_next')} onPress={reset} style={{ marginTop: spacing.lg }} />
+              ) : (
+                <>
+                  <Button title={t('partner.offline_save')} icon="log-in-outline" onPress={saveOffline} style={{ marginTop: spacing.lg }} />
+                  <Button variant="ghost" title={t('common.back')} onPress={reset} style={{ marginTop: spacing.sm }} />
+                </>
+              )}
+            </Reveal>
+          ) : done && b ? (
             <Pop style={{ marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.primarySoft, alignItems: 'center' }}>
               <Ionicons name="checkmark-circle" size={56} color={colors.success} />
               <T variant="h2" style={{ marginTop: spacing.sm }}>{t('partner.checkin_done')}</T>

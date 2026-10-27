@@ -40,10 +40,14 @@ type balance struct {
 	Name       string `json:"name"`
 	Currency   string `json:"currency"`
 	// Ready is payable now (checked in or stay over), Upcoming is not yet, Paid is what was transferred. ToPay is Ready minus Paid, never below 0.
-	Ready    int64   `json:"ready_santim"`
-	Upcoming int64   `json:"upcoming_santim"`
-	Paid     int64   `json:"paid_santim"`
-	ToPay    int64   `json:"to_pay_santim"`
+	Ready    int64 `json:"ready_santim"`
+	Upcoming int64 `json:"upcoming_santim"`
+	Paid     int64 `json:"paid_santim"`
+	ToPay    int64 `json:"to_pay_santim"`
+	// Received is what the hotel paid BookDan back (commission on pay-at-hotel stays). Owes is what the hotel still owes BookDan when its pay-at-hotel
+	// commission is more than BookDan owes it (ToPay is then 0).
+	Received int64   `json:"received_santim"`
+	Owes     int64   `json:"owes_santim"`
 	LastPaid *string `json:"last_paid_at"`
 }
 
@@ -60,6 +64,7 @@ func (s *Server) balances(ctx context.Context, q interface {
 		  coalesce(sum(m.net) FILTER (WHERE m.ready), 0)::bigint,
 		  coalesce(sum(m.net) FILTER (WHERE NOT m.ready), 0)::bigint,
 		  coalesce((SELECT sum(amount_santim) FROM hotel_payouts hp WHERE hp.property_id = p.id), 0)::bigint,
+		  coalesce((SELECT sum(amount_santim) FROM hotel_receipts hr WHERE hr.property_id = p.id), 0)::bigint,
 		  (SELECT max(paid_at) FROM hotel_payouts hp WHERE hp.property_id = p.id)
 		FROM properties p LEFT JOIN m ON m.property_id = p.id
 		WHERE ($1::uuid[] IS NULL OR p.id = ANY($1::uuid[]))
@@ -72,11 +77,15 @@ func (s *Server) balances(ctx context.Context, q interface {
 	for rows.Next() {
 		b := balance{Currency: "ETB"}
 		var last *time.Time
-		if err := rows.Scan(&b.PropertyID, &b.Name, &b.Ready, &b.Upcoming, &b.Paid, &last); err != nil {
+		if err := rows.Scan(&b.PropertyID, &b.Name, &b.Ready, &b.Upcoming, &b.Paid, &b.Received, &last); err != nil {
 			return nil, err
 		}
-		if b.ToPay = b.Ready - b.Paid; b.ToPay < 0 {
-			b.ToPay = 0
+		// What BookDan owes the hotel, after the commission on pay-at-hotel stays and what the hotel has paid back.
+		switch net := b.Ready - b.Paid + b.Received; {
+		case net >= 0:
+			b.ToPay = net
+		default:
+			b.Owes = -net
 		}
 		if last != nil {
 			t := last.UTC().Format(time.RFC3339)

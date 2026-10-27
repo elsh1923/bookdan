@@ -8,13 +8,15 @@ import { splitBookings } from '../../src/bookingHistory';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { useAuth } from '../../src/auth';
-import { price, shortDate } from '../../src/format';
+import { priceExact as price, shortDate } from '../../src/format';
 import { useBookings } from '../../src/queries';
 import { StatusBadge } from '../../src/StatusBadge';
 import { pruneVouchers } from '../../src/voucherStore';
+import { useDisplay } from '../../src/display';
 
 // The guest's bookings: the stays to come first, then the history of past stays.
 export default function Bookings() {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const token = useAuth((s) => s.token);

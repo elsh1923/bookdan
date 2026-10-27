@@ -23,3 +23,14 @@ export function formatMoney(m: Money): string {
   const text = m.currency === 'ETB' ? `${body} ETB` : `${SYMBOL[m.currency]}${body}`;
   return negative ? `-${text}` : text;
 }
+
+/**
+ * Display currencies. BookDan charges and refunds in ETB only; USD and EUR are an approximate amount shown next to the birr price,
+ * computed with a rate the server provides (never a rate written in the app).
+ */
+export type DisplayCurrency = 'USD' | 'EUR';
+
+/** An ETB amount in santim as an amount of the display currency in cents, rounded half up. birrPerUnit is ETB for one dollar or euro. */
+export function convertEtb(santim: number, birrPerUnit: number): number {
+  return Math.round(santim / birrPerUnit);
+}

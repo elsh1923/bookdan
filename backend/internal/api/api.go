@@ -18,6 +18,7 @@ import (
 
 	"github.com/bookdan/backend/internal/config"
 	"github.com/bookdan/backend/internal/httpx"
+	"github.com/bookdan/backend/internal/ops"
 )
 
 // Business rules that are fixed in code (the money rates live in pricing_config).
@@ -106,6 +107,8 @@ func (s *Server) Routes(root chi.Router) {
 
 		r.Get("/search", s.h(s.search))
 		r.Get("/suggest", s.h(s.suggest))
+		r.Post("/hotel-applications", s.h(s.submitApplication))
+		r.Get("/rates", s.h(s.rates))
 		r.Get("/properties/{id}", s.h(s.property))
 
 		r.Group(func(r chi.Router) {
@@ -118,6 +121,8 @@ func (s *Server) Routes(root chi.Router) {
 			r.Post("/bookings/{id}/cancel", s.h(s.cancelBooking))
 			r.Post("/bookings/{id}/review", s.h(s.submitReview))
 			r.Post("/bookings/{id}/dispute", s.h(s.raiseDispute))
+			r.Post("/bookings/{id}/change-dates", s.h(s.changeDates))
+			r.Post("/bookings/{id}/call", s.h(s.logCall))
 			r.Get("/bookings/{id}/voucher", s.h(s.voucher))
 			r.Put("/me/devices/push-token", s.h(s.registerPushToken("guest")))
 			r.Get("/me/profile", s.h(s.getProfile))
@@ -138,6 +143,19 @@ func (s *Server) Routes(root chi.Router) {
 			r.Get("/bookings", s.h(s.partnerBookings))
 			r.Post("/bookings/{id}/accept", s.h(s.partnerAccept))
 			r.Post("/bookings/{id}/decline", s.h(s.partnerDecline))
+			r.Post("/bookings/{id}/cancel", s.h(s.partnerCancel))
+			r.Get("/statements", s.h(s.partnerStatements))
+			r.Get("/reviews", s.h(s.partnerReviews))
+			r.Put("/reviews/{id}/reply", s.h(s.partnerReplyReview))
+			r.Delete("/reviews/{id}/reply", s.h(s.partnerDeleteReply))
+			r.Post("/support/tickets", s.h(s.createTicket))
+			r.Get("/support/tickets", s.h(s.listTickets))
+			r.Get("/support/tickets/{id}", s.h(s.getTicket))
+			r.Post("/support/tickets/{id}/messages", s.h(s.replyTicket))
+			r.Post("/support/tickets/{id}/close", s.h(s.closeTicket))
+			r.Post("/bookings/{id}/relocate", s.h(s.partnerRelocate))
+			r.Get("/bookings/{id}/dispute", s.h(s.partnerDispute))
+			r.Post("/bookings/{id}/dispute/statement", s.h(s.partnerDisputeStatement))
 			r.Post("/bookings/{id}/check-in", s.h(s.partnerCheckin))
 			r.Post("/bookings/{id}/no-show", s.h(s.partnerNoShow))
 			r.Get("/rooms", s.h(s.partnerRoomsChart))
@@ -145,6 +163,7 @@ func (s *Server) Routes(root chi.Router) {
 			r.Post("/rooms/blocks", s.h(s.partnerCreateBlock))
 			r.Delete("/rooms/blocks/{id}", s.h(s.partnerReleaseBlock))
 			r.Post("/checkin/lookup", s.h(s.partnerCheckinLookup))
+			r.Post("/checkin/sync", s.h(s.partnerCheckinSync))
 			r.Get("/earnings", s.h(s.partnerEarnings))
 			r.Post("/bookings/{id}/guest/reveal", s.h(s.partnerReveal))
 		})
@@ -182,6 +201,11 @@ func (s *Server) h(fn handler) http.HandlerFunc {
 			return // the client went away
 		}
 		slog.Error("request failed", "request_id", middleware.GetReqID(r.Context()), "path", r.URL.Path, "err", err)
+		route := "unmatched"
+		if rc := chi.RouteContext(r.Context()); rc != nil && rc.RoutePattern() != "" {
+			route = rc.RoutePattern()
+		}
+		ops.Report("api-500 "+r.Method+" "+route, "An endpoint failed", r.Method+" "+route+"\nrequest "+middleware.GetReqID(r.Context())+"\n"+err.Error())
 		httpx.Error(w, r, http.StatusInternalServerError, httpx.CodeInternal, "Something went wrong", nil)
 	}
 }

@@ -7,11 +7,13 @@ import { Photo } from './Photo';
 import { price } from './format';
 import { RatingBadge, distanceText } from './rating';
 import { usePrefs } from './store';
+import { useDisplay } from './display';
 
 const LOW_STOCK = 3; // "Only 3 left" appears at this many rooms or fewer
 
 /** One hotel in the results: photo, score, name, how far from a landmark, rooms left, and the price per night. */
 export function PropertyCard({ item, onPress }: { item: SearchItem; onPress: () => void }) {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
   const saved = usePrefs((s) => s.saved.includes(item.id));
   const toggleSaved = usePrefs((s) => s.toggleSaved);

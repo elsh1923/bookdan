@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { addDays, nightsBetween, holdRemainingMs } from './dates.ts';
 import { isoToEthiopian } from './ethiopianCalendar.ts';
-import { etb, formatMoney } from './money.ts';
+import { convertEtb, etb, formatMoney } from './money.ts';
 import { b64urlDecode, b64urlEncode, decodeVoucherPayload, encodeVoucherToken, newIdempotencyKey } from './voucher.ts';
 import { VoucherSchema } from './schemas.ts';
 import { normalizeEmail } from './identity.ts';
@@ -12,6 +12,7 @@ import { alertReadiness, parseBookingAlert, parseBookingUpdate } from './alerts.
 import { BookingGuestSchema, GuestProfileInputSchema, GuestProfileSchema, idLast4, isProfileComplete, maskId, normalizeIdNumber } from './guestIdentity.ts';
 import { isPaymentInFlight, isStillChanging, shouldResumeOnLaunch } from './booking.ts';
 import { formatCountdown, normalizeEthiopianPhone, priceStay } from './pricing.ts';
+import { enqueueCheckin, judgeVoucher, settleQueue, verifyVoucherToken } from './offlineCheckin.ts';
 
 test('Ethiopian new year 2019 starts on 2026-09-11', () => {
   assert.deepEqual(isoToEthiopian('2026-09-11'), { year: 2019, month: 1, day: 1 });
@@ -267,4 +268,62 @@ test('booking needs a complete profile', () => {
   assert.equal(isProfileComplete({ ...p, id_last4: '' }), false);
   assert.equal(isProfileComplete({ ...p, nationality: ' ' }), false);
   assert.equal(isProfileComplete({ ...p, full_name: 'H' }), false);
+});
+
+test('an ETB price converts to a display currency in cents, rounded half up', () => {
+  assert.equal(convertEtb(368000, 150), 2453); // 3,680 ETB at 150 birr per dollar is $24.53
+  assert.equal(convertEtb(100, 150), 1); // 0.67 of a cent rounds up to 1
+  assert.equal(convertEtb(0, 150), 0);
+  assert.equal(formatMoney({ amount_santim: convertEtb(368000, 150), currency: 'USD' }), '$24.53');
+  assert.equal(formatMoney({ amount_santim: convertEtb(500000, 165.5), currency: 'EUR' }), '€30.21');
+});
+
+// ---- offline check-in: a token signed by the real Go server (ed25519, the same code the guest's voucher comes from)
+const GO_PUB = 'yEdgeEsSleTNoyLY0jOiGbgyMEZIcQ75kvj4Qz46-P8';
+const GO_TOKEN =
+  'eyJ2IjoxLCJraWQiOiJDMnp1SHpFSCIsInBpZCI6ImEwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMSIsImNvZGUiOiJCRC1BQkMyMzQiLCJpbiI6IjIwMjYtMTEtMTAiLCJvdXQiOiIyMDI2LTExLTEyIiwiZXhwIjoxNzk1MDAwMDAwfQ.ujfsqmEfNu8F_2G_VYQ-7yUb2Tko2aiwSeyVqyGk4no0IreXV-fLCnQz15qzsBB90_9QRB1r9eX0zB4KLy_NCQ';
+const HOTEL = 'a0000000-0000-0000-0000-000000000001';
+const DURING = Date.UTC(2026, 10, 11, 9, 0, 0); // 11 Nov 2026
+
+test('the partner app verifies a voucher signed by the server, with no internet', () => {
+  const p = verifyVoucherToken(GO_TOKEN, GO_PUB);
+  assert.equal(p?.code, 'BD-ABC234');
+  assert.equal(p?.pid, HOTEL);
+  const [forgedBody] = GO_TOKEN.split('.');
+  const changed = (forgedBody.startsWith('eyJ2') ? 'eyJ3' : 'eyJ2') + forgedBody.slice(4);
+  assert.equal(verifyVoucherToken(`${changed}.${GO_TOKEN.split('.')[1]}`, GO_PUB), null); // the text is not what was signed
+  const [payload, sig] = GO_TOKEN.split('.');
+  const flipped = sig.slice(0, -2) + (sig.endsWith('AA') ? 'BB' : 'AA');
+  assert.equal(verifyVoucherToken(`${payload}.${flipped}`, GO_PUB), null); // a changed signature
+  assert.equal(verifyVoucherToken(GO_TOKEN, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), null); // someone else's key
+  for (const junk of ['', 'garbage', 'a.b', `${payload}.`, '.', `${payload}.${sig}.extra`]) assert.equal(verifyVoucherToken(junk, GO_PUB), null);
+});
+
+test('a scanned voucher is accepted offline only for this hotel, inside the stay and before it expires', () => {
+  const ok = judgeVoucher(GO_TOKEN, GO_PUB, [HOTEL], DURING, '2026-11-11');
+  assert.equal(ok.ok, true);
+  assert.deepEqual(judgeVoucher(GO_TOKEN, GO_PUB, ['another-hotel'], DURING, '2026-11-11'), { ok: false, reason: 'wrong_hotel' });
+  assert.deepEqual(judgeVoucher(GO_TOKEN, GO_PUB, [HOTEL], DURING, '2026-11-09'), { ok: false, reason: 'too_early' });
+  assert.equal(judgeVoucher(GO_TOKEN, GO_PUB, [HOTEL], DURING, '2026-11-10').ok, true); // the check-in day
+  assert.equal(judgeVoucher(GO_TOKEN, GO_PUB, [HOTEL], DURING, '2026-11-12').ok, true); // the check-out day (a late arrival)
+  assert.deepEqual(judgeVoucher(GO_TOKEN, GO_PUB, [HOTEL], DURING, '2026-11-13'), { ok: false, reason: 'ended' });
+  assert.deepEqual(judgeVoucher(GO_TOKEN, GO_PUB, [HOTEL], 1795000001 * 1000, '2026-11-11'), { ok: false, reason: 'expired' });
+  assert.deepEqual(judgeVoucher('nonsense', GO_PUB, [HOTEL], DURING, '2026-11-11'), { ok: false, reason: 'invalid' });
+});
+
+test('the offline queue never holds a booking twice and keeps what the server did not answer', () => {
+  const a = { token: 't1', reference: 'BD-AAAAAA', at: '2026-11-11T09:00:00Z' };
+  const b = { token: 't2', reference: 'BD-BBBBBB', at: '2026-11-11T09:05:00Z' };
+  const c = { token: 't3', reference: 'BD-CCCCCC', at: '2026-11-11T09:10:00Z' };
+  let q = enqueueCheckin([], a);
+  q = enqueueCheckin(q, a); // scanned twice
+  q = enqueueCheckin(enqueueCheckin(q, b), c);
+  assert.deepEqual(q.map((x) => x.reference), ['BD-AAAAAA', 'BD-BBBBBB', 'BD-CCCCCC']);
+  // Sent a, b and c; the server settled a, refused b (cancelled) and did not answer c.
+  const out = settleQueue(q, q, ['checked_in', 'cancelled']);
+  assert.deepEqual(out.queue.map((x) => x.reference), ['BD-CCCCCC']);
+  assert.deepEqual(out.problems, [{ reference: 'BD-BBBBBB', result: 'cancelled', at: '2026-11-11T09:05:00Z' }]);
+  // Something queued after the send is not lost.
+  const later = enqueueCheckin(q, { token: 't4', reference: 'BD-DDDDDD', at: '2026-11-11T09:20:00Z' });
+  assert.deepEqual(settleQueue(later, q, ['already', 'already', 'already']).queue.map((x) => x.reference), ['BD-DDDDDD']);
 });

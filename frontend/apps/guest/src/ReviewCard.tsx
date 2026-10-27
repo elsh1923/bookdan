@@ -66,6 +66,12 @@ export function ReviewCard({ booking, onChanged }: { booking: Booking; onChanged
         <T variant="h3">{t('review.yours')}</T>
         <Stars value={booking.review.rating} />
         {booking.review.text ? <T color={colors.inkSoft}>{booking.review.text}</T> : null}
+        {booking.review.hotel_reply ? (
+          <View style={{ marginTop: spacing.sm, paddingLeft: spacing.md, borderLeftWidth: 3, borderLeftColor: colors.line }}>
+            <T variant="label" color={colors.muted}>{t('review.hotel_reply')}</T>
+            <T color={colors.inkSoft} style={{ marginTop: 2 }}>{booking.review.hotel_reply.text}</T>
+          </View>
+        ) : null}
       </View>
     );
   }

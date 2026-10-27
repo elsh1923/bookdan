@@ -15,6 +15,7 @@ import (
 	"github.com/bookdan/backend/internal/api"
 	"github.com/bookdan/backend/internal/config"
 	"github.com/bookdan/backend/internal/db"
+	"github.com/bookdan/backend/internal/ops"
 	"github.com/bookdan/backend/internal/server"
 )
 
@@ -61,6 +62,22 @@ func main() {
 			os.Exit(1)
 		}
 		mount, mountRoot, workers = a.Routes, a.AdminPage, a.RunWorkers
+		// Where the operators hear about a panic, a burst of server errors or a refund that cannot be paid.
+		var senders []ops.Sender
+		if cfg.AlertWebhookURL != "" {
+			senders = append(senders, ops.Webhook(cfg.AlertWebhookURL))
+		}
+		to := cfg.AlertEmails
+		if len(to) == 0 {
+			to = cfg.AdminEmails
+		}
+		if len(to) > 0 && cfg.EmailProvider != "log" && cfg.EmailProvider != "" {
+			senders = append(senders, ops.Mail(providers.Mail.SendMail, to))
+		}
+		ops.Configure(senders...)
+		if len(senders) == 0 && cfg.IsProduction() {
+			slog.Warn("no alert destination: set ALERT_WEBHOOK_URL (Slack, Discord or Teams) or ALERT_EMAIL, so you hear about problems before your users do")
+		}
 		if cfg.PaymentProvider == "dev" {
 			slog.Warn("PAYMENT_PROVIDER=dev: payments use a fake test page; no real money moves")
 		}

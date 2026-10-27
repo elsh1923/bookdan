@@ -16,6 +16,7 @@ import { DisplayFontContext, colors, fonts } from '@bookdan/ui';
 import { PERSISTED_QUERY_KEYS, queryClient, queryPersister } from '../src/api';
 import { usePaymentRecovery } from '../src/payment';
 import { usePushUpdates } from '../src/notifications';
+import { DisplaySync } from '../src/DisplaySync';
 import { UpdateBanner } from '../src/UpdateBanner';
 import { LaunchScreen } from '../src/LaunchScreen';
 import { usePrefs } from '../src/store';
@@ -62,6 +63,7 @@ export default function RootLayout() {
       >
         <StatusBar style="dark" />
           <UpdateBanner />
+          <DisplaySync />
         <View style={{ flex: 1, alignItems: 'center', backgroundColor: colors.background }}>
           <View style={{ flex: 1, width: '100%', maxWidth: 640 }}>
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background }, animation: 'slide_from_right', animationDuration: 280 }}>
@@ -77,6 +79,7 @@ export default function RootLayout() {
           <Stack.Screen name="guest-details" options={{ presentation: 'modal' }} />
           <Stack.Screen name="mock-gateway/[session]" options={{ presentation: 'modal' }} />
           <Stack.Screen name="payment-return" />
+          <Stack.Screen name="change-dates" options={{ presentation: 'modal' }} />
           <Stack.Screen name="support/index" />
           <Stack.Screen name="support/new" options={{ presentation: 'modal' }} />
           <Stack.Screen name="support/[id]" />

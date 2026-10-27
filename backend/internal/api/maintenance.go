@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/bookdan/backend/internal/httpx"
+	"github.com/bookdan/backend/internal/ops"
 )
 
 // Once a day (after midnight in Addis Ababa, and when the server starts) the server tidies what time has overtaken:
@@ -20,6 +21,8 @@ import (
 // RunMaintenance runs the daily jobs once (also used by tests).
 func (s *Server) RunMaintenance(ctx context.Context) {
 	s.completeStays(ctx)
+	s.accrueHotelCommissions(ctx)
+	s.emailStatements(ctx)
 	s.eraseOldIDs(ctx)
 }
 
@@ -35,6 +38,7 @@ func (s *Server) completeStays(ctx context.Context) {
 	})
 	if err != nil {
 		slog.Error("completing finished stays failed", "err", err)
+		ops.Report("job-complete-stays", "The daily job that completes stays failed", err.Error())
 		return
 	}
 	if n > 0 {

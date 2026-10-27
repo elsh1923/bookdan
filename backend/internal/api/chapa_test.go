@@ -299,7 +299,7 @@ func TestChapaPaymentsAreConfirmedWithChapa(t *testing.T) {
 	})
 
 	t.Run("a refund goes to Chapa with the payment reference and an amount in cents", func(t *testing.T) {
-		if err := gw.Refund(context.Background(), "bd0123456789abcdef", 12345, "ETB"); err != nil {
+		if err := gw.Refund(context.Background(), "bd0123456789abcdef", "", 12345, "ETB"); err != nil {
 			t.Fatal(err)
 		}
 		fake.mu.Lock()

@@ -47,6 +47,8 @@ export const PartnerBookingSchema = z.object({
 export const PartnerBookingListSchema = z.object({
   property: z.object({ id: z.string(), name: z.string() }),
   items: z.array(PartnerBookingSchema),
+  /** Set when there are older bookings after this page: pass it back as ?cursor=. The client below follows it. */
+  next_cursor: z.string().nullable().optional(),
   server_time: z.string(),
 });
 
@@ -86,6 +88,9 @@ export const HotelEarningsSchema = z.object({
   upcoming_santim: z.number().int(),
   paid_santim: z.number().int(),
   to_pay_santim: z.number().int(),
+  /** Paid back to BookDan (commission on pay-at-hotel stays), and what the hotel still owes BookDan when that commission is more than BookDan owes it. */
+  received_santim: z.number().int().default(0),
+  owes_santim: z.number().int().default(0),
   last_paid_at: z.string().nullable(),
   items: z.array(EarningLineSchema),
   payouts: z.array(PayoutLineSchema),
@@ -182,3 +187,74 @@ export function sortInbox<T extends Pick<PartnerBooking, 'status' | 'hotel_deadl
     return a.check_in.localeCompare(b.check_in);
   });
 }
+
+/** Reasons a hotel gives when it cancels a confirmed booking or reports that it cannot host the guest. */
+export const HotelProblemReasonSchema = z.enum(['overbooked', 'maintenance', 'emergency', 'other']);
+export type HotelProblemReason = z.infer<typeof HotelProblemReasonSchema>;
+export const HOTEL_PROBLEM_REASONS = HotelProblemReasonSchema.options;
+
+/** A guest's dispute as the hotel sees it: the reason, what the guest said and what the hotel said. Never what support wrote. */
+export const HotelDisputeSchema = z.object({
+  dispute: z.object({
+    ticket_id: z.string(),
+    status: z.enum(['open', 'answered', 'closed']),
+    reason: z.string(),
+    messages: z.array(z.object({ role: z.enum(['guest', 'hotel', 'support']), author: z.string(), body: z.string(), created_at: z.string() })),
+  }),
+});
+export type HotelDispute = z.infer<typeof HotelDisputeSchema>['dispute'];
+
+/** A review of one of the owner's hotels, with the hotel's reply if it wrote one. */
+export const PartnerReviewSchema = z.object({
+  id: z.string(),
+  hotel: z.string(),
+  author: z.string(),
+  rating: z.number().int(),
+  text: z.string(),
+  date: z.string(),
+  booking_code: z.string(),
+  reply: z.object({ text: z.string(), date: z.string() }).nullable(),
+});
+export const PartnerReviewListSchema = z.object({ reviews: z.array(PartnerReviewSchema) });
+export type PartnerReview = z.infer<typeof PartnerReviewSchema>;
+
+/** One month's statement for a hotel: the stays that ended in it, the payouts and receipts, and the balance at the start and the end. */
+export const StatementLineSchema = z.object({
+  date: z.string(),
+  reference: z.string(),
+  guest_name: z.string(),
+  nights: z.number().int(),
+  method: z.enum(['online', 'pay_at_hotel']),
+  status: z.string(),
+  gross_santim: z.number().int(),
+  discount_santim: z.number().int(),
+  commission_santim: z.number().int(),
+  vat_santim: z.number().int(),
+  net_santim: z.number().int(),
+});
+const MoneyMoveSchema = z.object({ date: z.string(), amount_santim: z.number().int(), reference: z.string() });
+export const StatementSchema = z.object({
+  property_id: z.string(),
+  hotel: z.string(),
+  month: z.string(),
+  from: z.string(),
+  to: z.string(),
+  currency: CurrencySchema,
+  opening_santim: z.number().int(),
+  closing_santim: z.number().int(),
+  online_gross_santim: z.number().int(),
+  online_commission_santim: z.number().int(),
+  online_vat_santim: z.number().int(),
+  online_hotel_share_santim: z.number().int(),
+  pay_at_hotel_collected_santim: z.number().int(),
+  pay_at_hotel_commission_santim: z.number().int(),
+  pay_at_hotel_vat_santim: z.number().int(),
+  paid_santim: z.number().int(),
+  received_santim: z.number().int(),
+  lines: z.array(StatementLineSchema),
+  payouts: z.array(MoneyMoveSchema),
+  receipts: z.array(MoneyMoveSchema),
+});
+export const StatementListSchema = z.object({ statements: z.array(StatementSchema) });
+export type Statement = z.infer<typeof StatementSchema>;
+export type StatementLine = z.infer<typeof StatementLineSchema>;

@@ -14,11 +14,12 @@ import { NotifyMeCard } from '../../src/NotifyMeCard';
 import { ReviewCard } from '../../src/ReviewCard';
 import { addStayToCalendar, callPhone } from '../../src/links';
 import { clearPendingPayment, openGateway, savePendingPayment } from '../../src/payment';
-import { price, shortDate } from '../../src/format';
+import { priceExact as price, shortDate } from '../../src/format';
 import { useBooking } from '../../src/queries';
 import { StatusBadge } from '../../src/StatusBadge';
 import { TripTimeline } from '../../src/TripTimeline';
 import { ensureVoucher } from '../../src/voucherStore';
+import { useDisplay } from '../../src/display';
 
 /** Countdown from the server clock: remaining = expiry - server_time - time since that response. */
 function useHoldRemaining(b: Booking | undefined, receivedAt: number) {
@@ -64,6 +65,7 @@ function PaymentOption({ icon, title, note, selected, onPress }: { icon: keyof t
 }
 
 export default function BookingScreen() {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();
@@ -238,6 +240,7 @@ export default function BookingScreen() {
           <Line label={t('booking.room')} value={b.rooms > 1 ? `${b.rooms} × ${b.room_name}` : b.room_name} />
           {b.meal === 'breakfast' ? <Line label={t('booking.meal_line')} value={t('checkout.meal_breakfast')} /> : null}
           {!b.refundable ? <Line label={t('booking.policy_line')} value={t('property.option_nonrefundable')} /> : null}
+          {b.partially_refunded_santim > 0 ? <Line label={t('booking.part_refunded')} value={price(b.partially_refunded_santim, b.currency)} /> : null}
           {b.coupon_code ? <Line label={t('booking.coupon_row', { code: b.coupon_code })} value={`− ${price(b.discount_santim, b.currency)}`} /> : null}
           <Line label={t('booking.check_in')} value={`${shortDate(b.check_in, months)} · ${b.check_in_time}`} />
           <Line label={t('booking.check_out')} value={`${shortDate(b.check_out, months)} · ${b.check_out_time}`} />
@@ -251,6 +254,12 @@ export default function BookingScreen() {
 
         <TripTimeline booking={b} />
 
+        {b.original_check_in && b.original_check_out ? (
+          <T variant="small" color={colors.muted} style={{ marginTop: spacing.md }}>{t('change.original', { from: shortDate(b.original_check_in, months), to: shortDate(b.original_check_out, months) })}</T>
+        ) : null}
+        {b.can_change_dates ? (
+          <Button variant="secondary" icon="calendar-outline" title={t('change.button')} onPress={() => router.push({ pathname: '/change-dates', params: { id: b.id } })} style={{ marginTop: spacing.md }} />
+        ) : null}
         {b.can_cancel ? <CancelCard booking={b} months={months} onChanged={onBookingChanged} /> : null}
         <ReviewCard booking={b} onChanged={onBookingChanged} />
 
@@ -273,15 +282,18 @@ export default function BookingScreen() {
         {confirmed ? (
           <Button icon="qr-code-outline" title={t('booking.view_voucher')} onPress={() => router.push({ pathname: '/voucher/[id]', params: { id } })} style={{ marginTop: spacing.xl }} />
         ) : null}
-        <Button
-          variant="secondary"
-          icon="call-outline"
-          title={t('booking.call_hotel')}
-          onPress={async () => {
-            if (!(await callPhone(b.property_phone))) Alert.alert(t('common.cannot_open_title'), t('common.cannot_open_body', { value: b.property_phone }));
-          }}
-          style={{ marginTop: spacing.md }}
-        />
+        {b.property_phone ? (
+          <Button
+            variant="secondary"
+            icon="call-outline"
+            title={t('booking.call_hotel')}
+            onPress={async () => {
+              api.logHotelCall(b.id).catch(() => undefined); // BookDan counts calls; it never stops one
+              if (!(await callPhone(b.property_phone))) Alert.alert(t('common.cannot_open_title'), t('common.cannot_open_body', { value: b.property_phone }));
+            }}
+            style={{ marginTop: spacing.md }}
+          />
+        ) : null}
         {b.dispute_ticket_id ? (
           <Button
             variant="secondary"

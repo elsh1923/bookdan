@@ -58,16 +58,16 @@ export default function SupportThread() {
               <View
                 key={i}
                 style={{
-                  alignSelf: m.from_staff ? 'flex-start' : 'flex-end',
+                  alignSelf: m.role === 'guest' ? 'flex-end' : 'flex-start',
                   maxWidth: '88%',
                   padding: spacing.md,
                   borderRadius: radius.md,
-                  backgroundColor: m.from_staff ? colors.surface : colors.primarySoft,
+                  backgroundColor: m.role === 'guest' ? colors.primarySoft : colors.surface,
                   borderWidth: 1,
-                  borderColor: m.from_staff ? colors.line : colors.primarySoft,
+                  borderColor: m.role === 'guest' ? colors.primarySoft : colors.line,
                 }}
               >
-                <T variant="label" color={colors.muted}>{m.from_staff ? t('support.support') : t('support.you')}</T>
+                <T variant="label" color={colors.muted}>{m.role === 'hotel' ? t('support.hotel') : m.role === 'support' ? t('support.support') : t('support.you')}</T>
                 <T style={{ marginTop: 2 }}>{m.body}</T>
               </View>
             ))}

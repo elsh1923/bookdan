@@ -324,6 +324,20 @@ export function createMockApi(opts: MockOptions = {}): Api {
       return view(r);
     },
 
+    async changeBookingDates(id, dates) {
+      await gate();
+      const r = owned(id);
+      if (r.b.status !== 'CONFIRMED') throw new ApiError('INVALID_STATE', 'Only a confirmed booking can be moved');
+      if (nightsBetween(dates.check_in, dates.check_out) !== nightsBetween(r.b.check_in, r.b.check_out)) throw new ApiError('PRICE_DIFFERS', 'The new dates cost a different price');
+      r.b = { ...r.b, check_in: dates.check_in, check_out: dates.check_out, original_check_in: r.b.original_check_in ?? r.b.check_in, original_check_out: r.b.original_check_out ?? r.b.check_out };
+      await persist();
+      return view(r);
+    },
+
+    async logHotelCall() {
+      await gate();
+    },
+
     async raiseDispute(id, dispute) {
       await gate();
       const r = owned(id);
@@ -334,7 +348,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       const tid = `t${tickets.length + 1}`;
       tickets.unshift({
         id: tid, kind: 'dispute', subject: 'Dispute: ' + dispute.reason, status: 'open', booking_id: id, booking_code: v.reference, created_at: now, updated_at: now,
-        messages: [{ from_staff: false, author: 'guest', body: dispute.message, created_at: now }],
+        messages: [{ from_staff: false, role: 'guest' as const, author: 'guest', body: dispute.message, created_at: now }],
       });
       r.b = { ...r.b, status: 'DISPUTED', dispute_ticket_id: tid };
       await persist();
@@ -345,7 +359,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       await gate();
       const r = owned(id);
       if (!view(r).can_review) throw new ApiError(r.b.review ? 'ALREADY_REVIEWED' : 'REVIEW_NOT_READY', 'This stay cannot be reviewed now');
-      r.b = { ...r.b, review: { rating: review.rating, text: review.text } };
+      r.b = { ...r.b, review: { rating: review.rating, text: review.text, hotel_reply: null } };
       await persist();
       return view(r);
     },
@@ -374,7 +388,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       const id = `t${tickets.length + 1}`;
       tickets.unshift({
         id, kind: n.kind, subject: n.subject, status: 'open', booking_id: n.booking_id ?? null, booking_code: null, created_at: now, updated_at: now,
-        messages: [{ from_staff: false, author: 'guest', body: n.message, created_at: now }],
+        messages: [{ from_staff: false, role: 'guest' as const, author: 'guest', body: n.message, created_at: now }],
       });
       return { id };
     },
@@ -385,7 +399,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       if (!t) throw new ApiError('NOT_FOUND', 'Not found');
       if (t.status === 'closed') throw new ApiError('INVALID_STATE', 'Closed');
       const now = new Date().toISOString();
-      t.messages = [...(t.messages ?? []), { from_staff: false, author: 'guest', body: message, created_at: now }];
+      t.messages = [...(t.messages ?? []), { from_staff: false, role: 'guest' as const, author: 'guest', body: message, created_at: now }];
       t.status = 'open';
       t.updated_at = now;
     },
@@ -567,6 +581,13 @@ export function createMockApi(opts: MockOptions = {}): Api {
         facets,
         server_time: new Date().toISOString(),
       });
+    },
+
+    // Sample rates for the simulated app only; the real app reads them from the server.
+    async getRates() {
+      await gate();
+      const at = new Date().toISOString();
+      return { base: 'ETB' as const, rates: [{ currency: 'USD' as const, birr_per_unit: 150, updated_at: at, stale: false }, { currency: 'EUR' as const, birr_per_unit: 165, updated_at: at, stale: false }], server_time: at };
     },
 
     async suggest(q: string) {

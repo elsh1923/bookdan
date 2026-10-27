@@ -29,7 +29,9 @@ const (
 var ticketKinds = map[string]bool{"question": true, "problem": true}
 
 type ticketMessage struct {
-	FromStaff bool   `json:"from_staff"`
+	FromStaff bool `json:"from_staff"`
+	// Role says who wrote it: guest, hotel or support.
+	Role      string `json:"role"`
 	Author    string `json:"author"`
 	Body      string `json:"body"`
 	CreatedAt string `json:"created_at"`
@@ -43,7 +45,10 @@ type ticketBooking struct {
 	CheckIn      string  `json:"check_in"`
 	CheckOut     string  `json:"check_out"`
 	PaidSantim   int64   `json:"paid_santim"`
-	Currency     string  `json:"currency"`
+	// RefundedSantim is what was already returned in part; LeftSantim is what can still be refunded.
+	RefundedSantim int64  `json:"refunded_santim"`
+	LeftSantim     int64  `json:"left_santim"`
+	Currency       string `json:"currency"`
 }
 
 type ticketOut struct {
@@ -57,6 +62,7 @@ type ticketOut struct {
 	UpdatedAt   string          `json:"updated_at"`
 	Preview     string          `json:"preview,omitempty"`
 	Guest       string          `json:"guest,omitempty"`   // admin view only
+	Hotel       string          `json:"hotel,omitempty"`   // set when the request comes from a hotel's staff (admin view)
 	Reason      *string         `json:"reason,omitempty"`  // disputes: why the guest opened it
 	Outcome     *string         `json:"outcome,omitempty"` // disputes: how it ended
 	Booking     *ticketBooking  `json:"booking,omitempty"` // admin view only: the booking a ticket is about
@@ -94,7 +100,7 @@ func (s *Server) createTicket(w http.ResponseWriter, r *http.Request) error {
 		return bad(fmt.Sprintf("Write your message (at most %d characters)", maxMessage))
 	}
 	ctx, uid := r.Context(), claimsFrom(r).Sub
-	id, err := s.openTicket(ctx, r, uid, in.Kind, subject, message, in.BookingID)
+	id, err := s.openTicket(ctx, r, uid, in.Kind, subject, message, in.BookingID, claimsFrom(r).App == "partner")
 	if err != nil {
 		return err
 	}
@@ -106,11 +112,28 @@ func (s *Server) createTicket(w http.ResponseWriter, r *http.Request) error {
 }
 
 // openTicket creates a ticket with its first message and tells support. bookingID may be empty; when it is not, it must be the guest's own.
-func (s *Server) openTicket(ctx context.Context, r *http.Request, uid, kind, subject, message, bookingID string) (string, error) {
+// For hotel staff (asHotel) the booking must be one of their hotels' and the request is marked with that hotel (the first of theirs when it is not about a booking).
+func (s *Server) openTicket(ctx context.Context, r *http.Request, uid, kind, subject, message, bookingID string, asHotel bool) (string, error) {
 	var id string
 	err := s.tx(ctx, func(tx pgx.Tx) error {
-		var booking any
-		if bookingID != "" {
+		var booking, property any
+		if asHotel {
+			propIDs, _, err := s.staffHotels(ctx, uid)
+			if err != nil {
+				return err
+			}
+			property = propIDs[0]
+			if bookingID != "" {
+				var prop string
+				if err := tx.QueryRow(ctx, `SELECT property_id::text FROM bookings WHERE id = $1 AND property_id = ANY($2::uuid[]) AND status <> 'HELD'`, bookingID, propIDs).Scan(&prop); err != nil {
+					if err == pgx.ErrNoRows || isBadUUID(err) {
+						return errNotFound
+					}
+					return err
+				}
+				booking, property = bookingID, prop
+			}
+		} else if bookingID != "" {
 			var ok bool
 			if err := tx.QueryRow(ctx, `SELECT true FROM bookings WHERE id = $1 AND user_id = $2`, bookingID, uid).Scan(&ok); err != nil {
 				if err == pgx.ErrNoRows || isBadUUID(err) {
@@ -131,7 +154,7 @@ func (s *Server) openTicket(ctx context.Context, r *http.Request, uid, kind, sub
 		if open >= maxOpenTickets {
 			return fail(http.StatusConflict, "TOO_MANY_TICKETS", "You have several requests waiting for an answer. Wait for a reply, or close one you no longer need.")
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO support_tickets (user_id, booking_id, kind, subject) VALUES ($1, $2, $3, $4) RETURNING id`, uid, booking, kind, subject).Scan(&id); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO support_tickets (user_id, booking_id, kind, subject, property_id) VALUES ($1, $2, $3, $4, $5) RETURNING id`, uid, booking, kind, subject, property).Scan(&id); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO support_messages (ticket_id, from_staff, author, body) VALUES ($1, false, 'guest', $2)`, id, message); err != nil {
@@ -206,9 +229,9 @@ func scanTicket(rows pgx.Rows) (ticketOut, error) {
 func (s *Server) readTicket(ctx context.Context, id, userID string) (ticketOut, error) {
 	var t ticketOut
 	var created, updated time.Time
-	err := s.pool.QueryRow(ctx, `SELECT t.id, t.kind, t.subject, t.status, t.booking_id, b.code, t.created_at, t.updated_at, coalesce(u.email, u.phone, ''), t.reason, t.outcome
-		FROM support_tickets t JOIN users u ON u.id = t.user_id LEFT JOIN bookings b ON b.id = t.booking_id
-		WHERE t.id = $1 AND ($2 = '' OR t.user_id::text = $2)`, id, userID).Scan(&t.ID, &t.Kind, &t.Subject, &t.Status, &t.BookingID, &t.BookingCode, &created, &updated, &t.Guest, &t.Reason, &t.Outcome)
+	err := s.pool.QueryRow(ctx, `SELECT t.id, t.kind, t.subject, t.status, t.booking_id, b.code, t.created_at, t.updated_at, coalesce(u.email, u.phone, ''), t.reason, t.outcome, coalesce(hp.name, '')
+		FROM support_tickets t JOIN users u ON u.id = t.user_id LEFT JOIN bookings b ON b.id = t.booking_id LEFT JOIN properties hp ON hp.id = t.property_id
+		WHERE t.id = $1 AND ($2 = '' OR t.user_id::text = $2)`, id, userID).Scan(&t.ID, &t.Kind, &t.Subject, &t.Status, &t.BookingID, &t.BookingCode, &created, &updated, &t.Guest, &t.Reason, &t.Outcome, &t.Hotel)
 	if err == pgx.ErrNoRows || isBadUUID(err) {
 		return t, errNotFound
 	}
@@ -229,6 +252,7 @@ func (s *Server) readTicket(ctx context.Context, id, userID string) (ticketOut, 
 			return t, err
 		}
 		m.CreatedAt = at.UTC().Format(time.RFC3339)
+		m.Role = roleOf(m.Author)
 		t.Messages = append(t.Messages, m)
 	}
 	return t, rows.Err()
@@ -242,8 +266,11 @@ func (s *Server) getTicket(w http.ResponseWriter, r *http.Request) error {
 	t.Guest = "" // a guest does not need their own address echoed
 	// A staff member's address is not the guest's business: show "Support".
 	for i := range t.Messages {
-		if t.Messages[i].FromStaff {
+		switch t.Messages[i].Role {
+		case "support":
 			t.Messages[i].Author = "Support"
+		case "hotel":
+			t.Messages[i].Author = "Hotel"
 		}
 	}
 	respond(w, http.StatusOK, struct {
@@ -319,6 +346,10 @@ func (s *Server) finishTicket(w http.ResponseWriter, r *http.Request, userID, wh
 		}
 		// An open dispute is not just a conversation: the guest closing it withdraws it (the booking goes back to what it was), and
 		// support settles it with a decision rather than by closing it.
+		// A relocation is settled by support (the booking is restored or refunded), or ends when the guest cancels the booking.
+		if kind == "relocation" && status != "closed" {
+			return fail(http.StatusConflict, "RELOCATION_OPEN", "A relocation ends when support settles it or the guest cancels the booking")
+		}
 		if kind == "dispute" && status != "closed" {
 			if who != "guest" {
 				return fail(http.StatusConflict, "DISPUTE_OPEN", "Settle the dispute with a decision instead of closing it")
@@ -348,8 +379,8 @@ func (s *Server) adminTickets(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	rows, err := s.pool.Query(r.Context(), `SELECT t.id, t.kind, t.subject, t.status, t.booking_id, b.code, t.created_at, t.updated_at,
-		coalesce((SELECT left(body, 140) FROM support_messages m WHERE m.ticket_id = t.id ORDER BY m.created_at DESC LIMIT 1), ''), coalesce(u.email, u.phone, '')
-		FROM support_tickets t JOIN users u ON u.id = t.user_id LEFT JOIN bookings b ON b.id = t.booking_id
+		coalesce((SELECT left(body, 140) FROM support_messages m WHERE m.ticket_id = t.id ORDER BY m.created_at DESC LIMIT 1), ''), coalesce(u.email, u.phone, ''), coalesce(hp.name, '')
+		FROM support_tickets t JOIN users u ON u.id = t.user_id LEFT JOIN bookings b ON b.id = t.booking_id LEFT JOIN properties hp ON hp.id = t.property_id
 		ORDER BY (t.status = 'closed'), (t.status = 'answered'), t.updated_at DESC LIMIT 200`)
 	if err != nil {
 		return err
@@ -359,7 +390,7 @@ func (s *Server) adminTickets(w http.ResponseWriter, r *http.Request) error {
 	for rows.Next() {
 		var t ticketOut
 		var created, updated time.Time
-		if err := rows.Scan(&t.ID, &t.Kind, &t.Subject, &t.Status, &t.BookingID, &t.BookingCode, &created, &updated, &t.Preview, &t.Guest); err != nil {
+		if err := rows.Scan(&t.ID, &t.Kind, &t.Subject, &t.Status, &t.BookingID, &t.BookingCode, &created, &updated, &t.Preview, &t.Guest, &t.Hotel); err != nil {
 			return err
 		}
 		t.CreatedAt, t.UpdatedAt = created.UTC().Format(time.RFC3339), updated.UTC().Format(time.RFC3339)
@@ -384,12 +415,17 @@ func (s *Server) adminGetTicket(w http.ResponseWriter, r *http.Request) error {
 		var b ticketBooking
 		var ci, co time.Time
 		err := s.pool.QueryRow(r.Context(), `SELECT b.status, b.disputed_from, p.name, b.check_in, b.check_out, b.currency,
-			coalesce((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status IN ('succeeded', 'refunded')), 0)::bigint
-			FROM bookings b JOIN properties p ON p.id = b.property_id WHERE b.id = $1`, *t.BookingID).Scan(&b.Status, &b.DisputedFrom, &b.Hotel, &ci, &co, &b.Currency, &b.PaidSantim)
+			coalesce((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status IN ('succeeded', 'refunded')), 0)::bigint,
+			COALESCE((SELECT sum(r.amount_santim) FROM partial_refunds r WHERE r.booking_id = b.id), 0)::bigint,
+			COALESCE((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status = 'succeeded'), 0)::bigint
+			FROM bookings b JOIN properties p ON p.id = b.property_id WHERE b.id = $1`, *t.BookingID).Scan(&b.Status, &b.DisputedFrom, &b.Hotel, &ci, &co, &b.Currency, &b.PaidSantim, &b.RefundedSantim, &b.LeftSantim)
 		if err != nil {
 			return err
 		}
 		b.CheckIn, b.CheckOut = pgDate(ci), pgDate(co)
+		if b.LeftSantim -= b.RefundedSantim; b.LeftSantim < 0 {
+			b.LeftSantim = 0
+		}
 		t.Booking = &b
 	}
 	respond(w, http.StatusOK, struct {
@@ -430,14 +466,19 @@ func (s *Server) adminReplyTicket(w http.ResponseWriter, r *http.Request) error 
 func (s *Server) mailGuestAnswer(ctx context.Context, ticketID, body string) {
 	var email *string
 	var subject string
-	if err := s.pool.QueryRow(ctx, `SELECT u.email, t.subject FROM support_tickets t JOIN users u ON u.id = t.user_id WHERE t.id = $1`, ticketID).Scan(&email, &subject); err != nil {
+	var hotel bool
+	if err := s.pool.QueryRow(ctx, `SELECT u.email, t.subject, t.property_id IS NOT NULL FROM support_tickets t JOIN users u ON u.id = t.user_id WHERE t.id = $1`, ticketID).Scan(&email, &subject, &hotel); err != nil {
 		slog.Error("support mail: read guest", "ticket", ticketID, "err", err)
 		return
 	}
 	if email == nil || strings.HasSuffix(*email, "@deleted.invalid") {
 		return
 	}
-	text := "BookDan support answered your request: " + subject + "\n\n" + body + "\n\nOpen the BookDan app, Profile, Help and support, to reply."
+	where := "Open the BookDan app, Profile, Help and support, to reply."
+	if hotel {
+		where = "Open the BookDan Partner app, Settings, Help and support, to reply."
+	}
+	text := "BookDan support answered your request: " + subject + "\n\n" + body + "\n\n" + where
 	if err := s.p.Mail.SendMail(ctx, *email, "BookDan support: "+subject, text, ""); err != nil {
 		slog.Error("support mail: send to guest", "err", err)
 	}

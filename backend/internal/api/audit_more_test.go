@@ -9,10 +9,8 @@ package api_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -25,29 +23,6 @@ import (
 	"github.com/bookdan/backend/internal/api"
 	"github.com/bookdan/backend/internal/config"
 )
-
-// rawDo makes one request with plain net/http, so it can run in a goroutine.
-func rawDo(app, token, deviceID, method, path string, body any) (int, map[string]any) {
-	var rd io.Reader
-	if body != nil {
-		b, _ := json.Marshal(body)
-		rd = bytes.NewReader(b)
-	}
-	req, _ := http.NewRequest(method, srv.URL+"/v1"+path, rd)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-App", app)
-	req.Header.Set("X-Device-Id", deviceID)
-	req.Header.Set("Authorization", "Bearer "+token)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, nil
-	}
-	defer res.Body.Close()
-	raw, _ := io.ReadAll(res.Body)
-	var out map[string]any
-	_ = json.Unmarshal(raw, &out)
-	return res.StatusCode, out
-}
 
 // ledgerRefunds counts the refunds owed (written when the booking ends) and refundsPaid those the gateway has accepted.
 func ledgerRefunds(id string) int {
@@ -373,29 +348,6 @@ func (failingMailer) SendMail(context.Context, string, string, string, string) e
 	return errors.New("mail server is down")
 }
 
-func countSubject(email, contains string) int {
-	n := 0
-	for _, m := range mails.to(email) {
-		if strings.Contains(m.subject, contains) {
-			n++
-		}
-	}
-	return n
-}
-
-func realGuest(t *testing.T, prefix string) (*client, string) {
-	t.Helper()
-	email := realAddress(prefix)
-	g := newClient(t, "guest")
-	signed := signInWithEmailedCode(g, "/auth/otp/request", "/auth/otp/verify", email)
-	if signed.status != 200 {
-		t.Fatalf("sign in: %d %s", signed.status, signed.raw)
-	}
-	g.token = signed.str("token")
-	withProfile(g)
-	return g, email
-}
-
 func TestAudit_S10_01_EachEmailIsSentExactlyOnceEvenWhenTheActionIsRepeated(t *testing.T) {
 	hotel := hotelFor(t)
 	g, email := realGuest(t, "once")
@@ -560,5 +512,133 @@ func TestAudit_S17_01_LogsHoldNoTokensAndNoQueryValues(t *testing.T) {
 	}
 	if !strings.Contains(out, `"request_id"`) {
 		t.Errorf("S17.1: every request log carries a request id")
+	}
+}
+
+// ---- phone sign-in over a real SMS provider
+
+type capturedSMS struct {
+	mu    sync.Mutex
+	sent  map[string]string
+	count int
+}
+
+func (c *capturedSMS) Send(_ context.Context, channel, to, code string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sent == nil {
+		c.sent = map[string]string{}
+	}
+	c.sent[to] = code
+	c.count++
+	return nil
+}
+
+func TestAudit_SMS_PhoneSignInGetsARandomCodeBySMSWhenAProviderIsSet(t *testing.T) {
+	sms := &capturedSMS{}
+	defer auditServer(t, func(c *config.Config) { c.DemoMode, c.OTPProvider = true, "twilio" }, func(p *api.Providers) {
+		p.OTP, p.SMSReal = api.RoutedSender(sms, mailer), true
+	})()
+	phone := fmt.Sprintf("+2519%08d", time.Now().UnixNano()%100000000)
+	g := newClient(t, "guest")
+	if r := g.do("POST", "/auth/otp/request", map[string]string{"type": "phone", "value": phone}); r.status != 200 {
+		t.Fatalf("request: %d %s", r.status, r.raw)
+	}
+	code := sms.sent[phone]
+	if code == "" || code == "123456" {
+		t.Fatalf("a real provider means a real random code, not the public demo code: %q", code)
+	}
+	if r := g.do("POST", "/auth/otp/verify", map[string]string{"type": "phone", "value": phone, "code": "123456"}); r.status == 200 {
+		t.Errorf("the demo code must not work for a phone served by a real provider")
+	}
+	if r := g.do("POST", "/auth/otp/verify", map[string]string{"type": "phone", "value": phone, "code": code}); r.status != 200 {
+		t.Errorf("the code that was sent signs in: %d %s", r.status, r.raw)
+	}
+}
+
+func TestAudit_SMS_PhoneSignInCanBeSwitchedOff(t *testing.T) {
+	defer auditServer(t, func(c *config.Config) { c.OTPProvider = "off" })()
+	g := newClient(t, "guest")
+	r := g.do("POST", "/auth/otp/request", map[string]string{"type": "phone", "value": "+251911223344"})
+	if r.status != 503 || r.str("error", "code") != "PHONE_SIGNIN_OFF" {
+		t.Errorf("phone sign-in is off: %d %s", r.status, r.raw)
+	}
+	// Email sign-in is not affected.
+	if e := g.do("POST", "/auth/otp/request", map[string]string{"type": "email", "value": uniqueEmail("smsoff")}); e.status != 200 {
+		t.Errorf("email still works: %d %s", e.status, e.raw)
+	}
+}
+
+// ---- partial refunds through the Chapa gateway
+
+func TestAudit_PartialRefundIsRetriedAndEachRefundHasItsOwnGatewayReference(t *testing.T) {
+	fake, done := chapaAuditServer(t)
+	defer done()
+	hotel := hotelFor(t)
+	admin := adminClient(t)
+	g := auditGuest(t)
+	id := hold(g, quote(g, meskel, standard, 299, 301, 1, 1).str("id"), fmt.Sprintf("aud-pr-%d", time.Now().UnixNano())).str("id")
+	if r := g.do("POST", "/bookings/"+id+"/pay", map[string]string{"method": "chapa"}); r.status != 200 {
+		t.Fatalf("pay: %d %s", r.status, r.raw)
+	}
+	fake.mu.Lock()
+	ref, _ := fake.hosted["merchant_reference"].(string)
+	fake.mu.Unlock()
+	var paid int64
+	pool.QueryRow(context.Background(), `SELECT amount_santim FROM payments WHERE booking_id = $1 ORDER BY created_at DESC LIMIT 1`, id).Scan(&paid)
+	fake.answer("SUCCESS", paid, "ETB")
+	if res, err := http.Get(srv.URL + "/v1/payments/chapa/return?tx_ref=" + ref); err != nil {
+		t.Fatal(err)
+	} else {
+		res.Body.Close()
+	}
+	if r := hotel.do("POST", "/partner/bookings/"+id+"/accept", nil); r.status != 200 {
+		t.Fatalf("accept: %d %s", r.status, r.raw)
+	}
+	tid := openTicket(g, "problem", "A problem with the room", "No hot water.", id).str("id")
+
+	// The gateway refuses: the refund stays owed and nothing is recorded as paid.
+	fake.mu.Lock()
+	fake.failRefunds = true
+	fake.mu.Unlock()
+	x := paid / 4
+	if r := goodwill(admin, tid, "hotel", x, "No hot water."); r.status != 200 {
+		t.Fatalf("refund: %d %s", r.status, r.raw)
+	}
+	if owed, done := partialRows(id); owed != 1 || done != 0 || refundsPaid(id) != 0 {
+		t.Fatalf("still owed while the gateway refuses: owed %d paid %d ledger-paid %d", owed, done, refundsPaid(id))
+	}
+	// It recovers: the sweep pays it, once.
+	fake.mu.Lock()
+	fake.failRefunds = false
+	fake.mu.Unlock()
+	hotel.do("GET", "/partner/bookings", nil)
+	if owed, done := partialRows(id); owed != 0 || done != 1 || refundsPaid(id) != 1 {
+		t.Fatalf("paid after recovery: owed %d paid %d ledger-paid %d", owed, done, refundsPaid(id))
+	}
+	// The guest cancels: the rest goes back with a different reference, so Chapa does not take it for a repeat.
+	if c := g.do("POST", "/bookings/"+id+"/cancel", nil); c.status != 200 {
+		t.Fatalf("cancel: %d %s", c.status, c.raw)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.refunds) != 2 {
+		t.Fatalf("two refunds reached the gateway: %d", len(fake.refunds))
+	}
+	first, second := fake.refunds[0], fake.refunds[1]
+	if first["merchant_reference"] == second["merchant_reference"] {
+		t.Errorf("each refund has its own reference: %v %v", first["merchant_reference"], second["merchant_reference"])
+	}
+	toInt := func(v any) int64 {
+		switch n := v.(type) {
+		case float64:
+			return int64(n)
+		case int64:
+			return n
+		}
+		return -1
+	}
+	if toInt(first["amount"]) != x || toInt(second["amount"]) != paid-x {
+		t.Errorf("the part, then what was left: %v and %v (paid %d)", first["amount"], second["amount"], paid)
 	}
 }

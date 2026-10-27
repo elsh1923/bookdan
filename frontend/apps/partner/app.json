@@ -14,7 +14,7 @@
     "android": {
       "package": "et.bookdan.partner",
       "adaptiveIcon": {
-        "backgroundColor": "#18223A",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"

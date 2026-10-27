@@ -65,6 +65,9 @@ func (s *Server) requestOTP(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := r.Context()
+	if channel == "sms" && s.cfg.OTPProvider == "off" {
+		return fail(http.StatusServiceUnavailable, "PHONE_SIGNIN_OFF", "Phone sign-in is not available. Sign in with your email.")
+	}
 
 	var recent int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM otp_challenges WHERE identifier = $1 AND created_at > now() - $2::interval`,
@@ -108,8 +111,11 @@ func (s *Server) fixedCode(id identity, channel string) bool {
 	if !s.cfg.DemoMode {
 		return false
 	}
-	if channel != "email" || !s.p.EmailReal {
+	if channel == "email" && !s.p.EmailReal || channel != "email" && !s.p.SMSReal {
 		return true
+	}
+	if channel != "email" {
+		return false // a real SMS provider: phone numbers get real codes
 	}
 	at := strings.LastIndex(id.Value, "@")
 	domain := id.Value[at+1:]

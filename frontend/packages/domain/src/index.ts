@@ -4,6 +4,7 @@ export * from './ethiopianCalendar';
 export * from './schemas';
 export * from './pricing';
 export * from './voucher';
+export * from './offlineCheckin';
 export * from './identity';
 export * from './booking';
 export * from './partner';

@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import type { EarningLine, HotelEarnings } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
+import { Badge, Button, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
 import { price, shortDate } from '../../src/format';
 import { useEarnings } from '../../src/queries';
 
@@ -52,10 +53,19 @@ function Line({ l, months }: { l: EarningLine; months: string[] }) {
 
 function Hotel({ h, showName, months }: { h: HotelEarnings; showName: boolean; months: string[] }) {
   const { t } = useTranslation();
+  const router = useRouter();
   return (
     <View style={{ marginTop: spacing.lg }}>
       {showName ? <T variant="h2" style={{ marginBottom: spacing.sm }}>{h.name}</T> : null}
       <Tile strong label={t('partner.earnings_to_pay')} value={price(h.to_pay_santim)} />
+      {h.owes_santim > 0 ? (
+        <View style={{ marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.warningSoft }}>
+          <T variant="label" color={colors.warning}>{t('partner.owes_bookdan').toUpperCase()}</T>
+          <T variant="h3" style={{ marginTop: 2 }}>{price(h.owes_santim)}</T>
+          <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('partner.owes_note')}</T>
+        </View>
+      ) : null}
+      <Button variant="secondary" icon="document-text-outline" title={t('partner.statements')} onPress={() => router.push({ pathname: '/statements', params: { property: h.id } })} style={{ marginTop: spacing.sm }} />
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
         <Tile label={t('partner.earnings_upcoming')} value={price(h.upcoming_santim)} />
         <Tile label={t('partner.earnings_paid')} value={price(h.paid_santim)} />

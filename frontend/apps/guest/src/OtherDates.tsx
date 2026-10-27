@@ -4,12 +4,14 @@ import type { AltWindow, SearchItem } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { PressableScale, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { price, shortDate } from './format';
+import { useDisplay } from './display';
 
 /**
  * Hotels that are full for the dates the guest asked for, but have rooms on nearby dates or for part of the stay. Each stay is a tap away from
  * the hotel page with those dates. Nothing is held until the guest books, and the booking checks every night again.
  */
 export function OtherDates({ hotels, months, onPick }: { hotels: SearchItem[]; months: string[]; onPick: (hotel: SearchItem, w: AltWindow) => void }) {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t } = useTranslation();
   if (hotels.length === 0) return null;
   return (

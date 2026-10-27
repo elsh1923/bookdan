@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/bookdan/backend/internal/httpx"
+	"github.com/bookdan/backend/internal/ops"
 )
 
 // ---- ledger. Every money movement is a balanced, append-only transaction (the database refuses an unbalanced one).
@@ -292,15 +293,21 @@ func (s *Server) runRefunds(ctx context.Context) {
 		err := s.tx(ctx, func(tx pgx.Tx) error {
 			var ref, cur, bookingID string
 			var amount int64
-			err := tx.QueryRow(ctx, `SELECT provider_ref, amount_santim, currency, booking_id FROM payments WHERE id = $1 AND status = 'succeeded' FOR UPDATE SKIP LOCKED`, id).
-				Scan(&ref, &amount, &cur, &bookingID)
+			// What is left of the payment after partial refunds (which are refunded by their own gateway calls).
+			err := tx.QueryRow(ctx, `SELECT provider_ref, amount_santim - coalesce((SELECT sum(r.amount_santim) FROM partial_refunds r WHERE r.payment_id = payments.id), 0)::bigint, currency, booking_id
+				FROM payments WHERE id = $1 AND status = 'succeeded' FOR UPDATE SKIP LOCKED`, id).Scan(&ref, &amount, &cur, &bookingID)
 			if err == pgx.ErrNoRows {
 				return nil // someone else is refunding it, or it is done
 			}
 			if err != nil {
 				return err
 			}
-			if err := s.p.Gateway.Refund(ctx, ref, amount, cur); err != nil {
+			if amount <= 0 {
+				// Everything was already returned by partial refunds.
+				_, err := tx.Exec(ctx, `UPDATE payments SET status = 'refunded' WHERE id = $1`, id)
+				return err
+			}
+			if err := s.p.Gateway.Refund(ctx, ref, "", amount, cur); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(ctx, `UPDATE payments SET status = 'refunded' WHERE id = $1`, id); err != nil {
@@ -311,8 +318,10 @@ func (s *Server) runRefunds(ctx context.Context) {
 		})
 		if err != nil {
 			slog.Error("refund failed, will retry", "payment", id, "err", err)
+			ops.Report("refund-failed", "A refund could not be paid", "Payment "+id+": "+err.Error()+"\nIt is tried again every 20 seconds. If it keeps failing, refund the guest by hand.")
 		}
 	}
+	s.runPartialRefunds(ctx)
 }
 
 // ---- alert to the hotel
@@ -336,9 +345,11 @@ func (s *Server) push(ctx context.Context, tokens []string, title, body string, 
 // Guest messages. The text is English because the server does not know the guest's language yet; the data carries the
 // booking and its new status so the app can open the right screen.
 var guestMessages = map[string][2]string{
-	"confirmed":   {"Booking confirmed", "%s has confirmed your room. Your voucher is ready."},
-	"declined":    {"Booking not available", "%s could not accept your request. You will get a full refund."},
-	"no_response": {"The hotel did not answer in time", "%s did not answer in time. You will get a full refund."},
+	"confirmed":        {"Booking confirmed", "%s has confirmed your room. Your voucher is ready."},
+	"declined":         {"Booking not available", "%s could not accept your request. You will get a full refund."},
+	"no_response":      {"The hotel did not answer in time", "%s did not answer in time. You will get a full refund."},
+	"hotel_cancelled":  {"The hotel cancelled your booking", "%s had to cancel your booking. You are refunded in full."},
+	"needs_relocation": {"Your hotel cannot host you", "%s cannot host you. BookDan support is finding you another place, or you can cancel for a full refund."},
 }
 
 // notifyGuest tells the guest what the hotel decided. kind is confirmed, declined or no_response.

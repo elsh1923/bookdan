@@ -129,10 +129,19 @@ func (s *Server) partnerBookings(w http.ResponseWriter, r *http.Request) error {
 	if multi {
 		propName = fmt.Sprintf("%d hotels", len(propIDs))
 	}
+	limit, err := pageLimit(r, 200)
+	if err != nil {
+		return err
+	}
+	after, afterID, err := decodeCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		return err
+	}
 	s.sweep(ctx) // so a missed deadline is already closed when the hotel looks
 	rows, err := s.pool.Query(ctx, partnerSelect+` WHERE b.property_id = ANY($1::uuid[]) AND b.status <> 'HELD'
 		AND (b.check_out >= (now() AT TIME ZONE 'Africa/Addis_Ababa')::date - 14 OR b.status = 'PAID_AWAITING_HOTEL')
-		ORDER BY b.created_at DESC LIMIT 200`, propIDs)
+		AND ($2::timestamptz IS NULL OR (b.created_at, b.id) < ($2::timestamptz, $3::uuid))
+		ORDER BY b.created_at DESC, b.id DESC LIMIT $4`, propIDs, after, nullIfEmpty(afterID), limit+1)
 	if err != nil {
 		return err
 	}
@@ -148,17 +157,30 @@ func (s *Server) partnerBookings(w http.ResponseWriter, r *http.Request) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	rows.Close()
+	var next *string
+	if len(items) > limit {
+		items = items[:limit]
+		var at time.Time
+		last := items[len(items)-1].ID
+		if err := s.pool.QueryRow(ctx, `SELECT created_at FROM bookings WHERE id = $1`, last).Scan(&at); err != nil {
+			return err
+		}
+		c := encodeCursor(at, last)
+		next = &c
+	}
 	respond(w, http.StatusOK, struct {
 		httpx.Meta
 		Property struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
 		} `json:"property"`
-		Items []partnerBooking `json:"items"`
+		Items      []partnerBooking `json:"items"`
+		NextCursor *string          `json:"next_cursor"`
 	}{httpx.NowMeta(), struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
-	}{propID, propName}, items})
+	}{propID, propName}, items, next})
 	return nil
 }
 

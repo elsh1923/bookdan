@@ -108,6 +108,15 @@ func (s *Server) emailGuest(ctx context.Context, bookingID, kind string) {
 	case "no_response":
 		subject, title = "Booking not confirmed at "+g.hotel, "The hotel did not answer in time"
 		intro = g.hotel + " did not answer in time. You get a full refund of " + formatETB(g.total) + " to the way you paid."
+	case "hotel_cancelled":
+		subject, title = "Your booking at "+g.hotel+" was cancelled by the hotel", "The hotel cancelled your booking"
+		intro = g.hotel + " had to cancel your booking and is sorry for it. You get a full refund of " + formatETB(g.total) + " to the way you paid. BookDan support can help you find another place: open Help and support in the app."
+	case "needs_relocation":
+		subject, title = g.hotel+" cannot host you", "Your hotel cannot host you"
+		intro = g.hotel + " told us it cannot host you on your dates. BookDan support is finding you another place and will write to you in the app. You can also cancel the booking now and get a full refund."
+	case "dates_changed":
+		subject, title = "Dates changed at "+g.hotel, "Your booking has new dates"
+		intro = "Your booking at " + g.hotel + " was moved to the new dates below. The price and your payment stay the same, and you can still cancel for free until 48 hours before check-in."
 	case "cancelled":
 		subject, title = "Booking cancelled at "+g.hotel, "Your booking was cancelled"
 		switch {

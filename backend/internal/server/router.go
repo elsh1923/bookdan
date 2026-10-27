@@ -4,8 +4,11 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/bookdan/backend/internal/config"
 	"github.com/bookdan/backend/internal/httpx"
+	"github.com/bookdan/backend/internal/ops"
 )
 
 // Pinger is satisfied by the pgx pool; nil means no database is configured.
@@ -23,7 +27,7 @@ type Pinger interface {
 // New builds the router. mount registers the real endpoints (see internal/api); with nil, every contract route answers 501.
 func New(cfg config.Config, db Pinger, mount func(chi.Router), mountRoot ...func(chi.Router)) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, requestLog, middleware.Recoverer, securityHeaders(cfg), cors(cfg), rateLimit(cfg))
+	r.Use(middleware.RequestID, middleware.RealIP, requestLog, recoverAndAlert, securityHeaders(cfg), cors(cfg), rateLimit(cfg))
 
 	for _, m := range mountRoot {
 		if m != nil {
@@ -51,10 +55,6 @@ func New(cfg config.Config, db Pinger, mount func(chi.Router), mountRoot ...func
 				r.MethodFunc(route.method, route.path, notImplemented)
 			}
 		}
-
-		// Not built yet: the hotel's offline sync.
-		r.Post("/partner/sync/push", notImplemented)
-		r.Get("/partner/sync/pull", notImplemented)
 	})
 	return r
 }
@@ -66,6 +66,9 @@ func requestLog(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
+		if ww.Status() >= 500 {
+			errorBurst.note(routeOf(r), r.Method, middleware.GetReqID(r.Context()))
+		}
 		slog.Info("request",
 			"request_id", middleware.GetReqID(r.Context()),
 			"method", r.Method,
@@ -74,6 +77,68 @@ func requestLog(next http.Handler) http.Handler {
 			"ms", time.Since(start).Milliseconds(),
 		)
 	})
+}
+
+// routeOf is the matched route pattern ("/v1/bookings/{id}"), so alerts group by endpoint and carry no ids.
+func routeOf(r *http.Request) string {
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if p := rc.RoutePattern(); p != "" {
+			return p
+		}
+	}
+	return "unmatched"
+}
+
+// recoverAndAlert turns a panic into a 500 in the stable error shape, logs it with its stack, and alerts the operators. A client that hung up
+// (http.ErrAbortHandler) is not a bug.
+func recoverAndAlert(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			if rec == http.ErrAbortHandler {
+				panic(rec)
+			}
+			id := middleware.GetReqID(r.Context())
+			slog.Error("panic", "request_id", id, "method", r.Method, "route", routeOf(r), "panic", fmt.Sprint(rec), "stack", string(debug.Stack()))
+			ops.Report("panic "+r.Method+" "+routeOf(r), "A request panicked", fmt.Sprintf("%s %s\nrequest %s\n%v", r.Method, routeOf(r), id, rec))
+			httpx.Error(w, r, http.StatusInternalServerError, httpx.CodeInternal, "Something went wrong", nil)
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// burst counts server errors over a short window: a few are noise, many in minutes mean something is broken.
+type burst struct {
+	mu    sync.Mutex
+	times []time.Time
+}
+
+const (
+	burstWindow    = 5 * time.Minute
+	burstThreshold = 5
+)
+
+var errorBurst = &burst{}
+
+func (b *burst) note(route, method, requestID string) {
+	b.mu.Lock()
+	now := time.Now()
+	cut := now.Add(-burstWindow)
+	kept := b.times[:0]
+	for _, t := range b.times {
+		if t.After(cut) {
+			kept = append(kept, t)
+		}
+	}
+	b.times = append(kept, now)
+	n := len(b.times)
+	b.mu.Unlock()
+	if n >= burstThreshold {
+		ops.Report("5xx-burst", "Many server errors", fmt.Sprintf("%d server errors in the last %d minutes. The latest: %s %s (request %s)", n, int(burstWindow.Minutes()), method, route, requestID))
+	}
 }
 
 // health is liveness: the process is up. It never touches the database.

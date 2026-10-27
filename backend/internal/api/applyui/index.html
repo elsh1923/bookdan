@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>List your hotel on BookDan</title>
+  <link rel="stylesheet" href="/apply/style.css">
+</head>
+<body>
+  <main>
+    <h1>List your hotel on BookDan</h1>
+    <p class="lead">Reach guests across Ethiopia. Tell us about your hotel and we review it, usually within 3 working days.<br>
+      <span lang="am">ሆቴልዎን በቡክዳን ላይ ያስተዋውቁ። ስለ ሆቴልዎ ይንገሩን፣ ብዙውን ጊዜ በ3 የሥራ ቀናት ውስጥ እንመረምራለን።</span></p>
+
+    <form id="form" novalidate>
+      <fieldset>
+        <legend>The hotel</legend>
+        <label>Hotel name <input name="hotel_name" required maxlength="120" autocomplete="organization"></label>
+        <label>Type
+          <select name="hotel_type" required>
+            <option value="hotel">Hotel</option>
+            <option value="guesthouse">Guesthouse</option>
+            <option value="lodge">Lodge</option>
+            <option value="resort">Resort</option>
+          </select>
+        </label>
+        <label>City <input name="city" required maxlength="80" value="Addis Ababa"></label>
+        <label>Area or neighbourhood <input name="area" required maxlength="120" placeholder="For example Bole"></label>
+        <label>Street address <input name="address" required maxlength="200" autocomplete="street-address"></label>
+        <label>Hotel phone number <input name="hotel_phone" required maxlength="30" inputmode="tel" placeholder="+251 11 000 0000"></label>
+        <label>Number of rooms <input name="rooms_count" type="number" min="1" max="1000" required inputmode="numeric"></label>
+        <label>A few words about the hotel <textarea name="description" rows="3" maxlength="2000"></textarea></label>
+        <label class="check"><input name="pay_at_hotel" type="checkbox"> Guests may also choose to pay at the hotel</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>The owner</legend>
+        <label>Owner's full name <input name="owner_name" required maxlength="120" autocomplete="name"></label>
+        <label>Owner's email address <input name="owner_email" type="email" required maxlength="200" autocomplete="email"></label>
+        <p class="hint">This is how the owner signs in to the BookDan Partner app. We send a code to this address.</p>
+        <label>Owner's phone number <input name="owner_phone" required maxlength="30" inputmode="tel" autocomplete="tel"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>The business</legend>
+        <label>Legal name of the business <input name="legal_name" required maxlength="160"></label>
+        <label>Tourism licence number <input name="license_number" required maxlength="80"></label>
+      </fieldset>
+
+      <div class="trap" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+
+      <p id="error" class="error" role="alert" hidden></p>
+      <button id="send" type="submit">Send the application</button>
+    </form>
+
+    <section id="done" hidden>
+      <h2>Thank you</h2>
+      <p>We received your application. Your reference is <strong id="ref"></strong>.</p>
+      <p>We sent a confirmation to your email address. We will write to you there with our decision.</p>
+    </section>
+  </main>
+  <script src="/apply/apply.js"></script>
+</body>
+</html>

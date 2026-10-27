@@ -329,6 +329,12 @@ type bookingOut struct {
 	// guest's dispute on this booking, if any.
 	CanDispute      bool    `json:"can_dispute"`
 	DisputeTicketID *string `json:"dispute_ticket_id"`
+	// Dates: whether the guest may move the booking to other dates now (once, same price: see datechange.go), and the dates it first had.
+	// PartiallyRefunded is the part of the payment already returned while the booking stands (a dispute settled in part, or a goodwill credit).
+	PartiallyRefunded int64   `json:"partially_refunded_santim"`
+	CanChangeDates    bool    `json:"can_change_dates"`
+	OriginalCheckIn   *string `json:"original_check_in"`
+	OriginalCheckOut  *string `json:"original_check_out"`
 	// CheckInTime and CheckOutTime are the hotel's times (HH:MM, Addis Ababa).
 	CheckInTime  string `json:"check_in_time"`
 	CheckOutTime string `json:"check_out_time"`
@@ -351,10 +357,13 @@ const bookingSelect = `
 	       b.guest_name, b.total_santim, b.currency, b.payment_method, p.pay_at_hotel, b.hold_expires_at,
 	       COALESCE((SELECT CASE pay.status WHEN 'pending' THEN 'pending' WHEN 'failed' THEN 'failed' ELSE 'none' END
 	                 FROM payments pay WHERE pay.booking_id = b.id ORDER BY pay.created_at DESC LIMIT 1), 'none'),
-	       COALESCE((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status = 'succeeded'), 0)::bigint,
-	       b.refund_santim, rv.rating, rv.text, to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI'),
+	       greatest(COALESCE((SELECT sum(amount_santim) FROM payments pp WHERE pp.booking_id = b.id AND pp.status = 'succeeded'), 0)
+	         - COALESCE((SELECT sum(r.amount_santim) FROM partial_refunds r WHERE r.booking_id = b.id), 0), 0)::bigint,
+	       b.refund_santim, rv.rating, rv.text, rv.hotel_reply, rv.hotel_reply_at, to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI'),
 	       b.meal, b.refundable, cp.code, b.discount_santim, b.children, b.special_requests, b.booked_for_other, b.guest_phone,
-	       (SELECT dt.id FROM support_tickets dt WHERE dt.booking_id = b.id AND dt.kind = 'dispute' ORDER BY dt.created_at DESC LIMIT 1)
+	       (SELECT dt.id FROM support_tickets dt WHERE dt.booking_id = b.id AND dt.kind = 'dispute' ORDER BY dt.created_at DESC LIMIT 1),
+	       b.date_changes, b.original_check_in, b.original_check_out,
+	       COALESCE((SELECT sum(r.amount_santim) FROM partial_refunds r WHERE r.booking_id = b.id), 0)::bigint
 	FROM bookings b JOIN properties p ON p.id = b.property_id JOIN room_types rt ON rt.id = b.room_type_id
 	LEFT JOIN reviews rv ON rv.booking_id = b.id LEFT JOIN coupons cp ON cp.id = b.coupon_id`
 
@@ -365,13 +374,25 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	var paid int64
 	var reviewRating *int
 	var reviewText *string
+	var replyText *string
+	var replyAt *time.Time
+	var changes int
+	var origIn, origOut *time.Time
 	if err := row.Scan(&b.ID, &b.Reference, &b.Status, &b.PropertyID, &b.PropertyName, &b.PropertyPhone, &b.Address, &b.RoomName,
 		&in, &out, &b.Guests, &b.Rooms, &b.GuestName, &b.Total, &b.Currency, &b.PaymentMethod, &b.PayAtHotel, &hold, &b.Payment,
-		&paid, &b.RefundSantim, &reviewRating, &reviewText, &b.CheckInTime, &b.CheckOutTime,
-		&b.Meal, &b.Refundable, &b.CouponCode, &b.DiscountSantim, &b.Children, &b.SpecialRequests, &b.BookedForOther, &b.GuestPhone, &b.DisputeTicketID); err != nil {
+		&paid, &b.RefundSantim, &reviewRating, &reviewText, &replyText, &replyAt, &b.CheckInTime, &b.CheckOutTime,
+		&b.Meal, &b.Refundable, &b.CouponCode, &b.DiscountSantim, &b.Children, &b.SpecialRequests, &b.BookedForOther, &b.GuestPhone, &b.DisputeTicketID, &changes, &origIn, &origOut, &b.PartiallyRefunded); err != nil {
 		return b, err
 	}
+	if !phoneVisible(b.Status) {
+		b.PropertyPhone = "" // shown once the hotel has confirmed the booking
+	}
 	b.CheckIn, b.CheckOut = pgDate(in), pgDate(out)
+	b.CanChangeDates = s.canChangeDates(b.Status, in, b.Refundable, b.CouponCode, changes)
+	if origIn != nil && origOut != nil {
+		oi, oo := pgDate(*origIn), pgDate(*origOut)
+		b.OriginalCheckIn, b.OriginalCheckOut = &oi, &oo
+	}
 	b.CanDispute = b.DisputeTicketID == nil && s.disputable(b.Status, b.CheckIn, b.CheckOut)
 	b.Nights = nightsBetween(b.CheckIn, b.CheckOut)
 	b.Meta = httpx.NowMeta()
@@ -389,6 +410,10 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 	}
 	if b.Status != "HELD" {
 		b.Payment = "none"
+	}
+	// A guest whose hotel cannot host them can always cancel, for a full refund.
+	if b.Status == "NEEDS_RELOCATION" {
+		b.CanCancel, b.RefundIfCancelled = true, paid
 	}
 	// What cancelling would do right now (the server decides; the app only shows it).
 	checkInAt, until := cancelWindow(in)
@@ -408,7 +433,10 @@ func (s *Server) scanBooking(row pgx.Row) (bookingOut, error) {
 		if reviewText != nil {
 			text = *reviewText
 		}
-		b.Review = &reviewOut{*reviewRating, text}
+		b.Review = &reviewOut{Rating: *reviewRating, Text: text}
+		if replyText != nil && replyAt != nil {
+			b.Review.Reply = &replyOut{*replyText, pgDate(*replyAt)}
+		}
 	} else if (b.Status == "CONFIRMED" || b.Status == "CHECKED_IN" || b.Status == "COMPLETED") && b.CheckOut <= s.addisToday() {
 		b.CanReview = true
 	}
@@ -439,7 +467,17 @@ func (s *Server) getBooking(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) listBookings(w http.ResponseWriter, r *http.Request) error {
-	rows, err := s.pool.Query(r.Context(), bookingSelect+` WHERE b.user_id = $1 ORDER BY b.created_at DESC LIMIT 100`, claimsFrom(r).Sub)
+	limit, err := pageLimit(r, 100)
+	if err != nil {
+		return err
+	}
+	after, afterID, err := decodeCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		return err
+	}
+	// One more than asked for tells whether there is a next page. Newest first; the id breaks ties so no booking is skipped or repeated.
+	rows, err := s.pool.Query(r.Context(), bookingSelect+` WHERE b.user_id = $1 AND ($2::timestamptz IS NULL OR (b.created_at, b.id) < ($2::timestamptz, $3::uuid))
+		ORDER BY b.created_at DESC, b.id DESC LIMIT $4`, claimsFrom(r).Sub, after, nullIfEmpty(afterID), limit+1)
 	if err != nil {
 		return err
 	}
@@ -455,11 +493,31 @@ func (s *Server) listBookings(w http.ResponseWriter, r *http.Request) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	rows.Close()
+	var next *string
+	if len(items) > limit {
+		items = items[:limit]
+		var at time.Time
+		last := items[len(items)-1].ID
+		if err := s.pool.QueryRow(r.Context(), `SELECT created_at FROM bookings WHERE id = $1`, last).Scan(&at); err != nil {
+			return err
+		}
+		c := encodeCursor(at, last)
+		next = &c
+	}
 	respond(w, http.StatusOK, struct {
 		httpx.Meta
-		Items []bookingOut `json:"items"`
-	}{httpx.NowMeta(), items})
+		Items      []bookingOut `json:"items"`
+		NextCursor *string      `json:"next_cursor"`
+	}{httpx.NowMeta(), items, next})
 	return nil
+}
+
+func nullIfEmpty(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 // ---- inventory helpers (always inside a transaction)

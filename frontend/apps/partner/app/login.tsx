@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Linking, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { normalizeEmail, normalizeEthiopianPhone, type Identity, type IdentityType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Badge, Button, Chip, Pop, Reveal, StepTransition, T, colors, radius, spacing } from '@bookdan/ui';
-import { api, isMockApi } from '../src/api';
+import { api, apiUrl, isMockApi } from '../src/api';
 import { useAuth } from '../src/auth';
 import { Field } from '../src/Field';
 
@@ -38,7 +38,7 @@ export default function Login() {
       await api.requestOtp(id);
       setIdentity(id);
     } catch (e) {
-      setError(e instanceof ApiError && e.code === 'NETWORK' ? t('results.offline_body') : e instanceof ApiError && e.code === 'SEND_FAILED' ? t('auth.send_failed') : e instanceof ApiError && e.code === 'TOO_MANY_REQUESTS' ? t('auth.too_many') : t('results.error_body'));
+      setError(e instanceof ApiError && e.code === 'NETWORK' ? t('results.offline_body') : e instanceof ApiError && e.code === 'PHONE_SIGNIN_OFF' ? t('auth.phone_off') : e instanceof ApiError && e.code === 'SEND_FAILED' ? t('auth.send_failed') : e instanceof ApiError && e.code === 'TOO_MANY_REQUESTS' ? t('auth.too_many') : t('results.error_body'));
     } finally {
       setBusy(false);
     }
@@ -106,6 +106,7 @@ export default function Login() {
                 />
               )}
               <Button title={t('auth.send_code')} onPress={sendCode} loading={busy} style={{ marginTop: spacing.xl }} />
+              {!isMockApi && apiUrl ? <Button variant="ghost" icon="business-outline" title={t('partner.apply')} onPress={() => Linking.openURL(`${apiUrl}/apply`)} style={{ marginTop: spacing.sm }} /> : null}
             </>
           ) : (
             <>

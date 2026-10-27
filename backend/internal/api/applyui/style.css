@@ -1,0 +1,19 @@
+:root { --ink: #14213d; --soft: #5b6478; --line: #d9deea; --accent: #d9573f; --bg: #f7f8fb; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Ethiopic", sans-serif; color: var(--ink); background: var(--bg); }
+main { max-width: 640px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.8rem; margin: 8px 0; }
+.lead { color: var(--soft); }
+fieldset { border: 1px solid var(--line); border-radius: 12px; background: #fff; margin: 20px 0; padding: 8px 16px 16px; }
+legend { font-weight: 700; padding: 0 6px; }
+label { display: block; margin-top: 14px; font-weight: 600; }
+input, select, textarea { display: block; width: 100%; margin-top: 4px; padding: 12px; font: inherit; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.check { display: flex; gap: 10px; align-items: center; font-weight: 500; }
+.check input { width: 20px; height: 20px; margin: 0; }
+.hint { margin: 6px 0 0; color: var(--soft); font-size: .9rem; }
+.trap { position: absolute; left: -9999px; height: 0; overflow: hidden; }
+button { width: 100%; margin-top: 8px; padding: 14px; font: inherit; font-weight: 700; color: #fff; background: var(--accent); border: 0; border-radius: 12px; cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }
+.error { margin: 12px 0; padding: 12px; color: #8a1c1c; background: #fdecec; border-radius: 10px; font-weight: 600; }
+#done { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 20px 20px; margin-top: 24px; }

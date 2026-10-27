@@ -624,8 +624,10 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		Date   string  `json:"date"`
 		// Verified: every review comes from a guest whose stay was booked and finished on BookDan.
 		Verified bool `json:"verified"`
+		// Reply is the hotel's public answer, if it wrote one.
+		Reply *replyOut `json:"reply"`
 	}
-	revRows, err := s.pool.Query(ctx, `SELECT r.id, coalesce(nullif(split_part(gp.full_name, ' ', 1), ''), nullif(u.display_name, ''), 'Guest'), r.rating, r.text, r.created_at
+	revRows, err := s.pool.Query(ctx, `SELECT r.id, coalesce(nullif(split_part(gp.full_name, ' ', 1), ''), nullif(u.display_name, ''), 'Guest'), r.rating, r.text, r.created_at, r.hotel_reply, r.hotel_reply_at
 		FROM reviews r JOIN users u ON u.id = r.user_id LEFT JOIN guest_profiles gp ON gp.user_id = r.user_id WHERE r.property_id = $1 ORDER BY r.created_at DESC LIMIT 20`, id)
 	if err != nil {
 		return err
@@ -635,10 +637,15 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 	for revRows.Next() {
 		var rv review
 		var at time.Time
-		if err := revRows.Scan(&rv.ID, &rv.Author, &rv.Rating, &rv.Text, &at); err != nil {
+		var reply *string
+		var replyAt *time.Time
+		if err := revRows.Scan(&rv.ID, &rv.Author, &rv.Rating, &rv.Text, &at, &reply, &replyAt); err != nil {
 			return err
 		}
 		rv.Date, rv.Verified = pgDate(at), true
+		if reply != nil && replyAt != nil {
+			rv.Reply = &replyOut{*reply, pgDate(*replyAt)}
+		}
 		reviews = append(reviews, rv)
 	}
 
@@ -673,6 +680,8 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 	if len(rules) > 0 {
 		houseRules = jsonRaw(rules)
 	}
+	// The hotel's number is not on its page: a guest gets it once a booking is confirmed (see calls.go).
+	phone := ""
 	respond(w, http.StatusOK, struct {
 		httpx.Meta
 		Property  propertyOut `json:"property"`
@@ -681,6 +690,6 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		// RatingSummary is the average, the count per star, and the averages of the four sub-ratings; Nearby lists landmarks within 5 km.
 		RatingSummary ratingSummary `json:"rating_summary"`
 		Nearby        []placeRef    `json:"nearby"`
-	}{httpx.NowMeta(), propertyOut{it, it.description, it.phone, it.address, houseRules, photos, checkInTime, checkOutTime, descAm, directions, directionsAm}, rooms, reviews, summary, nearby})
+	}{httpx.NowMeta(), propertyOut{it, it.description, phone, it.address, houseRules, photos, checkInTime, checkOutTime, descAm, directions, directionsAm}, rooms, reviews, summary, nearby})
 	return nil
 }

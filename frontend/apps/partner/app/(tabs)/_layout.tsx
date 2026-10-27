@@ -7,12 +7,14 @@ import { useTranslation } from '@bookdan/i18n';
 import { colors, fonts } from '@bookdan/ui';
 import { ApiError } from '@bookdan/api-client';
 import { useEarnings, useInbox } from '../../src/queries';
+import { useOfflineSync } from '../../src/useOfflineSync';
 
 const icon = (name: keyof typeof Ionicons.glyphMap) => ({ color, size }: { color: ColorValue; size: number }) => (
   <Ionicons name={name} size={size} color={color} />
 );
 
 export default function TabsLayout() {
+  useOfflineSync();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const inbox = useInbox();

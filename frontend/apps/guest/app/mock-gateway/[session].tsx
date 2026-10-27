@@ -6,8 +6,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from '@bookdan/i18n';
 import { Badge, Button, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../../src/api';
-import { price } from '../../src/format';
+import { priceExact as price } from '../../src/format';
 import { useBooking } from '../../src/queries';
+import { useDisplay } from '../../src/display';
 
 /**
  * Stands in for the Telebirr / Chapa payment page until real gateways exist. It is shown in place of the
@@ -15,6 +16,7 @@ import { useBooking } from '../../src/queries';
  * (force a result, replay the callback) and exist only when the app runs on the mock.
  */
 export default function MockGateway() {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t } = useTranslation();
   const router = useRouter();
   const { session, booking } = useLocalSearchParams<{ session: string; booking: string }>();

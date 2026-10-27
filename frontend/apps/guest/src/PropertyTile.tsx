@@ -6,11 +6,13 @@ import { Animated, PressableScale, T, colors, radius, spacing, useBounce } from 
 import { Photo } from './Photo';
 import { price } from './format';
 import { usePrefs } from './store';
+import { useDisplay } from './display';
 
 export const GUEST_FAVORITE_MIN_RATING = 4.6;
 
 /** Square photo tile for carousels and grids: heart on the photo, details underneath. */
 export function PropertyTile({ item, width, onPress }: { item: SearchItem; width: number; onPress: () => void }) {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t } = useTranslation();
   const saved = usePrefs((s) => s.saved.includes(item.id));
   const toggleSaved = usePrefs((s) => s.toggleSaved);

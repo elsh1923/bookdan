@@ -51,37 +51,51 @@ func (s *Server) cancelBooking(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if status != "PAID_AWAITING_HOTEL" && status != "CONFIRMED" {
+		if status != "PAID_AWAITING_HOTEL" && status != "CONFIRMED" && status != "NEEDS_RELOCATION" {
 			return fail(http.StatusConflict, codeInvalidState, "This booking cannot be cancelled")
 		}
 		now := s.now()
 		checkInAt, until := cancelWindow(in)
-		if !now.Before(checkInAt) {
+		// A guest whose hotel cannot host them may always cancel, and is refunded in full.
+		if status != "NEEDS_RELOCATION" && !now.Before(checkInAt) {
 			return fail(http.StatusConflict, codeCancelTooLate, "The stay has started, so the booking can no longer be cancelled here. Contact the hotel.")
 		}
 
 		// How much comes back: everything while the hotel has not answered; after it confirmed, everything until 48 hours before check-in.
 		var payID string
 		var paid int64
-		err = tx.QueryRow(ctx, `SELECT id, amount_santim FROM payments WHERE booking_id = $1 AND status = 'succeeded'`, id).Scan(&payID, &paid)
+		rf, err := lockRefundable(ctx, tx, id)
 		hasPayment := err == nil
 		if err != nil && err != pgx.ErrNoRows {
 			return err
 		}
+		if hasPayment {
+			payID, paid = rf.PaymentID, rf.Left // partial refunds already made are not refunded twice
+		}
 		var refund int64
 		// Non-refundable: nothing back once the hotel has confirmed (before that the hotel has not accepted anything yet).
-		if hasPayment && (status == "PAID_AWAITING_HOTEL" || (refundable && !now.After(until))) {
+		if hasPayment && (status == "PAID_AWAITING_HOTEL" || status == "NEEDS_RELOCATION" || (refundable && !now.After(until))) {
 			refund = paid
 		}
 
 		if err := actor(ctx, tx, "guest:"+uid, "guest cancelled"); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE bookings SET status = 'CANCELLED_REFUNDED', refund_santim = $2, cancelled_at = now(), hotel_deadline_at = NULL WHERE id = $1`, id, refund); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE bookings SET status = 'CANCELLED_REFUNDED', refund_santim = $2, cancelled_at = now(), cancelled_by = 'guest', hotel_deadline_at = NULL WHERE id = $1`, id, refund); err != nil {
 			return err
 		}
+		if status == "NEEDS_RELOCATION" {
+			if _, err := tx.Exec(ctx, `INSERT INTO support_messages (ticket_id, from_staff, author, body)
+				SELECT id, false, 'guest', 'I cancelled the booking.' FROM support_tickets WHERE booking_id = $1 AND kind = 'relocation' AND status <> 'closed'`, id); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE support_tickets SET status = 'closed', closed_at = now(), closed_by = 'guest', outcome = 'relocation_cancelled', updated_at = now()
+				WHERE booking_id = $1 AND kind = 'relocation' AND status <> 'closed'`, id); err != nil {
+				return err
+			}
+		}
 		ci, co := pgDate(in), pgDate(out)
-		if status == "CONFIRMED" {
+		if status == "CONFIRMED" || status == "NEEDS_RELOCATION" {
 			err = unbookRooms(ctx, tx, roomType, ci, co, rooms)
 		} else {
 			err = releaseRooms(ctx, tx, roomType, ci, co, rooms)
@@ -114,6 +128,14 @@ func (s *Server) cancelBooking(w http.ResponseWriter, r *http.Request) error {
 // reverseConfirmedAndOweRefund undoes what accepting the booking recorded (the hotel's share and our commission) and records that
 // the guest is owed their money, as one balanced ledger transaction. It reverses the exact amounts that were booked.
 func reverseConfirmedAndOweRefund(ctx context.Context, tx pgx.Tx, bookingID, paymentID, currency string, refund int64) error {
+	// Refunding only what is left of a payment that was partly refunded before reverses only that share of the hotel's money.
+	var paid int64
+	if err := tx.QueryRow(ctx, `SELECT amount_santim FROM payments WHERE id = $1`, paymentID).Scan(&paid); err != nil {
+		return err
+	}
+	if refund > 0 && refund < paid {
+		return reverseShareOfConfirmed(ctx, tx, bookingID, paymentID, currency, "refund of what is left: the hotel's share is reduced in proportion and the refund is owed", refund, paid)
+	}
 	rows, err := tx.Query(ctx, `SELECT e.account_code, e.amount_santim FROM ledger_entries e JOIN ledger_transactions t ON t.id = e.transaction_id
 		WHERE t.booking_id = $1 AND t.kind = 'booking_confirmed'`, bookingID)
 	if err != nil {
@@ -161,6 +183,8 @@ func (s *Server) alertHotelOfCancellation(ctx context.Context, bookingID string)
 type reviewOut struct {
 	Rating int    `json:"rating"`
 	Text   string `json:"text"`
+	// Reply is what the hotel answered, if it did.
+	Reply *replyOut `json:"hotel_reply"`
 }
 
 // submitReview saves a guest's review of a finished stay: only the guest of that booking, only once the check-out date has come,

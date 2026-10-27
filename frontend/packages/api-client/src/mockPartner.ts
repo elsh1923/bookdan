@@ -1,5 +1,6 @@
 import {
   DeclineReasonSchema,
+  HotelProblemReasonSchema,
   PartnerBookingListSchema,
   PartnerBookingSchema,
   addDays,
@@ -12,7 +13,9 @@ import {
   todayAddis,
   type CheckinState,
   type IdType,
+  type NewSupportTicket,
   type PartnerBooking,
+  type SupportTicket,
 } from '@bookdan/domain';
 import type { MockStore } from './mock';
 import { createMockAuth } from './mockAuth';
@@ -78,6 +81,7 @@ const guestNamed = (name: string): DemoGuest => GUESTS.find((g) => g.name === na
 export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi {
   const latency = opts.latencyMs ?? 450;
   const rows = new Map<string, Row>();
+  const tickets: SupportTicket[] = [];
   const blocks = new Map<string, Block>(); // walk-ins and blocks the hotel recorded (kept for the session)
   const pushTokens = new Map<string, PushRegistration>(); // by device id
   let seq = 0;
@@ -256,6 +260,112 @@ export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi 
       r.decline_reason = parsed.data;
       await persist();
       return view(r);
+    },
+
+    async cancelBooking(id, reason) {
+      await gate();
+      if (!HotelProblemReasonSchema.safeParse(reason).success) throw new ApiError('INVALID_REQUEST', 'A valid reason is required');
+      const r = find(id);
+      const v = view(r);
+      if (v.status !== 'CONFIRMED' && v.status !== 'NEEDS_RELOCATION') throw new ApiError('INVALID_STATE', 'Only a confirmed booking can be cancelled by the hotel');
+      r.status = 'CANCELLED_REFUNDED';
+      await persist();
+      return view(r);
+    },
+
+    async relocateBooking(id, reason) {
+      await gate();
+      if (!HotelProblemReasonSchema.safeParse(reason).success) throw new ApiError('INVALID_REQUEST', 'A valid reason is required');
+      const r = find(id);
+      if (view(r).status !== 'CONFIRMED') throw new ApiError('INVALID_STATE', 'Only a confirmed booking can be moved to another hotel');
+      r.status = 'NEEDS_RELOCATION';
+      await persist();
+      return view(r);
+    },
+
+    // Offline check-in (simulated): the demo has no signing key, so nothing can be verified offline.
+    async getVoucherKey() {
+      await gate();
+      return { kid: 'mock', public_key: '' };
+    },
+    async syncCheckins(items) {
+      await gate();
+      return items.map(() => ({ reference: '', result: 'checked_in' }));
+    },
+
+    // Statements (simulated): an empty month.
+    async getStatements(month) {
+      await gate();
+      const m = month ?? todayAddis().slice(0, 7);
+      return [{
+        property_id: 'demo', hotel: 'Demo hotel', month: m, from: m + '-01', to: m + '-28', currency: 'ETB' as const, opening_santim: 0, closing_santim: 0,
+        online_gross_santim: 0, online_commission_santim: 0, online_vat_santim: 0, online_hotel_share_santim: 0, pay_at_hotel_collected_santim: 0,
+        pay_at_hotel_commission_santim: 0, pay_at_hotel_vat_santim: 0, paid_santim: 0, received_santim: 0, lines: [], payouts: [], receipts: [],
+      }];
+    },
+
+    // Reviews (simulated): none in the demo.
+    async listReviews() {
+      await gate();
+      return [];
+    },
+    async replyToReview() {
+      await gate();
+      throw new ApiError('NOT_FOUND', 'Review not found');
+    },
+    async removeReviewReply() {
+      await gate();
+      throw new ApiError('NOT_FOUND', 'Review not found');
+    },
+
+    // Support for hotel staff (simulated, in memory).
+    async listSupportTickets() {
+      await gate();
+      return tickets.map((t) => ({ ...t, messages: undefined, preview: t.messages?.[t.messages.length - 1]?.body.slice(0, 140) ?? '' }));
+    },
+    async getSupportTicket(id) {
+      await gate();
+      const t = tickets.find((x) => x.id === id);
+      if (!t) throw new ApiError('NOT_FOUND', 'Not found');
+      return t;
+    },
+    async createSupportTicket(n) {
+      await gate();
+      if (tickets.filter((t) => t.status !== 'closed').length >= 5) throw new ApiError('TOO_MANY_TICKETS', 'Too many requests waiting');
+      const now = new Date().toISOString();
+      const id = `t${tickets.length + 1}`;
+      tickets.unshift({
+        id, kind: n.kind, subject: n.subject, status: 'open', booking_id: n.booking_id ?? null, booking_code: null, created_at: now, updated_at: now,
+        messages: [{ from_staff: false, role: 'guest' as const, author: 'guest', body: n.message, created_at: now }],
+      });
+      return { id };
+    },
+    async replySupportTicket(id, message) {
+      await gate();
+      const t = tickets.find((x) => x.id === id);
+      if (!t) throw new ApiError('NOT_FOUND', 'Not found');
+      if (t.status === 'closed') throw new ApiError('INVALID_STATE', 'Closed');
+      const now = new Date().toISOString();
+      t.messages = [...(t.messages ?? []), { from_staff: false, role: 'guest' as const, author: 'guest', body: message, created_at: now }];
+      t.status = 'open';
+      t.updated_at = now;
+    },
+    async closeSupportTicket(id) {
+      await gate();
+      const t = tickets.find((x) => x.id === id);
+      if (!t) throw new ApiError('NOT_FOUND', 'Not found');
+      t.status = 'closed';
+      t.updated_at = new Date().toISOString();
+    },
+
+    async getDispute() {
+      await gate();
+      throw new ApiError('NOT_FOUND', 'There is no dispute about this booking');
+    },
+
+    async sendDisputeStatement() {
+      await gate();
+      throw new ApiError('INVALID_STATE', 'There is no open dispute about this booking');
     },
 
     async lookupCheckin(query) {

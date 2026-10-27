@@ -5,7 +5,8 @@ import type { Booking } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Button, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from './api';
-import { price, shortDate } from './format';
+import { priceExact as price, shortDate } from './format';
+import { useDisplay } from './display';
 
 /** "2026-11-18T09:00:00Z" as the Addis Ababa date and time the guest will understand. */
 function addisMoment(iso: string, months: string[]): string {
@@ -18,6 +19,7 @@ function addisMoment(iso: string, months: string[]): string {
  * exact outcome before confirming: a full refund, a refund until a deadline, or no refund.
  */
 export function CancelCard({ booking, months, onChanged }: { booking: Booking; months: string[]; onChanged: (b: Booking) => void }) {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);

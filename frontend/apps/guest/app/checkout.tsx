@@ -16,8 +16,9 @@ import { Field } from '../src/Field';
 import { PolicyCard } from '../src/RoomOptions';
 import { Photo } from '../src/Photo';
 import { FOOTER_CLEARANCE, StickyFooter } from '../src/StickyFooter';
-import { price, shortDate } from '../src/format';
+import { priceExact as price, shortDate } from '../src/format';
 import { useProfile, useQuote } from '../src/queries';
+import { useDisplay } from '../src/display';
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -97,6 +98,7 @@ function Stepper({ step, labels }: { step: number; labels: string[] }) {
 }
 
 export default function Checkout() {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();

@@ -10,6 +10,7 @@ import { api, isMockApi } from '../../src/api';
 import { useAuth } from '../../src/auth';
 import { useProfile } from '../../src/queries';
 import { signOutAndWipe } from '../../src/session';
+import { useDisplay } from '../../src/display';
 import { usePrefs } from '../../src/store';
 
 export default function Profile() {
@@ -31,7 +32,10 @@ export default function Profile() {
         },
       },
     ]);
-  const { setLanguage, currency, setCurrency } = usePrefs();
+  const { setLanguage, setCurrency } = usePrefs();
+  // Only currencies with a fresh server rate can be chosen; `shown` is what the app is actually showing.
+  const shown = useDisplay((s) => s.currency);
+  const available = useDisplay((s) => s.available);
   const router = useRouter();
   const identity = useAuth((s) => s.identity);
   const profile = useProfile(!!identity);
@@ -81,8 +85,12 @@ export default function Profile() {
 
       <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('profile.currency').toUpperCase()}</T>
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-        <Chip label="ETB" selected={currency === 'ETB'} onPress={() => setCurrency('ETB')} />
+        <Chip label="ETB" selected={shown === 'ETB'} onPress={() => setCurrency('ETB')} />
+        {available.map((c) => (
+          <Chip key={c} label={c} selected={shown === c} onPress={() => setCurrency(c)} />
+        ))}
       </View>
+      {shown !== 'ETB' ? <T variant="small" color={colors.muted} style={{ marginTop: spacing.sm }}>{t('profile.currency_note', { cur: shown })}</T> : null}
 
       <View style={{ marginTop: spacing.xl }}>
         {identity ? (

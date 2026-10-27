@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Tokens } from '@bookdan/api-client';
 import type { Identity } from '@bookdan/domain';
 import { api, bindSession, queryClient } from './api';
+import { useOffline } from './offline';
 import { secureStorage } from './secureStorage';
 
 interface AuthState {
@@ -32,6 +33,8 @@ export const useAuth = create<AuthState>()(
         api.setToken(null);
         set({ token: null, refreshToken: null, identity: null });
         queryClient.clear(); // nothing of the hotel's stays on a shared front-desk phone
+        // Check-ins waiting to be sent are kept (they would be lost); the rest of the offline cache goes with the session.
+        if (useOffline.getState().queue.length === 0) useOffline.getState().wipe();
       },
     }),
     {

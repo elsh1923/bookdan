@@ -11,8 +11,9 @@ import { Badge, Button, EmptyState, Pop, Reveal, T, colors, radius, shadow, spac
 import { ActionTile } from '../../src/ActionTile';
 import { isMockApi } from '../../src/api';
 import { callPhone, openDirections } from '../../src/links';
-import { price, shortDate } from '../../src/format';
+import { priceExact as price, shortDate } from '../../src/format';
 import { ensureVoucher, loadVoucher } from '../../src/voucherStore';
+import { useDisplay } from '../../src/display';
 
 function Line({ label, value }: { label: string; value: string }) {
   return (
@@ -24,6 +25,7 @@ function Line({ label, value }: { label: string; value: string }) {
 }
 
 export default function VoucherScreen() {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();

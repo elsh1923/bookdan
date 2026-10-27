@@ -122,8 +122,16 @@ Covers the backend, the guest app, the partner (hotel) app and the admin portal.
 |---|---|---|
 | 1 | Support tickets (guest app, admin Support tab, emails, deletion erases the guest's words) | Built and tested. Migration 00023 applied on Supabase. |
 | 2 | Disputes (booking frozen, admin decision: reject, refund with hotel paying, refund with BookDan paying; guest can withdraw) | Built and tested. Migration 00024 **not yet applied** on Supabase. |
-| 3 | Changing the dates of a booking | Not started |
-| 4 | Display currencies | Not started |
-| 5 | Phone (SMS) sign-in | Not started; needs an SMS provider decision |
+| 3 | Changing the dates of a booking (once, same price, free-cancel window only; hotel alerted, guest emailed) | Built and tested. Migration 00025 **not yet applied** on Supabase. Different prices are refused (cancel and rebook): charging or refunding a difference needs partial refunds and a second payment, not built. An old offline voucher shows the old dates until the guest opens the app online; the hotel check-in checks the server dates. |
+| 4 | Display currencies (USD and EUR shown next to ETB; admin sets the rate; stale rates hidden; typo guard) | Built and tested. Migration 00026 **not yet applied** on Supabase. Charging and refunds stay in ETB only. After applying it, set the rates in the admin page (Rates), otherwise guests see ETB only. |
+| 5 | Phone (SMS) sign-in | Built and tested against fakes: Africa's Talking and Twilio behind one setting, plus `off` for an email-only launch. **Not yet run against a real provider**: needs your account and the first-real-SMS check in `docs/sms-setup.md`. No migration. |
 
-Known limits of disputes: no partial refunds; one dispute per booking; if the hotel was already paid out, "hotel pays" leaves it owing that amount against its next payout; hotels are not alerted on their phones when a dispute opens (the admin contacts them).
+Known limits of disputes: one dispute per booking; if the hotel was already paid out, "hotel pays" leaves it owing that amount against its next payout; hotels are not alerted on their phones when a dispute opens (the admin contacts them).
+
+## 9. Partial refunds (built)
+
+Part of a payment can go back while the booking stands: a dispute can be settled for part of the price (`refunded_partial_hotel_pays`, `refunded_partial_platform_pays`), and an admin can give a goodwill credit from any support request about a confirmed booking (admin page, "Refund part of the payment").
+- **Who pays:** the hotel (its share, BookDan's commission and the VAT on it shrink in proportion) or BookDan (expense `dispute_expense`, the hotel keeps its share).
+- **Rules:** more than 0 and less than the payment; several partial refunds are allowed up to what is left; a later cancellation or full refund returns only what is left, and reverses the hotel's money only for that part.
+- **Money movement:** one gateway refund per partial refund, each with its own reference, retried until accepted. Migration 00027 (applied on Supabase).
+- **Still true:** if the hotel was already paid out, "hotel pays" leaves it owing that part against its next payout. Chapa's partial-refund acceptance was tested only against a fake: confirm it with one small real refund on the Chapa test account. Date changes to a different price are still refused (they would also need a second payment for a higher price).

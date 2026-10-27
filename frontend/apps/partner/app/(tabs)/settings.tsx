@@ -1,8 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES, useTranslation } from '@bookdan/i18n';
-import { Badge, Button, Chip, Reveal, T, colors, spacing } from '@bookdan/ui';
+import { Badge, Button, Chip, PressableScale, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
 import { AlertsChecklist } from '../../src/AlertsChecklist';
 import { useAuth } from '../../src/auth';
@@ -16,6 +18,7 @@ export default function Settings() {
   const identity = useAuth((s) => s.identity);
   const setLanguage = usePrefs((s) => s.setLanguage);
   const inbox = useInbox();
+  const router = useRouter();
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
@@ -26,6 +29,24 @@ export default function Settings() {
           <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('partner.hotel').toUpperCase()}</T>
           <T variant="h3" style={{ marginTop: spacing.xs }}>{inbox.data?.property.name ?? '—'}</T>
         </Reveal>
+
+        <PressableScale scaleTo={0.98} onPress={() => router.push('/support')} accessibilityRole="button" style={{ marginTop: spacing.xl, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }}>
+          <Ionicons name="chatbubbles-outline" size={22} color={colors.primaryInk} />
+          <View style={{ flex: 1 }}>
+            <T variant="h3">{t('support.title')}</T>
+            <T variant="small" color={colors.inkSoft}>{t('support.entry_sub')}</T>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </PressableScale>
+
+        <PressableScale scaleTo={0.98} onPress={() => router.push('/reviews')} accessibilityRole="button" style={{ marginTop: spacing.md, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }}>
+          <Ionicons name="star-outline" size={22} color={colors.primaryInk} />
+          <View style={{ flex: 1 }}>
+            <T variant="h3">{t('partner.reviews')}</T>
+            <T variant="small" color={colors.inkSoft}>{t('partner.reviews_sub')}</T>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </PressableScale>
 
         <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('partner.language').toUpperCase()}</T>
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>

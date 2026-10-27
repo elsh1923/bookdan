@@ -7,7 +7,7 @@ func safeProduction() Config {
 	return Config{
 		Env: "production", DatabaseURL: "postgres://x", PublicURL: "https://api.example.com",
 		JWTSecret: "0123456789abcdef0123456789abcdef", IDKey: "k", VoucherSeedB64: "s", PaymentWebhookSecret: "w",
-		OTPProvider: "sms", PaymentProvider: "telebirr", PushProvider: "fcm", FCMServiceAccountB64: "key",
+		OTPProvider: "africastalking", ATUsername: "bookdan", ATAPIKey: "atsk_live", PaymentProvider: "telebirr", PushProvider: "fcm", FCMServiceAccountB64: "key",
 		EmailProvider: "smtp", SMTPUser: "u@x.com", SMTPPassword: "p", EmailFrom: "BookDan <u@x.com>",
 	}
 }
@@ -40,6 +40,21 @@ func TestValidate(t *testing.T) {
 	brevoNoKey := safeProduction()
 	brevoNoKey.EmailProvider = "brevo"
 
+	smsOff := safeProduction()
+	smsOff.OTPProvider = "off"
+	smsUnknown := safeProduction()
+	smsUnknown.OTPProvider = "sms"
+	atNoKey := safeProduction()
+	atNoKey.ATAPIKey = ""
+	atSandbox := safeProduction()
+	atSandbox.ATSandbox = true
+	atSandboxUser := safeProduction()
+	atSandboxUser.ATUsername = "sandbox"
+	twilioOK := safeProduction()
+	twilioOK.OTPProvider, twilioOK.TwilioSID, twilioOK.TwilioToken, twilioOK.SMSFrom = "twilio", "AC1", "tok", "+15005550006"
+	twilioNoFrom := twilioOK
+	twilioNoFrom.SMSFrom = ""
+
 	cases := []struct {
 		name    string
 		cfg     Config
@@ -61,6 +76,13 @@ func TestValidate(t *testing.T) {
 		{"production with smtp but no password is refused", noSMTPPass, true},
 		{"production with brevo and its key is allowed", brevoOK, false},
 		{"production with brevo but no key is refused", brevoNoKey, true},
+		{"production with phone sign-in switched off is allowed", smsOff, false},
+		{"production with an unknown phone provider is refused", smsUnknown, true},
+		{"production with Africas Talking but no key is refused", atNoKey, true},
+		{"production on the Africas Talking sandbox is refused", atSandbox, true},
+		{"production with the sandbox username is refused", atSandboxUser, true},
+		{"production with Twilio and its credentials is allowed", twilioOK, false},
+		{"production with Twilio but no sender is refused", twilioNoFrom, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

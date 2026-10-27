@@ -19,8 +19,8 @@ function rooms(prefix: string, prices: [string, number, number, number][]): Omit
 
 function reviews(prefix: string): PropertyDetail['reviews'] {
   return [
-    { id: `${prefix}-v1`, author: 'Hanna T.', rating: 5, text: 'Spotless rooms and a very helpful reception.', date: '2026-09-02', verified: true },
-    { id: `${prefix}-v2`, author: 'Daniel M.', rating: 4, text: 'Good value. Hot water was reliable.', date: '2026-08-14', verified: true },
+    { id: `${prefix}-v1`, author: 'Hanna T.', rating: 5, text: 'Spotless rooms and a very helpful reception.', date: '2026-09-02', verified: true, reply: null },
+    { id: `${prefix}-v2`, author: 'Daniel M.', rating: 4, text: 'Good value. Hot water was reliable.', date: '2026-08-14', verified: true, reply: null },
   ];
 }
 

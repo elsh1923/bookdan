@@ -7,10 +7,14 @@ import {
   RoomsChartSchema,
   GuestProfileSchema,
   PartnerBookingListSchema,
+  HotelDisputeSchema,
   PartnerBookingSchema,
+  PartnerReviewListSchema,
+  StatementListSchema,
   PaymentSessionSchema,
   PropertyDetailSchema,
   QuoteSchema,
+  RatesSchema,
   SearchResponseSchema,
   SupportTicketCreatedSchema,
   SupportTicketDetailSchema,
@@ -141,7 +145,7 @@ function searchQuery(p: SearchParams): string {
   return q.toString();
 }
 
-const BookingList = z.object({ items: z.array(BookingSchema) });
+const BookingList = z.object({ items: z.array(BookingSchema), next_cursor: z.string().nullable().optional() });
 const ProfileEnvelope = z.object({ profile: GuestProfileSchema.nullable() });
 const PayResponse = z.object({ booking: BookingSchema, session: PaymentSessionSchema.nullable() });
 
@@ -153,6 +157,7 @@ export function createHttpApi(options: HttpOptions): Api {
     getProperty: (p) =>
       request('GET', `/properties/${encodeURIComponent(p.id)}?${new URLSearchParams({ check_in: p.check_in, check_out: p.check_out })}`, PropertyDetailSchema),
     createQuote: (p) => request('POST', '/quotes', QuoteSchema, p),
+    getRates: () => request('GET', '/rates', RatesSchema),
     suggest: async (q) => (await request('GET', `/suggest?${new URLSearchParams({ q })}`, SuggestResponseSchema)).items,
     createHold: (p) =>
       request(
@@ -162,7 +167,20 @@ export function createHttpApi(options: HttpOptions): Api {
       ),
     startPayment: (p) => request('POST', `/bookings/${encodeURIComponent(p.booking_id)}/pay`, PayResponse, { method: p.method }),
     getBooking: (id) => request('GET', `/bookings/${encodeURIComponent(id)}`, BookingSchema),
-    listBookings: async () => (await request('GET', '/bookings', BookingList)).items,
+    // The server pages the list (newest first); the app asks for pages of 50 until there are no more (up to 500 bookings).
+    listBookings: async () => {
+      const all: z.infer<typeof BookingSchema>[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 10; page++) {
+        const q = new URLSearchParams({ limit: '50' });
+        if (cursor) q.set('cursor', cursor);
+        const r = await request('GET', `/bookings?${q}`, BookingList);
+        all.push(...r.items);
+        if (!r.next_cursor) break;
+        cursor = r.next_cursor;
+      }
+      return all;
+    },
     getProfile: async () => (await request('GET', '/me/profile', ProfileEnvelope)).profile,
     saveProfile: async (input) => {
       const r = await request('PUT', '/me/profile', ProfileEnvelope, input);
@@ -187,6 +205,10 @@ export function createHttpApi(options: HttpOptions): Api {
     registerPushToken: async (r) => {
       await request('PUT', '/me/devices/push-token', null, r);
     },
+    changeBookingDates: (id, d) => request('POST', `/bookings/${encodeURIComponent(id)}/change-dates`, BookingSchema, d),
+    logHotelCall: async (id) => {
+      await request('POST', `/bookings/${encodeURIComponent(id)}/call`, null);
+    },
     raiseDispute: (id, d) => request('POST', `/bookings/${encodeURIComponent(id)}/dispute`, BookingSchema, d),
     cancelBooking: (id) => request('POST', `/bookings/${encodeURIComponent(id)}/cancel`, BookingSchema),
     submitReview: (id, review) => request('POST', `/bookings/${encodeURIComponent(id)}/review`, BookingSchema, review),
@@ -203,9 +225,47 @@ export function createHttpPartnerApi(options: HttpOptions): PartnerApi {
       await request('PUT', '/partner/devices/push-token', null, r);
     },
     revealGuestId: (id) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/guest/reveal`, z.object({ id_number: z.string() })),
-    listBookings: () => request('GET', '/partner/bookings', PartnerBookingListSchema),
+    listBookings: async () => {
+      let first = await request('GET', '/partner/bookings?limit=100', PartnerBookingListSchema);
+      const items = [...first.items];
+      for (let page = 0; page < 10 && first.next_cursor; page++) {
+        first = await request('GET', `/partner/bookings?limit=100&cursor=${encodeURIComponent(first.next_cursor)}`, PartnerBookingListSchema);
+        items.push(...first.items);
+      }
+      return { ...first, items, next_cursor: null };
+    },
     acceptBooking: (id) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/accept`, PartnerBookingSchema),
     declineBooking: (id, reason) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/decline`, PartnerBookingSchema, { reason }),
+    cancelBooking: (id, reason) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/cancel`, PartnerBookingSchema, { reason }),
+    relocateBooking: (id, reason) => request('POST', `/partner/bookings/${encodeURIComponent(id)}/relocate`, PartnerBookingSchema, { reason }),
+    getDispute: async (id) => (await request('GET', `/partner/bookings/${encodeURIComponent(id)}/dispute`, HotelDisputeSchema)).dispute,
+    sendDisputeStatement: async (id, message) => {
+      await request('POST', `/partner/bookings/${encodeURIComponent(id)}/dispute/statement`, null, { message });
+    },
+    getVoucherKey: () => request('GET', '/keys/voucher', z.object({ kid: z.string(), public_key: z.string() })),
+    syncCheckins: async (items) => (await request('POST', '/partner/checkin/sync', z.object({ results: z.array(z.object({ reference: z.string(), result: z.string() })) }), { items })).results,
+    getStatements: async (month, propertyId) => {
+      const q = new URLSearchParams();
+      if (month) q.set('month', month);
+      if (propertyId) q.set('property_id', propertyId);
+      return (await request('GET', `/partner/statements${q.size ? `?${q}` : ''}`, StatementListSchema)).statements;
+    },
+    listReviews: async () => (await request('GET', '/partner/reviews', PartnerReviewListSchema)).reviews,
+    replyToReview: async (id, text) => {
+      await request('PUT', `/partner/reviews/${encodeURIComponent(id)}/reply`, null, { text });
+    },
+    removeReviewReply: async (id) => {
+      await request('DELETE', `/partner/reviews/${encodeURIComponent(id)}/reply`, null);
+    },
+    listSupportTickets: async () => (await request('GET', '/partner/support/tickets', SupportTicketListSchema)).tickets,
+    getSupportTicket: async (id) => (await request('GET', `/partner/support/tickets/${encodeURIComponent(id)}`, SupportTicketDetailSchema)).ticket,
+    createSupportTicket: (t) => request('POST', '/partner/support/tickets', SupportTicketCreatedSchema, t),
+    replySupportTicket: async (id, message) => {
+      await request('POST', `/partner/support/tickets/${encodeURIComponent(id)}/messages`, null, { message });
+    },
+    closeSupportTicket: async (id) => {
+      await request('POST', `/partner/support/tickets/${encodeURIComponent(id)}/close`, null);
+    },
     lookupCheckin: (query) => request('POST', '/partner/checkin/lookup', CheckinLookupSchema, query),
     getEarnings: () => request('GET', '/partner/earnings', EarningsSchema),
     getRoomsChart: (o) => {

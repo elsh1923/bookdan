@@ -9,7 +9,7 @@ import { createHttpPartnerApi, createMockPartnerApi, createSessionManager, type 
 // the same contract stands in. EXPO_PUBLIC_* values are read when the app is bundled (set them in eas.json for builds and updates).
 const extra = Constants.expoConfig?.extra as { apiMode?: string; apiUrl?: string } | undefined;
 const mode = process.env.EXPO_PUBLIC_API_MODE ?? extra?.apiMode ?? 'mock';
-const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? extra?.apiUrl ?? (Platform.OS === 'web' ? 'http://localhost:8080' : '');
+export const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? extra?.apiUrl ?? (Platform.OS === 'web' ? 'http://localhost:8080' : '');
 export const isMockApi = mode !== 'http';
 if (!isMockApi && !apiUrl) console.warn('EXPO_PUBLIC_API_MODE=http but EXPO_PUBLIC_API_URL is not set: every request will fail.');
 
@@ -36,6 +36,20 @@ export const api: PartnerApi = {
   listBookings: withRefresh(raw.listBookings),
   acceptBooking: withRefresh(raw.acceptBooking),
   declineBooking: withRefresh(raw.declineBooking),
+  cancelBooking: withRefresh(raw.cancelBooking),
+  relocateBooking: withRefresh(raw.relocateBooking),
+  getDispute: withRefresh(raw.getDispute),
+  sendDisputeStatement: withRefresh(raw.sendDisputeStatement),
+  getStatements: withRefresh(raw.getStatements),
+  syncCheckins: withRefresh(raw.syncCheckins),
+  listReviews: withRefresh(raw.listReviews),
+  replyToReview: withRefresh(raw.replyToReview),
+  removeReviewReply: withRefresh(raw.removeReviewReply),
+  listSupportTickets: withRefresh(raw.listSupportTickets),
+  getSupportTicket: withRefresh(raw.getSupportTicket),
+  createSupportTicket: withRefresh(raw.createSupportTicket),
+  replySupportTicket: withRefresh(raw.replySupportTicket),
+  closeSupportTicket: withRefresh(raw.closeSupportTicket),
   lookupCheckin: withRefresh(raw.lookupCheckin),
   checkInGuest: withRefresh(raw.checkInGuest),
   getEarnings: withRefresh(raw.getEarnings),

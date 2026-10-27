@@ -8,6 +8,10 @@ import type {
   RoomBlock,
   RoomsChart,
   DeclineReason,
+  HotelDispute,
+  HotelProblemReason,
+  PartnerReview,
+  Statement,
   GuestProfile,
   GuestProfileInput,
   DisputeReason,
@@ -23,6 +27,7 @@ import type {
   ReviewInput,
   SearchSort,
   Suggestion,
+  Rates,
   SearchResponse,
   SupportTicket,
   Voucher,
@@ -103,6 +108,8 @@ export interface Api extends AuthApi {
   getProperty(params: GetPropertyParams): Promise<PropertyDetail>;
   /** Landmarks, areas, cities and hotels matching what the guest has typed (with nothing typed: popular landmarks). */
   suggest(q: string): Promise<Suggestion[]>;
+  /** The display exchange rates (ETB per dollar and euro), set by BookDan. Empty or stale means the apps show ETB only. Public. */
+  getRates(): Promise<Rates>;
 
   createQuote(params: CreateQuoteParams): Promise<Quote>;
   /**
@@ -153,11 +160,22 @@ export interface Api extends AuthApi {
   replySupportTicket(id: string, message: string): Promise<void>;
   closeSupportTicket(id: string): Promise<void>;
   /**
+   * Tells BookDan the guest tapped "Call the hotel" on a confirmed booking (so it can see how often guests and hotels talk outside the app).
+   * The hotel's number is not on its page: it comes with the booking once the hotel has confirmed (booking.property_phone, empty before).
+   */
+  logHotelCall(bookingId: string): Promise<void>;
+  /**
    * Challenges a charge or a stay. The booking becomes DISPUTED (its money is held back from the hotel) and a support request carries the
    * conversation (booking.dispute_ticket_id). Fails with INVALID_STATE before the stay has started, DISPUTE_WINDOW_CLOSED after
    * 14 days past check-out, and DISPUTE_EXISTS when one was opened before. Closing the support request withdraws the dispute.
    */
   raiseDispute(bookingId: string, dispute: { reason: DisputeReason; message: string }): Promise<Booking>;
+  /**
+   * Moves a confirmed booking to other dates, once, at exactly the same price (booking.can_change_dates says when). Fails with PRICE_DIFFERS
+   * (the message carries the new price: cancel and book again instead), SOLD_OUT, CHANGE_LIMIT, CHANGE_TOO_LATE and NEW_DATES_TOO_SOON
+   * (both check-ins must be more than 48 hours away), NON_REFUNDABLE and COUPON_NO_CHANGE. Returns the updated booking.
+   */
+  changeBookingDates(bookingId: string, dates: { check_in: string; check_out: string }): Promise<Booking>;
   /** Registers this phone for booking updates (the hotel confirmed or declined). Re-sent whenever the token changes. */
   registerPushToken(registration: PushRegistration): Promise<void>;
   /**
@@ -211,6 +229,35 @@ export interface PartnerApi extends AuthApi {
   acceptBooking(id: string): Promise<PartnerBooking>;
   /** Decline a booking, with a reason. The guest is refunded in full. */
   declineBooking(id: string, reason: DeclineReason): Promise<PartnerBooking>;
+  /**
+   * Cancels a confirmed booking the hotel cannot honour. Hotel owners only (FORBIDDEN for others). The guest is refunded in full and the
+   * hotel bears the refund. Fails with INVALID_STATE for a booking that is not confirmed or whose stay is over.
+   */
+  cancelBooking(id: string, reason: HotelProblemReason): Promise<PartnerBooking>;
+  /** Reports that the hotel cannot host the guest: BookDan support finds another place, and the guest may cancel for a full refund. */
+  relocateBooking(id: string, reason: HotelProblemReason): Promise<PartnerBooking>;
+  /** The guest's dispute about this booking and the hotel's statements. Fails with NOT_FOUND when there is none. */
+  getDispute(bookingId: string): Promise<HotelDispute>;
+  /** The hotel's account of a dispute, shown to support and to the guest. Fails with INVALID_STATE when no dispute is open. */
+  sendDisputeStatement(bookingId: string, message: string): Promise<void>;
+  /** The statement of one month (YYYY-MM; default last month) for each hotel the owner owns, or one hotel with propertyId. Owners only. */
+  getStatements(month?: string, propertyId?: string): Promise<Statement[]>;
+  /** The latest reviews of the owner's hotels, those without a reply first. Owners only (FORBIDDEN for others). */
+  listReviews(): Promise<PartnerReview[]>;
+  /** Writes (or replaces) the hotel's public reply to a review. Owners only. */
+  replyToReview(reviewId: string, text: string): Promise<void>;
+  /** Takes the hotel's reply away. Owners only. */
+  removeReviewReply(reviewId: string): Promise<void>;
+  /** The server's public key for checking voucher QR codes (cached by the app so check-in can work offline). Public. */
+  getVoucherKey(): Promise<{ kid: string; public_key: string }>;
+  /** Sends check-ins that were made offline (POST /partner/checkin/sync). One answer per item, in order. */
+  syncCheckins(items: { token: string; at: string }[]): Promise<{ reference: string; result: string }[]>;
+  /** Help and support for hotel staff: the same conversations as in the guest app, about the hotel or one of its bookings. */
+  listSupportTickets(): Promise<SupportTicket[]>;
+  getSupportTicket(id: string): Promise<SupportTicket>;
+  createSupportTicket(ticket: NewSupportTicket): Promise<{ id: string }>;
+  replySupportTicket(id: string, message: string): Promise<void>;
+  closeSupportTicket(id: string): Promise<void>;
 
   /**
    * Finds the booking behind a guest's voucher (the text in their QR code, or reference + PIN) and says whether it can be checked

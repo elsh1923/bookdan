@@ -4,6 +4,7 @@ import type { SearchItem } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState } from '@bookdan/ui';
 import { price } from './format';
+import { useDisplay } from './display';
 
 // The map is a small web page (Leaflet with OpenStreetMap tiles, so no map key is needed) shown in a WebView. The WebView is a native
 // module: a phone running an older build of the app does not have it, so it is loaded carefully and the screen falls back to a message.
@@ -70,9 +71,10 @@ class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, {
 /** The hotels of a search as price labels on a map. onPick gets the id of the hotel the guest tapped. */
 export function HotelMap({ items, me, onPick }: { items: SearchItem[]; me: { lat: number; lng: number } | null; onPick: (id: string) => void }) {
   const { t } = useTranslation();
+  const shown = useDisplay((st) => st.version); // the price labels follow the display currency
   const pins = useMemo<Pin[]>(
     () => items.filter((i) => i.lat && i.lng).map((i) => ({ id: i.id, name: i.name, lat: i.lat, lng: i.lng, label: price(i.from_price_santim, i.currency) })),
-    [items],
+    [items, shown],
   );
   const html = useMemo(() => mapHtml(pins, me), [pins, me]);
   const frame = useRef<HTMLIFrameElement | null>(null);

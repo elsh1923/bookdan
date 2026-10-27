@@ -36,7 +36,8 @@ type Gateway interface {
 	// CreateSession starts a payment of amountSantim for a booking.
 	CreateSession(ctx context.Context, paymentID, bookingCode, method string, amountSantim int64, currency string) (PaymentSession, error)
 	// Refund returns money to the guest. The server records the refund in the ledger either way; this moves the money.
-	Refund(ctx context.Context, providerRef string, amountSantim int64, currency string) error
+	// refundKey is "" for the refund of what is left of a payment and the partial refund's id for a partial one: the gateway is told once per key.
+	Refund(ctx context.Context, providerRef, refundKey string, amountSantim int64, currency string) error
 }
 
 // Pusher sends an alert to phones. It returns the tokens the push service no longer knows (an uninstalled app), so the
@@ -64,7 +65,7 @@ func (g devGateway) CreateSession(_ context.Context, paymentID, _ string, _ stri
 	return PaymentSession{ProviderRef: "dev_" + paymentID, PaymentURL: g.publicURL + "/v1/dev/gateway/" + paymentID}, nil
 }
 
-func (devGateway) Refund(_ context.Context, ref string, amount int64, currency string) error {
+func (devGateway) Refund(_ context.Context, ref, _ string, amount int64, currency string) error {
 	slog.Info("refund (development stand-in, no money moved)", "payment", ref, "santim", amount, "currency", currency)
 	return nil
 }
@@ -106,6 +107,8 @@ type Providers struct {
 	Push    Pusher
 	// EmailReal is true when sign-in codes really go out by email. Then real addresses get random codes even in demo mode.
 	EmailReal bool
+	// SMSReal is the same for phone numbers: true when codes really go out by SMS.
+	SMSReal bool
 }
 
 // DevProviders returns the stand-ins.
@@ -116,11 +119,27 @@ func DevProviders(cfg config.Config) Providers {
 // ProvidersFor selects integrations by name. Real ones are added here as they are built.
 func ProvidersFor(cfg config.Config) (Providers, error) {
 	p := DevProviders(cfg)
+	var sms OTPSender = logSender{}
 	switch cfg.OTPProvider {
 	case "log", "":
+	case "off":
+		sms = offSender{}
+	case "africastalking":
+		at, err := newAfricasTalking(cfg.ATUsername, cfg.ATAPIKey, cfg.SMSFrom, cfg.ATSandbox)
+		if err != nil {
+			return p, err
+		}
+		sms, p.SMSReal = at, true
+	case "twilio":
+		tw, err := newTwilio(cfg.TwilioSID, cfg.TwilioToken, cfg.SMSFrom)
+		if err != nil {
+			return p, err
+		}
+		sms, p.SMSReal = tw, true
 	default:
-		return p, errors.New("OTP_PROVIDER " + cfg.OTPProvider + " is not built yet")
+		return p, errors.New("OTP_PROVIDER " + cfg.OTPProvider + " is not built (use log, africastalking, twilio or off)")
 	}
+	p.OTP = routedSender{sms: sms, email: logSender{}}
 	switch cfg.EmailProvider {
 	case "log", "":
 	case "smtp":
@@ -128,7 +147,7 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 		if err != nil {
 			return p, err
 		}
-		p.OTP = routedSender{sms: logSender{}, email: smtpSender}
+		p.OTP = routedSender{sms: sms, email: smtpSender}
 		p.Mail = smtpSender
 		p.EmailReal = true
 	case "brevo":
@@ -136,7 +155,7 @@ func ProvidersFor(cfg config.Config) (Providers, error) {
 		if err != nil {
 			return p, err
 		}
-		p.OTP = routedSender{sms: logSender{}, email: brevo}
+		p.OTP = routedSender{sms: sms, email: brevo}
 		p.Mail = brevo
 		p.EmailReal = true
 	default:

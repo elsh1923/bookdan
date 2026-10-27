@@ -136,17 +136,26 @@ func (g *chapaGateway) CreateSession(ctx context.Context, paymentID, bookingCode
 }
 
 // Refund asks Chapa to return the payment. The Idempotency-Key makes a repeat safe: Chapa does not refund the same payment twice.
-func (g *chapaGateway) Refund(ctx context.Context, providerRef string, amountSantim int64, _ string) error {
+func (g *chapaGateway) Refund(ctx context.Context, providerRef, refundKey string, amountSantim int64, _ string) error {
+	merchantRef, idem := "rf"+strings.TrimPrefix(providerRef, chapaRefPrefix), "refund-"+providerRef // at most 20 characters
+	if refundKey != "" {
+		// A partial refund has its own references: a second refund on the same payment must not be taken for a repeat of the first.
+		short := strings.ReplaceAll(refundKey, "-", "")
+		if len(short) > 18 {
+			short = short[:18]
+		}
+		merchantRef, idem = "rf"+short, "refund-"+providerRef+"-"+refundKey
+	}
 	body := map[string]any{
 		"payment_reference":  providerRef,
-		"merchant_reference": "rf" + strings.TrimPrefix(providerRef, chapaRefPrefix), // at most 20 characters
+		"merchant_reference": merchantRef,
 		"amount":             amountSantim,
 		"reason":             "BookDan booking refund",
 	}
 	var out struct {
 		Status string `json:"status"`
 	}
-	if err := g.call(ctx, http.MethodPost, "/v2/refunds", body, &out, "refund-"+providerRef); err != nil {
+	if err := g.call(ctx, http.MethodPost, "/v2/refunds", body, &out, idem); err != nil {
 		return err
 	}
 	if out.Status != "success" {

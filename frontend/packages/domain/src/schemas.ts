@@ -119,6 +119,8 @@ export const ReviewSchema = z.object({
   date: z.string(),
   /** The review comes from a guest whose stay was booked and finished on BookDan. */
   verified: z.boolean().default(true),
+  /** The hotel's public answer, if it wrote one. */
+  reply: z.object({ text: z.string(), date: z.string() }).nullable().default(null),
 });
 
 /** The numbers above a hotel's reviews. distribution[0] counts one-star reviews and distribution[4] five-star reviews. */
@@ -236,10 +238,16 @@ export const BookingSchema = z.object({
   refund_santim: z.number().int().nullable().default(null),
   /** Whether the guest may review this stay now (after check-out), and the review they wrote. */
   can_review: z.boolean().default(false),
-  review: z.object({ rating: z.number().int(), text: z.string() }).nullable().default(null),
+  review: z.object({ rating: z.number().int(), text: z.string(), hotel_reply: z.object({ text: z.string(), date: z.string() }).nullable().default(null) }).nullable().default(null),
   /** Whether the guest may open a dispute now (once per booking; from the start of the stay to 14 days after check-out), and their dispute, if any. */
   can_dispute: z.boolean().default(false),
   dispute_ticket_id: z.string().nullable().default(null),
+  /** Whether the guest may move the booking to other dates now (once, at the same price), and the dates it first had. */
+  can_change_dates: z.boolean().default(false),
+  /** The part of the payment already returned while the booking stands (a dispute settled in part, or a goodwill credit). */
+  partially_refunded_santim: z.number().int().default(0),
+  original_check_in: z.string().nullable().default(null),
+  original_check_out: z.string().nullable().default(null),
   /** The hotel's check-in and check-out times (HH:MM). */
   check_in_time: z.string().default('14:00'),
   check_out_time: z.string().default('12:00'),
@@ -312,6 +320,8 @@ export const SupportKindSchema = z.enum(['question', 'problem', 'dispute']);
 export const SupportStatusSchema = z.enum(['open', 'answered', 'closed']);
 export const SupportMessageSchema = z.object({
   from_staff: z.boolean(),
+  /** Who wrote it: the guest, the hotel (a statement in a dispute) or BookDan support. */
+  role: z.enum(['guest', 'hotel', 'support']).default('guest'),
   author: z.string(),
   body: z.string(),
   created_at: z.string(),
@@ -348,3 +358,11 @@ export interface NewSupportTicket {
   message: string;
   booking_id?: string;
 }
+
+/** The display exchange rates: ETB for one dollar or euro. A stale rate is ignored by the apps (ETB only). */
+export const RatesSchema = z.object({
+  base: z.literal('ETB'),
+  rates: z.array(z.object({ currency: z.enum(['USD', 'EUR']), birr_per_unit: z.number().positive(), updated_at: z.string(), stale: z.boolean() })),
+  server_time: z.string(),
+});
+export type Rates = z.infer<typeof RatesSchema>;

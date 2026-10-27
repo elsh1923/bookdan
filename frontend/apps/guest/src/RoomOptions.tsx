@@ -4,6 +4,7 @@ import type { Currency, RoomOption } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { T, colors, radius, spacing } from '@bookdan/ui';
 import { price } from './format';
+import { useDisplay } from './display';
 
 export const optionKey = (o: Pick<RoomOption, 'meal' | 'refundable'>) => `${o.meal}/${o.refundable}`;
 
@@ -12,6 +13,7 @@ export const optionKey = (o: Pick<RoomOption, 'meal' | 'refundable'>) => `${o.me
  * (cheaper). Every row shows its price per night; the chosen one is highlighted.
  */
 export function RoomOptionPicker({ options, value, currency, onChange }: { options: RoomOption[]; value: string; currency: Currency; onChange: (o: RoomOption) => void }) {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t } = useTranslation();
   return (
     <View style={{ marginTop: spacing.md, gap: spacing.sm }}>

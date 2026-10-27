@@ -12,8 +12,9 @@ import { HotelMap } from '../src/HotelMap';
 import { Photo } from '../src/Photo';
 import { OtherDates } from '../src/OtherDates';
 import { PropertyCard } from '../src/PropertyCard';
-import { price, shortDate } from '../src/format';
+import { etbOnly, price, shortDate } from '../src/format';
 import { useSearch, type SearchCriteria } from '../src/queries';
+import { useDisplay } from '../src/display';
 
 const TYPES: PropertyType[] = ['hotel', 'guesthouse', 'lodge', 'resort'];
 const SORTS: SearchSort[] = ['recommended', 'price_asc', 'price_desc', 'rating'];
@@ -36,9 +37,9 @@ const NO_FILTERS: Filters = { types: [], amenities: [], min_price: 0, max_price:
 
 function bracketLabel(t: (k: string, o?: Record<string, unknown>) => string, [from, to]: [number, number]): string {
   if (!from && !to) return t('filters.price_any');
-  if (!from) return t('filters.price_under', { amount: price(to) });
-  if (!to) return t('filters.price_over', { amount: price(from) });
-  return t('filters.price_between', { from: price(from), to: price(to) });
+  if (!from) return t('filters.price_under', { amount: etbOnly(to) });
+  if (!to) return t('filters.price_over', { amount: etbOnly(from) });
+  return t('filters.price_between', { from: etbOnly(from), to: etbOnly(to) });
 }
 
 function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: React.ReactNode }) {
@@ -136,6 +137,7 @@ function FilterSheet({ visible, filters, facets, onClose, onApply }: {
 }
 
 export default function Results() {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const p = useLocalSearchParams<{ q?: string; in: string; out: string; guests: string; children?: string; rooms?: string; lat?: string; lng?: string }>();

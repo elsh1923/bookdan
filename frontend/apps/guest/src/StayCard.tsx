@@ -7,11 +7,13 @@ import { Animated, PressableScale, T, colors, dark, fonts, radius, spacing, useB
 import { Photo } from './Photo';
 import { price } from './format';
 import { usePrefs } from './store';
+import { useDisplay } from './display';
 
 /** Photo-first card for the dark home screen: stars, name and price sit on a gradient over the photo. */
 export function StayCard({ item, width, height, large, onPress }: {
   item: SearchItem; width: number; height: number; large?: boolean; onPress: () => void;
 }) {
+  useDisplay((st) => st.version); // redraw when the display currency changes
   const { t } = useTranslation();
   const saved = usePrefs((s) => s.saved.includes(item.id));
   const toggleSaved = usePrefs((s) => s.toggleSaved);

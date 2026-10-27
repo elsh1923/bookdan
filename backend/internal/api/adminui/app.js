@@ -140,7 +140,7 @@
     }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
     return shell(h('div', {},
       h('div', { class: 'row between' }, h('h1', {}, 'Hotels'),
-        state.role === 'admin' ? h('span', {}, h('button', { class: 'secondary', onclick: function () { go('#/coupons'); } }, 'Coupons'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/payouts'); } }, 'Payouts'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/issues'); } }, 'Payment issues'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/support'); } }, 'Support'), ' ', h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel')) : null),
+        state.role === 'admin' ? h('span', {}, h('button', { class: 'secondary', onclick: function () { go('#/coupons'); } }, 'Coupons'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/payouts'); } }, 'Payouts'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/issues'); } }, 'Payment issues'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/support'); } }, 'Support'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/rates'); } }, 'Rates'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/calls'); } }, 'Calls'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/analytics'); } }, 'Analytics'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/applications'); } }, 'Applications'), ' ', h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel')) : null),
       holder));
   }
 
@@ -513,6 +513,46 @@
     return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Payouts'), holder));
   }
 
+  // The statement of one month as a CSV file: fetched with the admin's token and saved by the browser.
+  function downloadStatement(hotelId, month, out) {
+    clear(out);
+    fetch(API + '/admin/hotels/' + hotelId + '/statements?format=csv&month=' + encodeURIComponent(month), { headers: { Authorization: 'Bearer ' + state.token } }).then(function (res) {
+      if (!res.ok) return res.json().then(function (j) { throw new Error((j.error && j.error.message) || 'Could not get the statement'); });
+      return res.blob();
+    }).then(function (blob) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'bookdan-statement-' + month + '.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+    }).catch(function (err) { add(out, msg('err', err.message)); });
+  }
+
+  function receiptBlock(x, reload) {
+    var amount = h('input', { value: String(x.owes_santim / 100), inputmode: 'decimal', placeholder: 'Amount in birr' });
+    var ref = h('input', { placeholder: 'Bank transaction reference' });
+    var note = h('input', { placeholder: 'Optional note' });
+    var out = h('div', {});
+    var btn = h('button', { type: 'submit' }, 'Record payment received');
+    return h('div', { class: 'card', style: 'background:var(--soft,#fff7e6)' },
+      h('h3', {}, 'This hotel owes BookDan ' + etb(x.owes_santim)),
+      h('p', { class: 'soft' }, 'The commission on its pay-at-hotel stays is more than BookDan owes it. When the hotel has paid, record the transfer here: it lowers what it owes.'),
+      h('form', { onsubmit: function (e) {
+        e.preventDefault(); clear(out);
+        var santim = Math.round(parseFloat(String(amount.value).replace(/,/g, '')) * 100);
+        if (!(santim > 0)) { add(out, msg('err', 'Enter the amount in birr.')); return; }
+        if (!confirm('Record ' + etb(santim) + ' received from ' + x.name + '? Make sure the money has really arrived.')) return;
+        btn.disabled = true;
+        call('POST', '/admin/hotels/' + x.id + '/receipts', { amount_santim: santim, reference: ref.value, note: note.value }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+      } }, h('div', { class: 'grid' }, field('Amount (birr)', amount), field('Transfer reference', ref), field('Note', note)), h('div', { class: 'field' }, btn), out));
+  }
+
+  function statementBlock(x) {
+    var now = new Date(); now.setMonth(now.getMonth() - 1);
+    var month = h('input', { type: 'month', value: now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') });
+    var out = h('div', {});
+    return h('div', { class: 'field' }, h('label', {}, 'Monthly statement'),
+      h('div', { class: 'row' }, month, ' ', h('button', { class: 'secondary', type: 'button', onclick: function () { downloadStatement(x.id, month.value, out); } }, 'Download CSV')), out);
+  }
+
   function payoutCard(x, reload) {
     var amount = h('input', { value: x.to_pay_santim ? String(x.to_pay_santim / 100) : '', inputmode: 'decimal', placeholder: 'Amount in birr' });
     var ref = h('input', { placeholder: 'Bank or Telebirr transaction reference' });
@@ -527,6 +567,8 @@
         field('After check-in (not payable yet)', h('span', {}, etb(x.upcoming_santim))),
         field('Paid so far', h('span', {}, etb(x.paid_santim) + (x.last_paid_at ? ' · last ' + new Date(x.last_paid_at).toLocaleDateString() : '')))),
       x.has_business ? null : h('p', { class: 'muted' }, 'Add the hotel\'s business and payout details (hotel page, Business tab) before paying it.'),
+      x.owes_santim > 0 ? receiptBlock(x, reload) : null,
+      statementBlock(x),
       h('form', { onsubmit: function (e) {
         e.preventDefault(); clear(out);
         var santim = Math.round(parseFloat(String(amount.value).replace(/,/g, '')) * 100);
@@ -649,7 +691,7 @@
   }
 
   // ---- support (platform admin): guests' questions and problems
-  var kindLabel = { question: 'Question', problem: 'Problem', dispute: 'Dispute' };
+  var kindLabel = { question: 'Question', problem: 'Problem', dispute: 'Dispute', relocation: 'Hotel cannot host the guest' };
   function supportView() {
     var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
     call('GET', '/admin/support/tickets').then(function (res) {
@@ -659,7 +701,7 @@
         var label = t.status === 'open' ? 'Needs an answer' : t.status === 'answered' ? 'Waiting for the guest' : 'Closed';
         add(holder, h('div', { class: 'card', style: 'cursor:pointer', onclick: function () { go('#/support/' + t.id); } },
           h('div', { class: 'row between' }, h('h3', {}, t.subject), h('span', { class: 'chip ' + (t.status === 'open' ? 'draft' : 'active') }, label)),
-          h('p', { class: 'muted' }, (kindLabel[t.kind] || t.kind) + ' · ' + t.guest + (t.booking_code ? ' · booking ' + t.booking_code : '') + ' · ' + when(t.updated_at)),
+          h('p', { class: 'muted' }, (kindLabel[t.kind] || t.kind) + ' · ' + (t.hotel ? 'hotel staff of ' + t.hotel + ' (' + t.guest + ')' : t.guest) + (t.booking_code ? ' · booking ' + t.booking_code : '') + ' · ' + when(t.updated_at)),
           h('p', {}, t.preview)));
       });
     }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
@@ -675,19 +717,20 @@
         clear(holder);
         add(holder, h('div', { class: 'card' },
           h('div', { class: 'row between' }, h('h3', {}, t.subject), h('span', { class: 'chip ' + (t.status === 'closed' ? 'active' : 'draft') }, t.status)),
-          h('p', { class: 'muted' }, (kindLabel[t.kind] || t.kind) + ' · ' + t.guest + (t.booking_code ? ' · booking ' + t.booking_code : '') + ' · opened ' + when(t.created_at))));
-        if (t.kind === 'dispute' && t.booking) {
+          h('p', { class: 'muted' }, (kindLabel[t.kind] || t.kind) + ' · ' + (t.hotel ? 'hotel staff of ' + t.hotel + ' (' + t.guest + ')' : t.guest) + (t.booking_code ? ' · booking ' + t.booking_code : '') + ' · opened ' + when(t.created_at))));
+        if (t.booking) {
           var bk = t.booking;
           add(holder, h('div', { class: 'card' },
             h('h3', {}, 'The booking'),
             h('p', {}, bk.hotel + ' · ' + bk.check_in + ' to ' + bk.check_out + ' · status ' + bk.status + (bk.disputed_from ? ' (was ' + bk.disputed_from + ')' : '')),
             h('p', {}, bk.paid_santim ? 'Paid online: ' + etb(bk.paid_santim) + (bk.status === 'CANCELLED_REFUNDED' ? ' (refunded)' : '') : 'Nothing was paid online.'),
+            bk.refunded_santim ? h('p', {}, 'Already refunded in part: ' + etb(bk.refunded_santim) + ' · still refundable: ' + etb(bk.left_santim)) : null,
             t.reason ? h('p', { class: 'muted' }, 'Reason chosen by the guest: ' + t.reason) : null,
             t.outcome ? h('p', {}, 'Outcome: ' + t.outcome) : null));
         }
         t.messages.forEach(function (m) {
           add(holder, h('div', { class: 'card', style: m.from_staff ? 'background:var(--soft,#f3f6fb)' : '' },
-            h('p', { class: 'muted' }, (m.from_staff ? 'Support (' + m.author + ')' : 'Guest') + ' · ' + when(m.created_at)),
+            h('p', { class: 'muted' }, (m.role === 'hotel' ? 'Hotel (' + m.author.replace(/^hotel:/, '') + ')' : m.role === 'support' ? 'Support (' + m.author + ')' : (t.hotel ? 'Hotel staff' : 'Guest')) + ' · ' + when(m.created_at)),
             h('p', { style: 'white-space:pre-wrap' }, m.body)));
         });
         if (t.status !== 'closed') {
@@ -697,32 +740,250 @@
             send.disabled = true; clear(out);
             call('POST', '/admin/support/tickets/' + id + '/reply', { message: box.value }).then(load, function (err) { send.disabled = false; add(out, msg('err', err.message)); });
           } }, 'Send answer');
-          var close = t.kind === 'dispute' ? null : h('button', { class: 'secondary', onclick: function () {
+          var close = (t.kind === 'dispute' || t.kind === 'relocation') ? null : h('button', { class: 'secondary', onclick: function () {
             call('POST', '/admin/support/tickets/' + id + '/close').then(load, function (err) { add(out, msg('err', err.message)); });
           } }, 'Close without answering');
           add(holder, h('div', { class: 'card' }, h('div', { class: 'field' }, h('label', {}, 'Your answer'), box), send, close ? ' ' : null, close, out));
+          var partialOK = ['CONFIRMED', 'CHECKED_IN', 'COMPLETED', 'NO_SHOW'].indexOf(t.booking ? t.booking.status : '') >= 0;
+          if (t.kind !== 'dispute' && t.booking && partialOK && t.booking.left_santim > 0) {
+            var gPayer = h('select', {}, h('option', { value: 'platform' }, 'BookDan pays (the hotel keeps its share)'), h('option', { value: 'hotel' }, 'The hotel pays its share of it'));
+            var gAmount = h('input', { type: 'number', step: '0.01', min: '0.01', placeholder: 'Amount in birr' });
+            var gWhy = h('textarea', { rows: '2', maxlength: '1000', placeholder: 'The reason. The guest reads it.' });
+            var gOut = h('div', {});
+            var gBtn = h('button', { class: 'secondary', onclick: function () {
+              if (!confirm('Refund part of the payment to the guest? This cannot be undone.')) return;
+              gBtn.disabled = true; clear(gOut);
+              call('POST', '/admin/support/tickets/' + id + '/refund', { payer: gPayer.value, amount_santim: Math.round(parseFloat(gAmount.value) * 100), note: gWhy.value }).then(load, function (err) { gBtn.disabled = false; add(gOut, msg('err', err.message)); });
+            } }, 'Refund this part');
+            add(holder, h('div', { class: 'card' }, h('h3', {}, 'Refund part of the payment'),
+              h('p', { class: 'soft' }, 'A goodwill credit: the booking stands. You can refund at most ' + etb(t.booking.left_santim) + ' (less than the whole payment).'),
+              h('div', { class: 'field' }, h('label', {}, 'Who pays'), gPayer), h('div', { class: 'field' }, h('label', {}, 'Amount'), gAmount), h('div', { class: 'field' }, h('label', {}, 'Reason'), gWhy), gBtn, gOut));
+          }
+          if (t.kind === 'relocation') {
+            var rOutcome = h('select', {},
+              h('option', { value: 'restored' }, 'Restore: the hotel can host the guest after all (the booking is confirmed again)'),
+              h('option', { value: 'refunded' }, 'Refund in full: no other place was found (the hotel bears the refund)'));
+            var rWhy = h('textarea', { rows: '3', maxlength: '1000', placeholder: 'What was decided. The guest reads it.' });
+            var rOut = h('div', {});
+            var rBtn = h('button', { onclick: function () {
+              if (!confirm('Settle this relocation? A refund cannot be undone.')) return;
+              rBtn.disabled = true; clear(rOut);
+              call('POST', '/admin/support/tickets/' + id + '/relocation', { outcome: rOutcome.value, note: rWhy.value }).then(load, function (err) { rBtn.disabled = false; add(rOut, msg('err', err.message)); });
+            } }, 'Settle the relocation');
+            add(holder, h('div', { class: 'card' }, h('h3', {}, 'Settle the relocation'),
+              h('p', { class: 'soft' }, 'The hotel told BookDan it cannot host this guest. Find the guest another place and tell them in the answer box above, then settle it here. The guest can also cancel for a full refund at any time.'),
+              h('div', { class: 'field' }, h('label', {}, 'Outcome'), rOutcome), h('div', { class: 'field' }, h('label', {}, 'Reason'), rWhy), rBtn, rOut));
+          }
           if (t.kind === 'dispute') {
             var paid = t.booking && t.booking.paid_santim > 0;
             var outcome = h('select', {},
               h('option', { value: 'rejected' }, 'Reject: nothing changes, the booking goes back to what it was'),
               paid ? h('option', { value: 'refunded_hotel_pays' }, 'Refund in full: the hotel pays (its share and our commission are reversed)') : null,
-              paid ? h('option', { value: 'refunded_platform_pays' }, 'Refund in full: BookDan pays (the hotel keeps its share)') : null);
+              paid ? h('option', { value: 'refunded_platform_pays' }, 'Refund in full: BookDan pays (the hotel keeps its share)') : null,
+              paid ? h('option', { value: 'refunded_partial_hotel_pays' }, 'Refund part: the hotel pays its share of it, the booking stands') : null,
+              paid ? h('option', { value: 'refunded_partial_platform_pays' }, 'Refund part: BookDan pays, the booking stands') : null);
+            var amountBox = h('input', { type: 'number', step: '0.01', min: '0.01', placeholder: 'Amount in birr (for a part refund)' });
             var why = h('textarea', { rows: '3', maxlength: '1000', placeholder: 'The reason for your decision. The guest reads it.' });
             var dout = h('div', {});
             var decide = h('button', { onclick: function () {
               if (!confirm('Settle this dispute? This closes it, and a refund cannot be undone.')) return;
               decide.disabled = true; clear(dout);
-              call('POST', '/admin/support/tickets/' + id + '/resolve', { outcome: outcome.value, note: why.value }).then(load, function (err) { decide.disabled = false; add(dout, msg('err', err.message)); });
+              var body = { outcome: outcome.value, note: why.value };
+              if (outcome.value.indexOf('refunded_partial_') === 0) body.amount_santim = Math.round(parseFloat(amountBox.value) * 100);
+              call('POST', '/admin/support/tickets/' + id + '/resolve', body).then(load, function (err) { decide.disabled = false; add(dout, msg('err', err.message)); });
             } }, 'Settle the dispute');
             add(holder, h('div', { class: 'card' }, h('h3', {}, 'Decision'),
-              h('p', { class: 'soft' }, 'The booking stays frozen (no money is released to the hotel) until you decide. Partial refunds are not available yet.'),
-              h('div', { class: 'field' }, h('label', {}, 'Outcome'), outcome), h('div', { class: 'field' }, h('label', {}, 'Reason'), why), decide, dout));
+              h('p', { class: 'soft' }, 'The booking stays frozen (no money is released to the hotel) until you decide. A part refund returns part of the payment and the booking stands.'),
+              h('div', { class: 'field' }, h('label', {}, 'Outcome'), outcome), h('div', { class: 'field' }, h('label', {}, 'Amount to refund (part refunds only)'), amountBox), h('div', { class: 'field' }, h('label', {}, 'Reason'), why), decide, dout));
           }
         }
       }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
     }
     load();
     return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/support'); } }, '← All requests'), holder));
+  }
+
+  // ---- exchange rates (platform admin): USD and EUR shown next to ETB prices
+  function ratesView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    function load() {
+      call('GET', '/admin/rates').then(function (res) {
+        clear(holder);
+        var byCur = {};
+        res.rates.forEach(function (r) { byCur[r.currency] = r; });
+        ['USD', 'EUR'].forEach(function (cur) {
+          var r = byCur[cur];
+          var input = h('input', { type: 'number', step: '0.0001', min: '1', placeholder: 'Birr for 1 ' + cur, value: r ? String(r.birr_per_unit) : '' });
+          var out = h('div', {});
+          function save(confirmed) {
+            clear(out);
+            call('PUT', '/admin/rates/' + cur, { birr_per_unit: parseFloat(input.value), confirm: confirmed === true }).then(load, function (err) {
+              if (err.code === 'RATE_JUMP' && confirm(err.message + '\n\nSave it anyway?')) return save(true);
+              add(out, msg('err', err.message));
+            });
+          }
+          add(holder, h('div', { class: 'card' },
+            h('div', { class: 'row between' }, h('h3', {}, '1 ' + cur + ' ='),
+              h('span', { class: 'chip ' + (!r ? 'draft' : r.stale ? 'draft' : 'active') }, !r ? 'Not set: guests see ETB only' : r.stale ? 'Out of date: guests see ETB only' : 'Shown to guests')),
+            h('div', { class: 'field' }, h('label', {}, 'Birr'), input),
+            h('p', { class: 'muted' }, r ? 'Set ' + when(r.updated_at) + ' by ' + r.updated_by : 'Never set'),
+            h('button', { onclick: function () { save(false); } }, 'Save'), out));
+        });
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Exchange rates'),
+      h('p', { class: 'soft' }, 'Guests can see prices in dollars or euros next to the birr price. It is only a guide: BookDan always charges and refunds in birr. Use the rate you would quote a customer (for example the National Bank rate). A rate you do not update for 30 days stops being shown.'),
+      holder));
+  }
+
+  // ---- calls (platform admin): how often guests tap "Call the hotel" on a confirmed booking
+  function callsView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    var days = h('select', {}, h('option', { value: '7' }, 'Last 7 days'), h('option', { value: '30', selected: 'selected' }, 'Last 30 days'), h('option', { value: '90' }, 'Last 90 days'));
+    function load() {
+      call('GET', '/admin/calls?days=' + days.value).then(function (res) {
+        clear(holder);
+        if (!res.hotels.length) { add(holder, h('div', { class: 'card' }, h('p', {}, 'No calls were logged in this period.'))); return; }
+        var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Hotel'), h('th', {}, 'Calls'), h('th', {}, 'Bookings with a call'), h('th', {}, 'Confirmed bookings'), h('th', {}, 'Last call'))));
+        var body = h('tbody', {});
+        res.hotels.forEach(function (x) {
+          add(body, h('tr', {}, h('td', {}, x.name), h('td', {}, String(x.calls)), h('td', {}, String(x.bookings_with_calls)), h('td', {}, String(x.confirmed_bookings)), h('td', {}, x.last_call_at ? new Date(x.last_call_at).toLocaleString() : '')));
+        });
+        add(table, body);
+        var rt = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'When'), h('th', {}, 'Hotel'), h('th', {}, 'Booking'), h('th', {}, 'Guest'), h('th', {}, 'Status'))));
+        var rb = h('tbody', {});
+        res.recent.forEach(function (c) { add(rb, h('tr', {}, h('td', {}, new Date(c.at).toLocaleString()), h('td', {}, c.hotel), h('td', {}, c.booking_code), h('td', {}, c.guest_name), h('td', {}, c.status))); });
+        add(rt, rb);
+        add(holder, h('div', { class: 'card', style: 'overflow-x:auto' }, h('h3', {}, 'By hotel'), table), h('div', { class: 'card', style: 'overflow-x:auto' }, h('h3', {}, 'Latest calls'), rt));
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    days.onchange = load;
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Calls'),
+      h('p', { class: 'soft' }, 'A guest sees the hotel\'s number only once a booking is confirmed, and the app tells BookDan when they tap "Call the hotel". A hotel whose guests call it far more often than others may be arranging bookings outside BookDan. A tap is not proof of a call.'),
+      h('div', { class: 'field' }, days), holder));
+  }
+
+  // ---- analytics (platform admin)
+  function pct(a, b) { return b ? Math.round((a / b) * 100) + '%' : '–'; }
+
+  function stat(label, value, hint) {
+    return h('div', { class: 'card', style: 'flex:1;min-width:150px;margin:6px' }, h('div', { class: 'muted' }, label), h('div', { style: 'font-size:1.5rem;font-weight:700;margin-top:2px' }, value), hint ? h('div', { class: 'muted' }, hint) : null);
+  }
+
+  // A column chart made of plain boxes: one column per day, its height the value against the busiest day.
+  function bars(points, key, label) {
+    var max = 0;
+    points.forEach(function (p) { if (p[key] > max) max = p[key]; });
+    var row = h('div', { style: 'display:flex;align-items:flex-end;gap:2px;height:120px;margin-top:8px' });
+    points.forEach(function (p) {
+      var height = max ? Math.max(2, Math.round((p[key] / max) * 116)) : 2;
+      add(row, h('div', { title: p.day + ': ' + label(p[key]), style: 'flex:1;background:var(--accent,#1f4fa0);height:' + height + 'px;border-radius:2px 2px 0 0;opacity:' + (p[key] ? '1' : '.25') }));
+    });
+    return row;
+  }
+
+  function analyticsView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    var days = h('select', {}, h('option', { value: '7' }, 'Last 7 days'), h('option', { value: '30', selected: 'selected' }, 'Last 30 days'), h('option', { value: '90' }, 'Last 90 days'));
+    function load() {
+      call('GET', '/admin/analytics?days=' + days.value).then(function (a) {
+        clear(holder);
+        var attention = [];
+        if (a.open_payment_issues) attention.push(['Payment issues', a.open_payment_issues, '#/issues']);
+        if (a.open_disputes) attention.push(['Disputes', a.open_disputes, '#/support']);
+        if (a.open_relocations) attention.push(['Guests to move', a.open_relocations, '#/support']);
+        if (a.open_support_requests) attention.push(['Support requests', a.open_support_requests, '#/support']);
+        add(holder,
+          h('div', { class: 'card' }, h('h3', {}, 'Needs a person now'),
+            attention.length ? h('div', { class: 'row' }, attention.map(function (x) { return h('button', { class: 'secondary', onclick: function () { go(x[2]); } }, x[0] + ': ' + x[1]); }))
+              : h('p', {}, 'Nothing is waiting. ' + a.awaiting_hotel_now + ' booking(s) wait for a hotel to answer.'),
+            attention.length ? h('p', { class: 'muted' }, a.awaiting_hotel_now + ' booking(s) wait for a hotel to answer.') : null),
+          h('div', { style: 'display:flex;flex-wrap:wrap' },
+            stat('Booking value (GMV)', etb(a.gmv_santim), 'confirmed by hotels'),
+            stat('BookDan commission', etb(a.commission_santim), '+ VAT ' + etb(a.commission_vat_santim)),
+            stat('Refunded to guests', etb(a.refunded_santim)),
+            stat('Average booking', etb(a.avg_booking_santim), a.avg_nights.toFixed(1) + ' nights')),
+          h('div', { class: 'card' }, h('h3', {}, 'From price to stay'),
+            h('table', {}, h('tbody', {},
+              h('tr', {}, h('td', {}, 'Prices asked for'), h('td', {}, String(a.quotes))),
+              h('tr', {}, h('td', {}, 'Rooms held'), h('td', {}, a.holds + ' (' + pct(a.holds, a.quotes) + ' of prices)')),
+              h('tr', {}, h('td', {}, 'Paid, or chose to pay at the hotel'), h('td', {}, a.paid + ' (' + pct(a.paid, a.holds) + ' of holds)')),
+              h('tr', {}, h('td', {}, 'Confirmed by the hotel'), h('td', {}, a.confirmed + ' (' + pct(a.confirmed, a.paid) + ' of paid)')),
+              h('tr', {}, h('td', {}, 'Stays completed'), h('td', {}, String(a.completed))))),
+            h('p', { class: 'muted' }, 'Paid online: ' + a.confirmed_paid_online + ' · pay at hotel: ' + a.confirmed_pay_at_hotel + ' · new guests: ' + a.new_guests + ' · returning guests: ' + a.repeat_guests)),
+          h('div', { class: 'card' }, h('h3', {}, 'Where bookings ended without a stay'),
+            h('table', {}, h('tbody', {},
+              h('tr', {}, h('td', {}, 'Hold ran out (not paid)'), h('td', {}, String(a.expired))),
+              h('tr', {}, h('td', {}, 'Hotel declined'), h('td', {}, String(a.declined))),
+              h('tr', {}, h('td', {}, 'Hotel did not answer in time'), h('td', {}, String(a.no_response))),
+              h('tr', {}, h('td', {}, 'Cancelled by the guest'), h('td', {}, String(a.cancelled_by_guest))),
+              h('tr', {}, h('td', {}, 'Cancelled by the hotel'), h('td', {}, String(a.cancelled_by_hotel))),
+              h('tr', {}, h('td', {}, 'Cancelled by BookDan'), h('td', {}, String(a.cancelled_by_admin))),
+              h('tr', {}, h('td', {}, 'Guest did not come'), h('td', {}, String(a.no_shows)))))),
+          h('div', { class: 'card' }, h('h3', {}, 'Booking value per day'), bars(a.daily, 'gmv_santim', etb),
+            h('div', { class: 'row between muted' }, h('span', {}, a.from), h('span', {}, a.to))),
+          h('div', { class: 'card' }, h('h3', {}, 'Bookings confirmed per day'), bars(a.daily, 'confirmed', String),
+            h('div', { class: 'row between muted' }, h('span', {}, a.from), h('span', {}, a.to))));
+        var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Hotel'), h('th', {}, 'Confirmed'), h('th', {}, 'Value'), h('th', {}, 'Requests'), h('th', {}, 'Accepted'), h('th', {}, 'Declined'), h('th', {}, 'No answer'), h('th', {}, 'Average reply'), h('th', {}, 'It cancelled'))));
+        var body = h('tbody', {});
+        a.hotels.forEach(function (x) {
+          add(body, h('tr', {}, h('td', {}, x.name), h('td', {}, String(x.confirmed)), h('td', {}, etb(x.gmv_santim)), h('td', {}, String(x.requests)), h('td', {}, String(x.accepted)), h('td', {}, String(x.declined)),
+            h('td', { style: x.no_response ? 'color:var(--bad,#b00020);font-weight:700' : '' }, String(x.no_response)),
+            h('td', {}, x.avg_reply_minutes === null ? '–' : x.avg_reply_minutes.toFixed(1) + ' min'),
+            h('td', { style: x.hotel_cancellations ? 'color:var(--bad,#b00020);font-weight:700' : '' }, String(x.hotel_cancellations))));
+        });
+        add(table, body);
+        add(holder, h('div', { class: 'card', style: 'overflow-x:auto' }, h('h3', {}, 'Hotels'), table,
+          h('p', { class: 'muted' }, 'A request is a booking that was paid and waited for the hotel in this period. Hotels that often do not answer, or that cancel confirmed bookings, cost BookDan guests.')));
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    days.onchange = load;
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Analytics'),
+      h('p', { class: 'soft' }, 'The state of the marketplace over the chosen period (Addis Ababa days). Amounts are in birr.'), h('div', { class: 'field' }, days), holder));
+  }
+
+  // ---- hotel applications (platform admin): hotels that applied on the public /apply page
+  function applicationsView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    function load() {
+      call('GET', '/admin/applications').then(function (res) {
+        clear(holder);
+        if (!res.applications.length) { add(holder, h('div', { class: 'card' }, h('p', {}, 'No hotel has applied yet. Hotels apply at /apply on this server.'))); return; }
+        res.applications.forEach(function (a) {
+          var card = h('div', { class: 'card' },
+            h('div', { class: 'row between' }, h('h3', {}, a.hotel_name + ' · ' + a.reference),
+              h('span', { class: 'chip ' + (a.status === 'pending' ? 'draft' : a.status === 'approved' ? 'active' : 'hidden') }, a.status === 'pending' ? 'Waiting for a decision' : a.status)),
+            h('p', {}, a.hotel_type + ' · ' + a.area + ', ' + a.city + ' · ' + a.rooms_count + ' rooms' + (a.pay_at_hotel ? ' · wants pay at hotel' : '')),
+            h('p', { class: 'soft' }, a.address + ' · ' + a.hotel_phone),
+            a.description ? h('p', {}, a.description) : null,
+            h('p', {}, 'Owner: ' + a.owner_name + ' · ' + a.owner_email + ' · ' + a.owner_phone),
+            h('p', {}, 'Business: ' + a.legal_name + ' · licence ' + a.license_number),
+            h('p', { class: 'muted' }, 'Applied ' + when(a.created_at) + (a.decided_at ? ' · decided ' + when(a.decided_at) + ' by ' + a.decided_by + (a.decision_note ? ': ' + a.decision_note : '') : '')));
+          if (a.property_id) add(card, h('button', { class: 'secondary', onclick: function () { go('#/hotel/' + a.property_id); } }, 'Open the hotel'));
+          if (a.status === 'pending') {
+            var out = h('div', {});
+            var note = h('input', { placeholder: 'If you reject it: the reason the applicant will read', maxlength: '1000' });
+            var yes = h('button', { onclick: function () {
+              if (!confirm('Approve ' + a.hotel_name + '? A draft hotel is created and ' + a.owner_email + ' is invited as its owner.')) return;
+              yes.disabled = true; clear(out);
+              call('POST', '/admin/applications/' + a.id + '/approve').then(function (r) { go('#/hotel/' + r.property_id); }, function (err) { yes.disabled = false; add(out, msg('err', err.message)); });
+            } }, 'Approve and create the hotel');
+            var no = h('button', { class: 'secondary', onclick: function () {
+              clear(out); no.disabled = true;
+              call('POST', '/admin/applications/' + a.id + '/reject', { note: note.value }).then(load, function (err) { no.disabled = false; add(out, msg('err', err.message)); });
+            } }, 'Reject');
+            add(card, h('div', { class: 'field' }, h('label', {}, 'Reason (for a rejection)'), note), yes, ' ', no, out);
+          }
+          add(holder, card);
+        });
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Hotel applications'),
+      h('p', { class: 'soft' }, 'Approving creates a hidden draft hotel and emails the owner an invitation to the BookDan Partner app. The hotel goes public only when you have set its map pin, rooms, prices, photos and business details and published it.'), holder));
   }
 
   // ---- routing
@@ -737,6 +998,10 @@
     else if (location.hash === '#/coupons' && state.role === 'admin') add(app, couponsView());
     else if (location.hash === '#/issues' && state.role === 'admin') add(app, issuesView());
     else if (location.hash === '#/support' && state.role === 'admin') add(app, supportView());
+    else if (location.hash === '#/rates' && state.role === 'admin') add(app, ratesView());
+    else if (location.hash === '#/calls' && state.role === 'admin') add(app, callsView());
+    else if (location.hash === '#/analytics' && state.role === 'admin') add(app, analyticsView());
+    else if (location.hash === '#/applications' && state.role === 'admin') add(app, applicationsView());
     else if (/^#\/support\/[0-9a-f-]{36}$/.test(location.hash) && state.role === 'admin') add(app, ticketView(location.hash.slice(10)));
     else add(app, listView());
   }

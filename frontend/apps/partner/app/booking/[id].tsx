@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
-import { canMarkNoShow, isAwaitingAnswer, todayAddis, type DeclineReason } from '@bookdan/domain';
+import { canMarkNoShow, isAwaitingAnswer, todayAddis, type DeclineReason, type HotelProblemReason } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Button, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,6 +12,8 @@ import { api } from '../../src/api';
 import { checkinErrorKey } from '../../src/checkin';
 import { AwaitingCard, BookingRow } from '../../src/BookingCards';
 import { DeclineSheet } from '../../src/DeclineSheet';
+import { DisputePanel } from '../../src/DisputePanel';
+import { HotelProblemSheet } from '../../src/HotelProblemSheet';
 import { GuestProfileCard } from '../../src/GuestProfileCard';
 import { useInbox } from '../../src/queries';
 import { useAnswers } from '../../src/useAnswers';
@@ -28,6 +30,29 @@ export default function BookingScreen() {
   const [checkingIn, setCheckingIn] = useState(false);
   const [markingNoShow, setMarkingNoShow] = useState(false);
   const [checkinError, setCheckinError] = useState<string | null>(null);
+  // Cancelling a confirmed booking, or reporting that the hotel cannot host the guest.
+  const [problem, setProblem] = useState<'cancel' | 'host' | null>(null);
+  const [problemBusy, setProblemBusy] = useState(false);
+  const [problemError, setProblemError] = useState<string | null>(null);
+  async function reportProblem(bookingId: string, reason: HotelProblemReason) {
+    setProblemBusy(true);
+    setProblemError(null);
+    try {
+      if (problem === 'cancel') await api.cancelBooking(bookingId, reason);
+      else await api.relocateBooking(bookingId, reason);
+      await qc.invalidateQueries({ queryKey: ['inbox'] });
+      qc.invalidateQueries({ queryKey: ['rooms-chart'] });
+      setProblem(null);
+    } catch (e) {
+      setProblemError(
+        e instanceof ApiError && e.code === 'FORBIDDEN' ? t('partner.owner_only')
+          : e instanceof ApiError && e.code === 'NETWORK' ? t('results.offline_body')
+          : t('results.error_body'),
+      );
+    } finally {
+      setProblemBusy(false);
+    }
+  }
 
   // The guest never came: the hotel keeps its share and the nights still to come go back on sale.
   function noShow(bookingId: string) {
@@ -110,6 +135,20 @@ export default function BookingScreen() {
         {booking.status === 'CONFIRMED' ? <Button title={t('partner.checkin_confirm')} icon="log-in-outline" onPress={() => checkIn(booking.id)} loading={checkingIn} /> : null}
         {canMarkNoShow(booking, todayAddis()) ? <Button variant="ghost" title={t('partner.no_show_button')} onPress={() => noShow(booking.id)} loading={markingNoShow} style={{ marginTop: spacing.sm }} /> : null}
         {booking.checked_in_at ? <T variant="small" color={colors.success}>{t('partner.checkin_done')}</T> : null}
+        {booking.status === 'CONFIRMED' ? (
+          <View style={{ marginTop: spacing.md }}>
+            <Button variant="secondary" icon="swap-horizontal-outline" title={t('partner.cannot_host')} onPress={() => { setProblemError(null); setProblem('host'); }} />
+            <Button variant="ghost" icon="close-circle-outline" title={t('partner.cancel_booking')} onPress={() => { setProblemError(null); setProblem('cancel'); }} style={{ marginTop: spacing.xs }} />
+          </View>
+        ) : null}
+        {booking.status === 'NEEDS_RELOCATION' ? (
+          <View style={{ marginTop: spacing.md }}>
+            <T variant="small" color={colors.inkSoft}>{t('partner.relocation_waiting')}</T>
+            <Button variant="ghost" icon="close-circle-outline" title={t('partner.cancel_booking')} onPress={() => { setProblemError(null); setProblem('cancel'); }} style={{ marginTop: spacing.xs }} />
+          </View>
+        ) : null}
+        {booking.status === 'DISPUTED' ? <DisputePanel bookingId={booking.id} /> : null}
+        <Button variant="ghost" icon="chatbubbles-outline" title={t('support.get_help')} onPress={() => router.push({ pathname: '/support/new', params: { booking: booking.id, ref: booking.reference } })} style={{ marginTop: spacing.sm }} />
         {checkinError ? <T variant="small" color={colors.danger} style={{ marginTop: spacing.sm }}>{checkinError}</T> : null}
       </View>
     );
@@ -123,6 +162,16 @@ export default function BookingScreen() {
         <Reveal>{body}</Reveal>
         {booking ? <Reveal index={2} style={{ marginTop: spacing.lg }}><GuestProfileCard booking={booking} /></Reveal> : null}
       </ScrollView>
+      <HotelProblemSheet
+        visible={problem !== null && !!booking}
+        busy={problemBusy}
+        error={problemError}
+        title={problem === 'cancel' ? t('partner.cancel_title') : t('partner.cannot_host_title')}
+        note={problem === 'cancel' ? t('partner.cancel_note') : t('partner.cannot_host_note')}
+        confirmLabel={problem === 'cancel' ? t('partner.cancel_confirm') : t('partner.cannot_host_confirm')}
+        onClose={() => setProblem(null)}
+        onConfirm={(reason) => booking && reportProblem(booking.id, reason)}
+      />
       <DeclineSheet
         visible={declining && !!booking}
         busy={!!booking && busyId === booking.id}
