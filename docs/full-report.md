@@ -175,3 +175,16 @@ Limits: the authenticator second step is optional (no recovery codes: a super ad
 | Partner app redesign | Every screen has the guest app's navy header with rounded corners, the tab bar is dark navy, the sign-in screen has a navy hero, and the booking list shows three numbers: to answer, arriving today, in the hotel | none |
 
 Run migration 00037 on Supabase before deploying. Date changes at a different price, admin accounts and review moderation (section 11) need 00034 to 00036, which are already applied.
+
+
+## 14. The hotel portal (/hotel)
+
+A separate website for hotels, at the same address as the admin page with /hotel at the end. Owners and receptionists sign in with the same emailed or texted code as the hotel app.
+
+| Who | What they see |
+|---|---|
+| Owner | Home (what needs an answer today, arrivals, what BookDan owes), Bookings (accept, decline, check in, no-show, cancel), Availability (14-day chart, walk-in and out-of-service blocks), My hotel, Rooms and prices, Photos, Team, Booking alerts, Earnings, Statements, Reviews and replies, Help from BookDan |
+| Receptionist | Home, Bookings (without cancel), Availability, Help |
+| BookDan super admin | Everything in the admin page, plus **Hotel changes**: a log of what each hotel changed, when and by whom |
+
+Rules: an owner edits only their own hotels. Room, price, photo and team changes go live at once and are logged. Only BookDan staff can publish, hide or verify a hotel, change the commission, see or change business and payout details, and manage coupons. An owner can add receptionists but not other owners. No database change is needed.

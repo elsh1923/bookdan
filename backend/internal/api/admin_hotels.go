@@ -454,6 +454,12 @@ func (s *Server) adminUpdateHotel(w http.ResponseWriter, r *http.Request) error 
 	isAdmin := claimsFrom(r).Role == "admin"
 	rules, _ := json.Marshal(in.HouseRules)
 	err := s.tx(r.Context(), func(tx pgx.Tx) error {
+		if !isAdmin {
+			// Whether a hotel is visible to guests is BookDan's decision: an owner edits the hotel without changing its status.
+			if err := tx.QueryRow(r.Context(), `SELECT status FROM properties WHERE id = $1`, id).Scan(&in.Status); err != nil {
+				return err
+			}
+		}
 		if in.Status == "active" {
 			var current string
 			var hasBusiness bool
@@ -491,7 +497,7 @@ func (s *Server) adminUpdateHotel(w http.ResponseWriter, r *http.Request) error 
 		if _, err := tx.Exec(r.Context(), `UPDATE properties SET description_am = $2, directions = $3, directions_am = $4 WHERE id = $1`, id, in.DescriptionAm, in.Directions, in.DirectionsAm); err != nil {
 			return err
 		}
-		return s.adminAudit(r, tx, "admin_hotel_updated", id, map[string]any{"status": in.Status})
+		return s.adminAudit(r, tx, "admin_hotel_updated", id, map[string]any{"status": in.Status, "by": claimsFrom(r).Role, "name": in.Name})
 	})
 	if err != nil {
 		return err

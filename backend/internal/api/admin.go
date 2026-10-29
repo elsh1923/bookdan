@@ -194,7 +194,7 @@ func requireAdmin(r *http.Request) error {
 
 // adminAudit records a change (who, what, which hotel) in the append-only audit log.
 func (s *Server) adminAudit(r *http.Request, tx pgx.Tx, action, propertyID string, extra map[string]any) error {
-	d := map[string]any{"property_id": propertyID}
+	d := map[string]any{"property_id": propertyID, "by": claimsFrom(r).Role}
 	for k, v := range extra {
 		d[k] = v
 	}
@@ -228,6 +228,7 @@ func (s *Server) adminRoutes(r chi.Router) {
 		r.Get("/admin/coupons", s.h(s.adminCoupons))
 		r.Get("/admin/analytics", s.h(s.adminAnalytics))
 		r.Get("/admin/calls", s.h(s.adminCalls))
+		r.With(super).Get("/admin/activity", s.h(s.adminActivity))
 		r.Get("/admin/rates", s.h(s.adminRates))
 
 		r.With(super).Post("/admin/hotels", s.h(s.adminCreateHotel))

@@ -147,6 +147,24 @@ func (s *Server) Routes(root chi.Router) {
 		r.Route("/partner", func(r chi.Router) {
 			r.Use(s.authenticate("partner"))
 			r.Put("/devices/push-token", s.h(s.registerPushToken("partner")))
+
+			// The hotel portal (/hotel): owners edit their own hotel, rooms, prices, photos and team. The handlers are the admin page's, which check that the
+			// signed-in person owns the hotel; they never let an owner change a hotel's status or verification, edit business details or reveal payout accounts.
+			r.Get("/hotels", s.h(s.adminListHotels))
+			r.Get("/hotels/{id}", s.h(s.adminGetHotel))
+			r.Put("/hotels/{id}", s.h(s.adminUpdateHotel))
+			r.Post("/hotels/{id}/rooms", s.h(s.adminCreateRoom))
+			r.Put("/hotels/{id}/rooms/{room}", s.h(s.adminUpdateRoom))
+			r.Put("/hotels/{id}/rooms/{room}/price", s.h(s.adminSetPrice))
+			r.Post("/hotels/{id}/photos", s.h(s.adminUploadPhoto))
+			r.Post("/hotels/{id}/rooms/{room}/photos", s.h(s.adminUploadRoomPhoto))
+			r.Post("/hotels/{id}/photos/{photo}/cover", s.h(s.adminCoverPhoto))
+			r.Delete("/hotels/{id}/photos/{photo}", s.h(s.adminDeletePhoto))
+			r.Put("/hotels/{id}/alerts", s.h(s.adminSetAlertRules))
+			r.Put("/hotels/{id}/staff/{user}/alerts", s.h(s.adminSetStaffAlerts))
+			r.Post("/hotels/{id}/staff", s.h(s.adminAddStaff))
+			r.Delete("/hotels/{id}/staff/{user}", s.h(s.adminRemoveStaff))
+
 			r.Get("/bookings", s.h(s.partnerBookings))
 			r.Post("/bookings/{id}/accept", s.h(s.partnerAccept))
 			r.Post("/bookings/{id}/decline", s.h(s.partnerDecline))

@@ -173,6 +173,21 @@ paths:
         platform admin or filled from the exchange-rate feed. For display only: BookDan always charges and refunds in ETB. A rate not updated for 30 days is marked stale and the apps
         ignore it (ETB only). An empty list means no rate is set. Cached for five minutes.
       responses: { "200": { description: OK } }
+  /admin/activity:
+    get:
+      summary: Changes made to hotels, newest first; ?by=hotel for the hotels' own changes, ?property_id= for one hotel (super admin only)
+      responses: { "200": { description: OK } }
+  /partner/hotels:
+    get:
+      summary: The hotels the signed-in person owns (the hotel portal at /hotel). Empty for a receptionist
+      responses: { "200": { description: OK } }
+  /partner/hotels/{id}:
+    get:
+      summary: One owned hotel with rooms, photos and team. Business and payout details are never included
+      responses: { "200": { description: OK }, "404": { description: Not an owner of this hotel } }
+    put:
+      summary: Edit an owned hotel. Status and the verified badge are ignored: only BookDan staff change them
+      responses: { "200": { description: OK } }
   /admin/rates:
     get:
       summary: The display rates with who set them (platform admin only)

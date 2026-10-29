@@ -145,7 +145,7 @@
   // The tabs a platform admin sees: only what their role may open (the server checks it again on every request).
   function navButtons() {
     var tabs = [['Coupons', '#/coupons', null], ['Payouts', '#/payouts', 'finance'], ['Payment issues', '#/issues', 'finance'], ['Support', '#/support', 'support'], ['Reviews', '#/reviews', 'reviews'],
-      ['Rates', '#/rates', null], ['Calls', '#/calls', null], ['Analytics', '#/analytics', null], ['Applications', '#/applications', 'applications'], ['Admins', '#/admins', 'admins']];
+      ['Rates', '#/rates', null], ['Calls', '#/calls', null], ['Analytics', '#/analytics', null], ['Applications', '#/applications', 'applications'], ['Hotel changes', '#/activity', 'admins'], ['Admins', '#/admins', 'admins']];
     var span = h('span', {});
     tabs.forEach(function (t) {
       if (t[2] && !can(t[2])) return;
@@ -834,6 +834,36 @@
     return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/support'); } }, '← All requests'), holder));
   }
 
+  // ---- hotel changes (super admin): what hotels' owners changed through the hotel portal, and what BookDan staff changed
+  function activityView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    var only = h('input', { type: 'checkbox', checked: true });
+    function load() {
+      call('GET', '/admin/activity?limit=200' + (only.checked ? '&by=hotel' : '')).then(function (res) {
+        clear(holder);
+        if (!res.items.length) { add(holder, h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Nothing yet.'))); return; }
+        var table = h('table', {}, h('thead', {}, h('tr', {}, ['When', 'Hotel', 'Who', 'What'].map(function (t) { return h('th', {}, t); }))));
+        var body = h('tbody', {});
+        res.items.forEach(function (a) {
+          var d = a.details || {};
+          var extra = [];
+          if (d.name) extra.push(d.name);
+          if (d.price_santim) extra.push('ETB ' + Math.round(d.price_santim / 100));
+          if (d.status && a.action === 'admin_hotel_updated') extra.push('status ' + d.status);
+          add(body, h('tr', {}, h('td', {}, new Date(a.at).toLocaleString()), h('td', {}, a.hotel ? h('a', { href: '#/hotel/' + a.property_id }, a.hotel) : ''),
+            h('td', {}, a.who, ' ', h('span', { class: 'chip ' + (a.by_hotel ? 'draft' : 'active') }, a.by_hotel ? 'Hotel' : 'BookDan')), h('td', {}, a.description || a.action, extra.length ? ' (' + extra.join(', ') + ')' : '')));
+        });
+        add(table, body);
+        add(holder, h('div', { class: 'card' }, h('div', { style: 'overflow-x:auto' }, table)));
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    only.addEventListener('change', load);
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Hotel changes'),
+      h('p', { class: 'soft' }, 'Hotels change their own rooms, prices, photos and team in the hotel portal and it goes live at once. This is the record of those changes.'),
+      h('label', { class: 'check' }, only, 'Show only changes made by hotels'), holder));
+  }
+
   // ---- exchange rates (platform admin): USD and EUR shown next to ETB prices
   function ratesView() {
     var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
@@ -1196,6 +1226,7 @@
     else if (location.hash === '#/issues' && can('finance')) add(app, issuesView());
     else if (location.hash === '#/support' && can('support')) add(app, supportView());
     else if (location.hash === '#/rates' && state.role === 'admin') add(app, ratesView());
+    else if (location.hash === '#/activity' && can('admins')) add(app, activityView());
     else if (location.hash === '#/calls' && state.role === 'admin') add(app, callsView());
     else if (location.hash === '#/reviews' && can('reviews')) add(app, reviewsView());
     else if (location.hash === '#/analytics' && state.role === 'admin') add(app, analyticsView());

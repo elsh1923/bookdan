@@ -10,13 +10,9 @@ import type { PropertyType, SearchItem } from '@bookdan/domain';
 import { addDays, todayAddis } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, gradients, radius, shadow, spacing } from '@bookdan/ui';
-import { useAuth } from '../../src/auth';
 import { CurrencyChip } from '../../src/CurrencyChip';
-import { priceExact as price, shortDate } from '../../src/format';
-import { splitBookings } from '../../src/bookingHistory';
 import { StayCard } from '../../src/StayCard';
-import { StatusBadge } from '../../src/StatusBadge';
-import { useAllProperties, useBookings } from '../../src/queries';
+import { useAllProperties } from '../../src/queries';
 import { usePrefs } from '../../src/store';
 import { useDisplay } from '../../src/display';
 
@@ -117,15 +113,6 @@ export default function Home() {
   const viewedIds = usePrefs((s) => s.viewed);
   const recent = useMemo(() => viewedIds.map((id) => all.items.find((i) => i.id === id)).filter((x): x is SearchItem => !!x).slice(0, 6), [viewedIds, all.items]);
 
-  // The guest's own trips on the home page: the stays to come first, then the latest history.
-  const token = useAuth((s) => s.token);
-  const trips = useBookings(!!token);
-  const months = t('months.short', { returnObjects: true }) as unknown as string[];
-  const recentTrips = useMemo(() => {
-    const { upcoming, past } = splitBookings(trips.data ?? [], today);
-    return [...upcoming, ...past].slice(0, 3);
-  }, [trips.data, today]);
-
   const open = (item: SearchItem) =>
     router.push({ pathname: '/property/[id]', params: { id: item.id, in: today, out: checkOut, guests: '1' } });
 
@@ -214,36 +201,6 @@ export default function Home() {
             </View>
           </LinearGradient>
         </View>
-
-        {token && recentTrips.length > 0 ? (
-          <View style={{ marginTop: spacing.xl }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md }}>
-              <T variant="displaySm" color={colors.ink}>{t('bookings.title')}</T>
-              <Pressable accessibilityRole="button" onPress={() => router.navigate('/bookings')} hitSlop={12}>
-                <T variant="small" color={colors.primaryInk}>{t('home.see_all')}</T>
-              </Pressable>
-            </View>
-            <View style={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
-              {recentTrips.map((b) => (
-                <PressableScale
-                  key={b.id}
-                  accessibilityRole="button"
-                  onPress={() => router.push({ pathname: '/booking/[id]', params: { id: b.id } })}
-                  scaleTo={0.98}
-                  style={[{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.line }, shadow.card]}
-                >
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm }}>
-                    <T variant="h3" style={{ flex: 1 }} numberOfLines={1}>{b.property_name}</T>
-                    <StatusBadge status={b.status} />
-                  </View>
-                  <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>
-                    {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {price(b.total_santim, b.currency)}
-                  </T>
-                </PressableScale>
-              ))}
-            </View>
-          </View>
-        ) : null}
 
         {all.isPending ? (
           <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg }}>
