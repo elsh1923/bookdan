@@ -169,8 +169,8 @@ paths:
     get:
       summary: Display exchange rates (public)
       description: |
-        {"base": "ETB", "rates": [{"currency": "USD" or "EUR", "birr_per_unit": 148.5, "updated_at": ..., "stale": false}]}. Birr for one dollar or euro, set by a
-        platform admin. For display only: BookDan always charges and refunds in ETB. A rate not updated for 30 days is marked stale and the apps
+        {"base": "ETB", "rates": [{"currency": one of about thirty display currencies, "birr_per_unit": 148.5, "updated_at": ..., "stale": false}]}. Birr for one unit of the currency, typed by a
+        platform admin or filled from the exchange-rate feed. For display only: BookDan always charges and refunds in ETB. A rate not updated for 30 days is marked stale and the apps
         ignore it (ETB only). An empty list means no rate is set. Cached for five minutes.
       responses: { "200": { description: OK } }
   /admin/rates:
@@ -252,6 +252,14 @@ paths:
       summary: Calls logged per hotel and the latest ones (platform admin only)
       description: Query days (1 to 365, default 30). {hotels: [{id, name, calls, bookings_with_calls, confirmed_bookings, last_call_at}], recent: [{at, hotel, booking_code, guest_name, status}]}.
       responses: { "200": { description: OK } }
+  /admin/rates/refresh:
+    post:
+      summary: Fill the display exchange rates from the public feed (platform admin: finance or super)
+      description: |
+        Body {"force": false}. Reads FX_FEED_URL (default open.er-api.com) and writes the rate of every display currency that was never set, whose rate went stale, or that the
+        feed set before; a rate an admin typed is left alone unless force is true. {written: [codes], left_alone: [codes]}. 409 FEED_OFF when no feed is configured, 502
+        FEED_UNAVAILABLE when it cannot be read. The same refresh runs once a day. GET /admin/rates also returns supported (every display currency) and feed (whether it is on).
+      responses: { "200": { description: OK }, "409": { description: Feed off }, "502": { description: Feed unavailable } }
   /me/saved:
     get:
       summary: The guest's saved hotels (wishlist), newest first

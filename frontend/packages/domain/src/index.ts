@@ -9,4 +9,5 @@ export * from './identity';
 export * from './booking';
 export * from './partner';
 export * from './alerts';
+export * from './currencies';
 export * from './guestIdentity';

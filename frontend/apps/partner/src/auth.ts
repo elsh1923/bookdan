@@ -5,6 +5,7 @@ import type { Identity } from '@bookdan/domain';
 import { api, bindSession, queryClient } from './api';
 import { useOffline } from './offline';
 import { secureStorage } from './secureStorage';
+import { usePrefs } from './store';
 
 interface AuthState {
   token: string | null;
@@ -33,6 +34,7 @@ export const useAuth = create<AuthState>()(
         api.setToken(null);
         set({ token: null, refreshToken: null, identity: null });
         queryClient.clear(); // nothing of the hotel's stays on a shared front-desk phone
+        usePrefs.getState().setOwner(null); // the next person to sign in may have another role
         // Check-ins waiting to be sent are kept (they would be lost); the rest of the offline cache goes with the session.
         if (useOffline.getState().queue.length === 0) useOffline.getState().wipe();
       },

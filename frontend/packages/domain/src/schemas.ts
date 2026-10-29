@@ -390,10 +390,10 @@ export interface NewSupportTicket {
   booking_id?: string;
 }
 
-/** The display exchange rates: ETB for one dollar or euro. A stale rate is ignored by the apps (ETB only). */
+/** The display exchange rates: ETB for one unit of each display currency. A stale rate is ignored by the apps (ETB only); an unknown currency code is ignored too. */
 export const RatesSchema = z.object({
   base: z.literal('ETB'),
-  rates: z.array(z.object({ currency: z.enum(['USD', 'EUR']), birr_per_unit: z.number().positive(), updated_at: z.string(), stale: z.boolean() })),
+  rates: z.array(z.object({ currency: z.string(), birr_per_unit: z.number().positive(), updated_at: z.string(), stale: z.boolean() })),
   server_time: z.string(),
 });
 export type Rates = z.infer<typeof RatesSchema>;

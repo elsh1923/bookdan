@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { Currency } from '@bookdan/domain';
+import type { ShownCurrency } from '@bookdan/domain';
 import type { Language } from '@bookdan/i18n';
 
 // Only small UI state lives here. Server data lives in TanStack Query.
@@ -9,14 +9,14 @@ interface PrefsState {
   hydrated: boolean;
   onboarded: boolean;
   language: Language | null; // null until the guest has been offered a choice
-  currency: Currency;
+  currency: ShownCurrency;
   recentSearches: string[];
   saved: string[]; // wishlist: property ids
   savedRemoved: string[]; // removed on this phone and not yet told to the server
   viewed: string[]; // property ids the guest opened, newest first
   draftGuestName: string; // typed at checkout; survives a session expiry
   setLanguage: (l: Language) => void;
-  setCurrency: (c: Currency) => void;
+  setCurrency: (c: ShownCurrency) => void;
   finishOnboarding: () => void;
   addRecent: (q: string) => void;
   clearRecent: () => void;

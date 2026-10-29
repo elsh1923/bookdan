@@ -270,6 +270,7 @@ func (s *Server) adminRoutes(r chi.Router) {
 		r.With(finance).Get("/admin/payment-issues", s.h(s.adminPaymentIssues))
 		r.With(finance).Post("/admin/payment-issues/{id}/resolve", s.h(s.adminResolvePaymentIssue))
 		r.With(finance).Put("/admin/rates/{currency}", s.h(s.adminSetRate))
+		r.With(finance).Post("/admin/rates/refresh", s.h(s.adminRefreshRates))
 	})
 	r.Get("/photos/{id}/{size}", s.h(s.servePhoto))
 }

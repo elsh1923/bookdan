@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { useEffect } from 'react';
 import type { ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isAwaitingAnswer } from '@bookdan/domain';
@@ -8,6 +9,7 @@ import { colors, dark, fonts } from '@bookdan/ui';
 import { ApiError } from '@bookdan/api-client';
 import { useEarnings, useInbox } from '../../src/queries';
 import { useOfflineSync } from '../../src/useOfflineSync';
+import { usePrefs } from '../../src/store';
 
 const icon = (name: keyof typeof Ionicons.glyphMap) => ({ color, size }: { color: ColorValue; size: number }) => (
   <Ionicons name={name} size={size} color={color} />
@@ -20,7 +22,14 @@ export default function TabsLayout() {
   const inbox = useInbox();
   // Money is for owners: for a receptionist the server says FORBIDDEN and the tab disappears.
   const earnings = useEarnings();
-  const owner = !(earnings.error instanceof ApiError && earnings.error.code === 'FORBIDDEN');
+  // The tab shows only once the server has said this person is an owner, and that is remembered, so it neither flashes for a receptionist nor waits for the
+  // network at the next launch.
+  const owner = usePrefs((s) => s.owner) === true;
+  const setOwner = usePrefs((s) => s.setOwner);
+  useEffect(() => {
+    if (earnings.isSuccess) setOwner(true);
+    else if (earnings.error instanceof ApiError && earnings.error.code === 'FORBIDDEN') setOwner(false);
+  }, [earnings.isSuccess, earnings.error, setOwner]);
   // A red badge on the tab: how many bookings are waiting for an answer.
   const waiting = inbox.data?.items.filter(isAwaitingAnswer).length ?? 0;
 

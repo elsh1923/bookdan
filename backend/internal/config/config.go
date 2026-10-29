@@ -75,7 +75,10 @@ type Config struct {
 	RateReadPerMin int
 	// OTPMaxPerIP is how many sign-in codes one client address may ask for in 10 minutes, over all addresses and numbers (on top of the limit per address).
 	// Mobile networks put many people behind one address, so it is generous. 0 = off (tests).
-	OTPMaxPerIP     int
+	OTPMaxPerIP int
+	// FXFeedURL is a public exchange-rate feed (JSON with a "rates" map of currency per one birr) used to fill the display exchange rates (see fxrates.go).
+	// Empty turns the feed off (tests); the default is open.er-api.com.
+	FXFeedURL       string
 	RateWritePerMin int
 	// PaymentWebhookSecret signs payment-gateway callbacks (HMAC-SHA256 of the body).
 	PaymentWebhookSecret string
@@ -127,6 +130,7 @@ func Load() Config {
 		IDRetentionDays:      atoi(get("ID_RETENTION_DAYS", "0")),
 		RateReadPerMin:       atoi(get("RATE_LIMIT_READ_PER_MIN", "0")),
 		OTPMaxPerIP:          atoi(get("OTP_MAX_PER_IP", "30")),
+		FXFeedURL:            get("FX_FEED_URL", "https://open.er-api.com/v6/latest/ETB"),
 		RateWritePerMin:      atoi(get("RATE_LIMIT_WRITE_PER_MIN", "0")),
 		PaymentWebhookSecret: get("PAYMENT_WEBHOOK_SECRET", ""),
 		ChapaSecretKey:       get("CHAPA_SECRET_KEY", ""),

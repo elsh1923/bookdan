@@ -626,7 +626,9 @@ export function createMockApi(opts: MockOptions = {}): Api {
     async getRates() {
       await gate();
       const at = new Date().toISOString();
-      return { base: 'ETB' as const, rates: [{ currency: 'USD' as const, birr_per_unit: 150, updated_at: at, stale: false }, { currency: 'EUR' as const, birr_per_unit: 165, updated_at: at, stale: false }], server_time: at };
+      // The demo offers a few currencies; the real server offers every currency it has a fresh rate for.
+      const demo: [string, number][] = [['USD', 150], ['EUR', 165], ['GBP', 195], ['AED', 41], ['SAR', 40], ['JPY', 1], ['INR', 1.7], ['KES', 1.15]];
+      return { base: 'ETB' as const, rates: demo.map(([currency, birr_per_unit]) => ({ currency, birr_per_unit, updated_at: at, stale: false })), server_time: at };
     },
 
     async suggest(q: string) {

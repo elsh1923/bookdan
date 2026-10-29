@@ -6,6 +6,7 @@ import { isoToEthiopian } from './ethiopianCalendar.ts';
 import { convertEtb, etb, formatMoney } from './money.ts';
 import { b64urlDecode, b64urlEncode, decodeVoucherPayload, encodeVoucherToken, newIdempotencyKey } from './voucher.ts';
 import { DateChangeQuoteSchema, VoucherSchema } from './schemas.ts';
+import { DISPLAY_CURRENCIES, DISPLAY_CURRENCY_CODES, formatDisplayAmount, isDisplayCurrency } from './currencies.ts';
 import { normalizeEmail } from './identity.ts';
 import { PartnerBookingSchema, DECLINE_REASONS, isAwaitingAnswer, sortInbox } from './partner.ts';
 import { alertReadiness, parseBookingAlert, parseBookingUpdate, parseSupportAnswer } from './alerts.ts';
@@ -346,4 +347,20 @@ test('a change of dates that waits for its payment keeps the booking screen poll
   assert.equal(quote.pay_now_santim, 368000);
   assert.equal(quote.difference_at_hotel, false);
   assert.equal(DateChangeQuoteSchema.safeParse({ ...quote, kind: 'free' }).success, false);
+});
+
+test('display currencies: a list of thirty, the popular nine first, and amounts written the way people expect', () => {
+  assert.equal(DISPLAY_CURRENCY_CODES.length, 30);
+  assert.equal(new Set(DISPLAY_CURRENCY_CODES).size, 30);
+  assert.deepEqual(DISPLAY_CURRENCIES.filter((c) => c.popular).map((c) => c.code), ['AED', 'SAR', 'QAR', 'KWD', 'OMR', 'BHD', 'USD', 'GBP', 'EUR']);
+  for (const c of DISPLAY_CURRENCIES) assert.ok(c.name.length > 3 && c.symbol.length > 0, c.code);
+  assert.equal(isDisplayCurrency('USD'), true);
+  assert.equal(isDisplayCurrency('ETB'), false);
+  assert.equal(isDisplayCurrency('XYZ'), false);
+  assert.equal(formatDisplayAmount(1250, 'USD'), '$12.50');
+  assert.equal(formatDisplayAmount(8000, 'EUR'), '€80');
+  assert.equal(formatDisplayAmount(123456, 'GBP'), '£1,234.56');
+  assert.equal(formatDisplayAmount(124000, 'JPY'), 'JPY 1,240'); // written without a fraction
+  assert.equal(formatDisplayAmount(5, 'AED'), 'AED 0.05');
+  assert.equal(formatDisplayAmount(-1250, 'USD'), '-$12.50');
 });

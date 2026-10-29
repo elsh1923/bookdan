@@ -4,7 +4,9 @@ import { useRouter } from 'expo-router';
 import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES, pickLanguage, useTranslation } from '@bookdan/i18n';
-import { Button, Chip, Pop, Reveal, T, colors, spacing } from '@bookdan/ui';
+import { Button, Chip, Pop, PressableScale, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
+import { currencyInfo } from '@bookdan/domain';
+import { Ionicons } from '@expo/vector-icons';
 import { usePrefs } from '../src/store';
 
 export default function Welcome() {
@@ -34,9 +36,17 @@ export default function Welcome() {
 
         <Reveal index={3}>
         <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('welcome.currency').toUpperCase()}</T>
-        <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-          <Chip label="ETB" selected={currency === 'ETB'} onPress={() => setCurrency('ETB')} />
-        </View>
+        <PressableScale
+          onPress={() => router.push('/currency')}
+          accessibilityRole="button"
+          accessibilityLabel={t('currency.title')}
+          scaleTo={0.99}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }}
+        >
+          <T variant="h3" style={{ flex: 1 }}>{currency === 'ETB' ? t('currency.etb_name') : currencyInfo(currency).name}</T>
+          <T color={colors.muted}>{currency}</T>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        </PressableScale>
         </Reveal>
       </View>
 

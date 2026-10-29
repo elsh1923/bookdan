@@ -1,4 +1,4 @@
-import { convertEtb, formatEthiopian, formatMoney, isoToEthiopian, type Currency } from '@bookdan/domain';
+import { convertEtb, formatDisplayAmount, formatEthiopian, formatMoney, isoToEthiopian, type Currency } from '@bookdan/domain';
 import type { Language } from '@bookdan/i18n';
 import { useDisplay } from './display';
 
@@ -6,7 +6,7 @@ import { useDisplay } from './display';
 function approx(santim: number, currency: Currency): string | null {
   const d = useDisplay.getState();
   if (currency !== 'ETB' || d.currency === 'ETB' || !d.birrPerUnit) return null;
-  return formatMoney({ amount_santim: convertEtb(santim, d.birrPerUnit), currency: d.currency });
+  return formatDisplayAmount(convertEtb(santim, d.birrPerUnit), d.currency);
 }
 
 /** The exact amount in the currency it is charged in. Never converted. */

@@ -10,6 +10,7 @@ import { addDays, nightsBetween, todayAddis, type Suggestion } from '@bookdan/do
 import { useTranslation } from '@bookdan/i18n';
 import { Button, Chip, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
+import { CurrencyChip } from '../src/CurrencyChip';
 import { DateRangePicker } from '../src/DateRangePicker';
 import { ethiopianLine, shortDate } from '../src/format';
 import { usePrefs } from '../src/store';
@@ -174,6 +175,7 @@ export default function SearchSheet() {
           <Ionicons name="arrow-back" size={24} color={colors.ink} />
         </Pressable>
         <T variant="h2" style={{ flex: 1 }}>{t('search.title')}</T>
+        <CurrencyChip />
         <Image source={require('../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 32, height: 32, borderRadius: 8 }} />
       </View>
 

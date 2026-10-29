@@ -13,17 +13,36 @@ import (
 	"github.com/bookdan/backend/internal/httpx"
 )
 
-// Display currencies. Hotels price in ETB and BookDan charges and refunds in ETB only; the apps can show an approximate USD or EUR amount
-// next to it. The rates are set by a platform admin (there is no outside feed to depend on or to be wrong), and are served to everyone at
-// GET /v1/rates. A rate older than fxStaleAfter is marked stale, and the apps then show ETB only rather than a misleading number.
-// A change of more than fxMaxJump from the current rate must be confirmed, so a typo does not silently misprice every screen.
+// Display currencies. Hotels price in ETB and BookDan charges and refunds in ETB only; the apps can show an approximate amount in one of the
+// currencies below (a guest picks one in the app, like in a travel booking app). The rates are served to everyone at GET /v1/rates. A rate older than
+// fxStaleAfter is marked stale, and the apps then show ETB only rather than a misleading number.
+// Where the rates come from: a platform admin can type one (it is then "manual" and nothing overwrites it), and the server fills the rest from a public
+// exchange-rate feed (FX_FEED_URL, default open.er-api.com, no key): once a day, and when an admin presses "Fetch current rates". The feed only ever
+// writes the currencies that were never set, whose rate went stale, or that the feed set earlier; a rate an admin typed is left alone.
+// A change of more than fxMaxJump from the current rate must be confirmed (typed rates only), so a typo does not silently misprice every screen.
 
 const (
 	fxStaleAfter = 30 * 24 * time.Hour
 	fxMaxJump    = 0.30
+	fxMinBirr    = 0.01    // birr for one unit: the yen is worth less than a birr
+	fxMaxBirr    = 10000.0 // birr for one unit
+	fxFeedBy     = "feed: open.er-api.com"
 )
 
-var displayCurrencies = map[string]bool{"USD": true, "EUR": true}
+// displayCurrencyList is every currency a guest can choose to see prices in, most popular first (the Gulf and the usual travel currencies), then the rest by
+// code. The apps carry the same list with names (packages/domain/src/currencies.ts); keep them in step.
+var displayCurrencyList = []string{
+	"AED", "SAR", "QAR", "KWD", "OMR", "BHD", "USD", "GBP", "EUR",
+	"AUD", "BRL", "CAD", "CHF", "CNY", "DJF", "DKK", "EGP", "ILS", "INR", "JPY", "KES", "MYR", "NOK", "NZD", "SEK", "SGD", "TRY", "TZS", "UGX", "ZAR",
+}
+
+var displayCurrencies = func() map[string]bool {
+	m := map[string]bool{}
+	for _, c := range displayCurrencyList {
+		m[c] = true
+	}
+	return m
+}()
 
 type fxRateOut struct {
 	Currency  string  `json:"currency"`
@@ -81,20 +100,22 @@ func (s *Server) adminRates(w http.ResponseWriter, r *http.Request) error {
 	}
 	respond(w, http.StatusOK, struct {
 		httpx.Meta
-		Base  string      `json:"base"`
-		Rates []fxRateOut `json:"rates"`
-	}{httpx.NowMeta(), "ETB", list})
+		Base      string      `json:"base"`
+		Rates     []fxRateOut `json:"rates"`
+		Supported []string    `json:"supported"`
+		Feed      bool        `json:"feed"`
+	}{httpx.NowMeta(), "ETB", list, displayCurrencyList, s.cfg.FXFeedURL != ""})
 	return nil
 }
 
-// adminSetRate sets the rate for USD or EUR: birr per one unit, for example 148.5.
+// adminSetRate sets the rate of a display currency by hand: birr per one unit, for example 148.5. A typed rate is never overwritten by the feed.
 func (s *Server) adminSetRate(w http.ResponseWriter, r *http.Request) error {
 	if err := requireAdmin(r); err != nil {
 		return err
 	}
 	cur := strings.ToUpper(chi.URLParam(r, "currency"))
 	if !displayCurrencies[cur] {
-		return fail(http.StatusNotFound, httpx.CodeNotFound, "Only USD and EUR have a display rate")
+		return fail(http.StatusNotFound, httpx.CodeNotFound, "That currency has no display rate")
 	}
 	var in struct {
 		BirrPer float64 `json:"birr_per_unit"`
@@ -103,8 +124,8 @@ func (s *Server) adminSetRate(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &in); err != nil {
 		return err
 	}
-	if math.IsNaN(in.BirrPer) || in.BirrPer < 1 || in.BirrPer > 10000 {
-		return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "birr_per_unit must be between 1 and 10000 (for example 148.5)")
+	if math.IsNaN(in.BirrPer) || in.BirrPer < fxMinBirr || in.BirrPer > fxMaxBirr {
+		return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "birr_per_unit must be between 0.01 and 10000 (for example 148.5)")
 	}
 	e4 := int64(math.Round(in.BirrPer * 10000))
 	ctx := r.Context()

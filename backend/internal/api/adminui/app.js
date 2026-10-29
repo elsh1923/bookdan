@@ -837,14 +837,33 @@
   // ---- exchange rates (platform admin): USD and EUR shown next to ETB prices
   function ratesView() {
     var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    var note = h('div', {});
+    var force = h('input', { type: 'checkbox' });
     function load() {
       call('GET', '/admin/rates').then(function (res) {
         clear(holder);
         var byCur = {};
         res.rates.forEach(function (r) { byCur[r.currency] = r; });
-        ['USD', 'EUR'].forEach(function (cur) {
+        if (res.feed) {
+          add(holder, h('div', { class: 'card' },
+            h('h3', {}, 'Fetch current rates'),
+            h('p', { class: 'soft' }, 'Fills every currency nobody typed (and any rate that went out of date) from a public exchange-rate feed. A rate you typed yourself is left alone, unless you tick the box. This also happens by itself once a day. Rates by ExchangeRate-API.'),
+            h('label', { class: 'row' }, force, ' Replace the rates I typed as well'),
+            h('button', { onclick: function () {
+              clear(note);
+              call('POST', '/admin/rates/refresh', { force: force.checked }).then(function (r) {
+                add(note, msg('ok', r.written.length + ' rate' + (r.written.length === 1 ? '' : 's') + ' updated' + (r.left_alone.length ? ', ' + r.left_alone.length + ' typed rate' + (r.left_alone.length === 1 ? '' : 's') + ' left as they were' : '') + '.'));
+                load();
+              }, function (err) { add(note, msg('err', err.message)); });
+            } }, 'Fetch current rates'), note));
+        } else {
+          add(holder, h('div', { class: 'card' }, h('p', { class: 'soft' }, 'The exchange-rate feed is switched off on this server (FX_FEED_URL is empty), so every rate is typed by hand.')));
+        }
+        var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Currency'), h('th', {}, 'Birr for 1 unit'), h('th', {}, 'Status'), h('th', {}, 'Set'), h('th', {}, ''))));
+        var body = h('tbody', {});
+        res.supported.forEach(function (cur) {
           var r = byCur[cur];
-          var input = h('input', { type: 'number', step: '0.0001', min: '1', placeholder: 'Birr for 1 ' + cur, value: r ? String(r.birr_per_unit) : '' });
+          var input = h('input', { type: 'number', step: '0.0001', min: '0.01', placeholder: 'Birr for 1 ' + cur, value: r ? String(r.birr_per_unit) : '', style: 'width:130px' });
           var out = h('div', {});
           function save(confirmed) {
             clear(out);
@@ -853,18 +872,17 @@
               add(out, msg('err', err.message));
             });
           }
-          add(holder, h('div', { class: 'card' },
-            h('div', { class: 'row between' }, h('h3', {}, '1 ' + cur + ' ='),
-              h('span', { class: 'chip ' + (!r ? 'draft' : r.stale ? 'draft' : 'active') }, !r ? 'Not set: guests see ETB only' : r.stale ? 'Out of date: guests see ETB only' : 'Shown to guests')),
-            h('div', { class: 'field' }, h('label', {}, 'Birr'), input),
-            h('p', { class: 'muted' }, r ? 'Set ' + when(r.updated_at) + ' by ' + r.updated_by : 'Never set'),
-            h('button', { onclick: function () { save(false); } }, 'Save'), out));
+          var status = !r ? h('span', { class: 'chip draft' }, 'Not set') : r.stale ? h('span', { class: 'chip draft' }, 'Out of date') : h('span', { class: 'chip active' }, 'Shown to guests');
+          var by = r ? (r.updated_by && r.updated_by.indexOf('feed:') === 0 ? 'feed, ' : 'typed, ') + when(r.updated_at) : '';
+          add(body, h('tr', {}, h('td', {}, h('strong', {}, cur)), h('td', {}, input), h('td', {}, status), h('td', { class: 'soft' }, by), h('td', {}, h('button', { class: 'secondary', onclick: function () { save(false); } }, 'Save'), out)));
         });
+        add(table, body);
+        add(holder, h('div', { class: 'card', style: 'overflow-x:auto' }, table));
       }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
     }
     load();
     return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Exchange rates'),
-      h('p', { class: 'soft' }, 'Guests can see prices in dollars or euros next to the birr price. It is only a guide: BookDan always charges and refunds in birr. Use the rate you would quote a customer (for example the National Bank rate). A rate you do not update for 30 days stops being shown.'),
+      h('p', { class: 'soft' }, 'Guests can choose to see prices in about thirty currencies (dollars, euros, pounds, dirhams, riyals and more) next to the birr price. It is only a guide: BookDan always charges and refunds in birr. A rate you do not update for 30 days stops being shown, and the currency leaves the guests\' list.'),
       holder));
   }
 

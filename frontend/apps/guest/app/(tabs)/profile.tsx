@@ -4,7 +4,7 @@ import { Alert, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES, useTranslation } from '@bookdan/i18n';
-import { maskId } from '@bookdan/domain';
+import { currencyInfo, maskId } from '@bookdan/domain';
 import { Badge, Button, Chip, PressableScale, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
 import { useAuth } from '../../src/auth';
@@ -84,12 +84,18 @@ export default function Profile() {
       </View>
 
       <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('profile.currency').toUpperCase()}</T>
-      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-        <Chip label="ETB" selected={shown === 'ETB'} onPress={() => setCurrency('ETB')} />
-        {available.map((c) => (
-          <Chip key={c} label={c} selected={shown === c} onPress={() => setCurrency(c)} />
-        ))}
-      </View>
+      <PressableScale
+        onPress={() => router.push('/currency')}
+        accessibilityRole="button"
+        accessibilityLabel={t('currency.title')}
+        scaleTo={0.99}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }}
+      >
+        <Ionicons name="cash-outline" size={22} color={colors.primaryInk} />
+        <T variant="h3" style={{ flex: 1 }}>{shown === 'ETB' ? t('currency.etb_name') : currencyInfo(shown).name}</T>
+        <T color={colors.muted}>{shown}</T>
+        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+      </PressableScale>
       {shown !== 'ETB' ? <T variant="small" color={colors.muted} style={{ marginTop: spacing.sm }}>{t('profile.currency_note', { cur: shown })}</T> : null}
 
       <View style={{ marginTop: spacing.xl }}>

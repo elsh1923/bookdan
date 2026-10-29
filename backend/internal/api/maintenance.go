@@ -21,6 +21,7 @@ import (
 // RunMaintenance runs the daily jobs once (also used by tests).
 func (s *Server) RunMaintenance(ctx context.Context) {
 	s.completeStays(ctx)
+	s.refreshDisplayRates(ctx)
 	s.accrueHotelCommissions(ctx)
 	s.emailStatements(ctx)
 	s.eraseOldIDs(ctx)

@@ -11,6 +11,7 @@ import { addDays, todayAddis } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, gradients, radius, shadow, spacing } from '@bookdan/ui';
 import { useAuth } from '../../src/auth';
+import { CurrencyChip } from '../../src/CurrencyChip';
 import { priceExact as price, shortDate } from '../../src/format';
 import { splitBookings } from '../../src/bookingHistory';
 import { StayCard } from '../../src/StayCard';
@@ -149,6 +150,8 @@ export default function Home() {
                 <Image source={require('../../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 34, height: 34, borderRadius: 10 }} />
                 <T variant="h2" color="#FFFFFF">Bookdan</T>
               </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <CurrencyChip onDark />
               <Pressable
                 onPress={() => router.navigate('/profile')}
                 accessibilityRole="button"
@@ -157,6 +160,7 @@ export default function Home() {
               >
                 <Ionicons name="person-outline" size={20} color="#FFFFFF" />
               </Pressable>
+              </View>
             </View>
 
             <Reveal>
