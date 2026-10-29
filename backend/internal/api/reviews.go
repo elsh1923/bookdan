@@ -35,7 +35,7 @@ func (s *Server) ratingSummary(ctx context.Context, propertyID string) (ratingSu
 			count(*) FILTER (WHERE rating = 1)::int, count(*) FILTER (WHERE rating = 2)::int, count(*) FILTER (WHERE rating = 3)::int,
 			count(*) FILTER (WHERE rating = 4)::int, count(*) FILTER (WHERE rating = 5)::int,
 			avg(rating_cleanliness)::float8, avg(rating_location)::float8, avg(rating_staff)::float8, avg(rating_value)::float8
-		FROM reviews WHERE property_id = $1`, propertyID).Scan(&out.Count, &avg, &out.Distribution[0], &out.Distribution[1], &out.Distribution[2],
+		FROM reviews WHERE property_id = $1 AND hidden_at IS NULL`, propertyID).Scan(&out.Count, &avg, &out.Distribution[0], &out.Distribution[1], &out.Distribution[2],
 		&out.Distribution[3], &out.Distribution[4], &clean, &loc, &staff, &value)
 	if err != nil {
 		return out, err

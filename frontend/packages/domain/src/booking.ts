@@ -16,6 +16,6 @@ export function shouldResumeOnLaunch(b: StateOf): boolean {
 }
 
 /** Statuses the booking screen keeps polling on: it can still change without the guest doing anything. */
-export function isStillChanging(b: StateOf): boolean {
-  return b.status === 'HELD' || b.status === 'PAID_AWAITING_HOTEL';
+export function isStillChanging(b: StateOf & { pending_date_change?: unknown }): boolean {
+  return b.status === 'HELD' || b.status === 'PAID_AWAITING_HOTEL' || !!b.pending_date_change; // a change of dates waits for its payment
 }

@@ -2,10 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from '@bookdan/i18n';
 import { Badge, Button, EmptyState, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../../src/api';
+import { HeaderBand } from '../../src/HeaderBand';
 import { useAuth } from '../../src/auth';
 import { statusTone } from '../../src/support';
 
@@ -17,13 +17,8 @@ export default function SupportList() {
   const list = useQuery({ queryKey: ['support'], queryFn: () => api.listSupportTickets(), enabled: !!token, refetchOnMount: 'always' });
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, gap: spacing.sm }}>
-        <Pressable accessibilityLabel={t('common.back')} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={24} color={colors.ink} />
-        </Pressable>
-        <T variant="h2" style={{ flex: 1 }}>{t('support.title')}</T>
-      </View>
+    <View style={{ flex: 1 }}>
+      <HeaderBand compact title={t('support.title')} onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
       {list.isPending ? (
         <ActivityIndicator style={{ marginTop: spacing.xxl }} color={colors.primary} />
       ) : (
@@ -49,6 +44,6 @@ export default function SupportList() {
           )}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }

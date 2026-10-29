@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { RefreshControl, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import type { EarningLine, HotelEarnings } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Badge, Button, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
+import { HeaderBand } from '../../src/HeaderBand';
 import { price, shortDate } from '../../src/format';
 import { useEarnings } from '../../src/queries';
 
@@ -101,12 +101,13 @@ export default function Earnings() {
   const hotels = earnings.data?.hotels ?? [];
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <View style={{ flex: 1 }}>
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+        contentContainerStyle={{ paddingBottom: spacing.xxl }}
         refreshControl={<RefreshControl refreshing={earnings.isRefetching} onRefresh={() => earnings.refetch()} tintColor={colors.primary} />}
       >
-        <T variant="display">{t('partner.earnings_title')}</T>
+        <HeaderBand eyebrow={t('partner.tab_earnings')} title={t('partner.earnings_title')} />
+        <View style={{ padding: spacing.lg }}>
         {earnings.isPending ? (
           <View style={{ marginTop: spacing.lg, gap: spacing.md }}>
             <Skeleton height={80} radius={radius.md} />
@@ -129,7 +130,8 @@ export default function Earnings() {
             </View>
           </Reveal>
         )}
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

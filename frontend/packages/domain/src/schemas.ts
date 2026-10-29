@@ -209,6 +209,35 @@ export const QuoteSchema = z.object({
 
 export const PaymentProgressSchema = z.enum(['none', 'pending', 'failed']);
 
+/** A change of dates that waits for the payment of the difference: the new dates, what to pay, until when, and the page to pay on. */
+export const PendingDateChangeSchema = z.object({
+  check_in: z.string(),
+  check_out: z.string(),
+  new_total_santim: z.number().int(),
+  pay_now_santim: z.number().int(),
+  expires_at: z.string(),
+  payment: z.object({ id: z.string(), status: z.string(), payment_url: z.string() }).nullable().default(null),
+});
+export type PendingDateChange = z.infer<typeof PendingDateChangeSchema>;
+
+/** What moving a booking to other dates would do (the answer of POST /bookings/{id}/change-dates/quote). */
+export const DateChangeQuoteSchema = z.object({
+  kind: z.enum(['same_price', 'refund', 'pay', 'reprice']),
+  check_in: z.string(),
+  check_out: z.string(),
+  nights: z.number().int(),
+  currency: CurrencySchema,
+  old_total_santim: z.number().int(),
+  new_total_santim: z.number().int(),
+  difference_santim: z.number().int(),
+  pay_now_santim: z.number().int().default(0),
+  refund_now_santim: z.number().int().default(0),
+  old_balance_due_santim: z.number().int().default(0),
+  new_balance_due_santim: z.number().int().default(0),
+  difference_at_hotel: z.boolean().default(false),
+});
+export type DateChangeQuote = z.infer<typeof DateChangeQuoteSchema>;
+
 export const BookingSchema = z.object({
   id: z.string(),
   reference: z.string(),
@@ -244,6 +273,8 @@ export const BookingSchema = z.object({
   dispute_ticket_id: z.string().nullable().default(null),
   /** Whether the guest may move the booking to other dates now (once, at the same price), and the dates it first had. */
   can_change_dates: z.boolean().default(false),
+  /** A change of dates waiting for the payment of the difference (single-booking view only). */
+  pending_date_change: PendingDateChangeSchema.nullable().default(null),
   /** The part of the payment already returned while the booking stands (a dispute settled in part, or a goodwill credit). */
   partially_refunded_santim: z.number().int().default(0),
   original_check_in: z.string().nullable().default(null),

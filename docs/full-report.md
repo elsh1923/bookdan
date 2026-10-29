@@ -135,3 +135,43 @@ Part of a payment can go back while the booking stands: a dispute can be settled
 - **Rules:** more than 0 and less than the payment; several partial refunds are allowed up to what is left; a later cancellation or full refund returns only what is left, and reverses the hotel's money only for that part.
 - **Money movement:** one gateway refund per partial refund, each with its own reference, retried until accepted. Migration 00027 (applied on Supabase).
 - **Still true:** if the hotel was already paid out, "hotel pays" leaves it owing that part against its next payout. Chapa's partial-refund acceptance was tested only against a fake: confirm it with one small real refund on the Chapa test account. Date changes to a different price are still refused (they would also need a second payment for a higher price).
+
+## 10. Hotel-side and operations features (built, tested)
+
+| Feature | What it does | Migration |
+|---|---|---|
+| Hotel cancels a confirmed booking | Owners cancel with a reason; the guest is refunded in full and the hotel bears it | 00028 |
+| Cannot host / relocation | Any staff can mark it; a support request opens; the guest may cancel at once; support restores or refunds | 00028 |
+| Hotel side of disputes | The hotel is alerted, reads the guest's account and adds its own statement | 00028 |
+| Hotel support channel | Hotel staff write to BookDan support from the partner app | 00029 |
+| Review replies | Owners answer, edit or remove a reply | 00030 |
+| Monthly statements and pay-at-hotel commission | Statement per month (app, CSV, email); commission on pay-at-hotel stays booked at completion; receipts from hotels | 00031 |
+| Call log and phone masking | The hotel's phone is shown only after confirmation; taps on "Call the hotel" are counted | 00032 |
+| Analytics, error alerts, paged lists | Admin numbers; webhook and email alerts for server problems and failed refunds; keyset paging | none |
+| Hotel self-signup | Public application page and admin review | 00033 |
+| Offline check-in | The phone verifies the voucher signature itself and sends the check-in when online | none |
+
+Migrations 00028 to 00033 are applied on Supabase (27 October).
+
+## 11. Added on 29 October: review moderation, support alerts, admin accounts, date changes at a different price
+
+| Feature | What it does | Migration |
+|---|---|---|
+| Hide abusive reviews | Admin Reviews tab: hide with a reason, show again. A hidden review leaves the hotel page, its rating and the owner's list; the hotel cannot answer it; the author still sees it | 00034 |
+| Phone alert when support answers | A push (names the request, never the answer) to the guest or the hotel staff member who wrote the ticket; tapping it opens the thread. Email as before | none |
+| Admin accounts and roles | Each BookDan staff member has their own login, a role (super, support, finance) and an optional authenticator-app second step; lockout after 5 wrong attempts; disabling takes effect at once; the last super admin is protected; the shared setup password stops working for an email once it has its own account | 00035 |
+| Date change at a different price | The guest sees the price first and confirms it. Cheaper: the difference is refunded and the hotel bears it. Dearer: the guest pays the difference (second payment; new nights held 15 minutes; moves when paid; late money refunded). Paid at the hotel: reprices only. Cancelling afterwards refunds both payments | 00036 |
+
+Run migrations 00034 to 00036 on Supabase before deploying this code. After deploying, add the admins in the Admins tab and then remove `ADMIN_PASSWORD` from the server settings.
+
+Limits: the authenticator second step is optional (no recovery codes: a super admin resets it); the admin token lasts 8 hours; a date change can be made once per booking and not for coupon or non-refundable bookings; the offline voucher of a moved booking shows the old dates until the app is online.
+
+## 12. Added on 29 October (second round): saved hotels on the server, per-IP limit on sign-in codes, partner app redesign
+
+| Feature | What it does | Migration |
+|---|---|---|
+| Saved hotels on the server | The wishlist is kept on the phone and on the server (up to 200 hotels), so it follows the guest to a new phone. Removals made offline are remembered and sent later. Part of the data export; deleted with the account | 00037 |
+| Per-IP limit on sign-in codes | One internet connection can ask for at most 30 sign-in codes in 10 minutes (`OTP_MAX_PER_IP`, 0 = off), on top of 5 per address. Generous because many people share one mobile-network address | 00037 (index) |
+| Partner app redesign | Every screen has the guest app's navy header with rounded corners, the tab bar is dark navy, the sign-in screen has a navy hero, and the booking list shows three numbers: to answer, arriving today, in the hotel | none |
+
+Run migration 00037 on Supabase before deploying. Date changes at a different price, admin accounts and review moderation (section 11) need 00034 to 00036, which are already applied.

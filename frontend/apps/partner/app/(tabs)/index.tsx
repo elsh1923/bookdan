@@ -2,14 +2,14 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import Animated, { FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
-import { isAwaitingAnswer, sortInbox, type DeclineReason, type PartnerBooking } from '@bookdan/domain';
+import { isAwaitingAnswer, sortInbox, todayAddis, type DeclineReason, type PartnerBooking } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { EmptyState, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../../src/api';
 import { AwaitingCard, BookingRow } from '../../src/BookingCards';
 import { DeclineSheet } from '../../src/DeclineSheet';
+import { HeaderBand, StatTile } from '../../src/HeaderBand';
 import { useInbox } from '../../src/queries';
 import { useAnswers } from '../../src/useAnswers';
 
@@ -23,15 +23,26 @@ export default function Inbox() {
   const items = useMemo(() => sortInbox(inbox.data?.items ?? []), [inbox.data]);
   const waiting = items.filter(isAwaitingAnswer);
   const others = items.filter((b) => !isAwaitingAnswer(b));
+  const today = todayAddis();
+  const arriving = items.filter((b) => b.status === 'CONFIRMED' && b.check_in === today).length;
+  const inHouse = items.filter((b) => b.status === 'CHECKED_IN').length;
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <View style={{ flex: 1 }}>
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+        contentContainerStyle={{ paddingBottom: spacing.xxl }}
         refreshControl={<RefreshControl refreshing={inbox.isRefetching && !busyId} onRefresh={refresh} tintColor={colors.primary} />}
       >
-        <T variant="label" color={colors.muted}>{(inbox.data?.property.name ?? '').toUpperCase()}</T>
-        <T variant="display">{t('partner.tab_bookings')}</T>
+        <HeaderBand eyebrow={inbox.data?.property.name ?? ''} title={t('partner.tab_bookings')}>
+          {inbox.data ? (
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+              <StatTile icon="timer-outline" value={waiting.length} label={t('partner.stat_waiting')} alert />
+              <StatTile icon="log-in-outline" value={arriving} label={t('partner.stat_arriving')} />
+              <StatTile icon="bed-outline" value={inHouse} label={t('partner.stat_inhouse')} />
+            </View>
+          ) : null}
+        </HeaderBand>
+        <View style={{ padding: spacing.lg }}>
 
         {inbox.isPending ? (
           <View style={{ marginTop: spacing.lg, gap: spacing.md }}>
@@ -83,6 +94,7 @@ export default function Inbox() {
             ) : null}
           </>
         )}
+        </View>
       </ScrollView>
 
       <DeclineSheet
@@ -95,6 +107,6 @@ export default function Inbox() {
           if (outcome !== 'offline') setDeclining(null); // offline: keep the sheet open so the hotel can try again
         }}
       />
-    </SafeAreaView>
+    </View>
   );
 }

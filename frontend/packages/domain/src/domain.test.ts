@@ -5,10 +5,10 @@ import { addDays, nightsBetween, holdRemainingMs } from './dates.ts';
 import { isoToEthiopian } from './ethiopianCalendar.ts';
 import { convertEtb, etb, formatMoney } from './money.ts';
 import { b64urlDecode, b64urlEncode, decodeVoucherPayload, encodeVoucherToken, newIdempotencyKey } from './voucher.ts';
-import { VoucherSchema } from './schemas.ts';
+import { DateChangeQuoteSchema, VoucherSchema } from './schemas.ts';
 import { normalizeEmail } from './identity.ts';
 import { PartnerBookingSchema, DECLINE_REASONS, isAwaitingAnswer, sortInbox } from './partner.ts';
-import { alertReadiness, parseBookingAlert, parseBookingUpdate } from './alerts.ts';
+import { alertReadiness, parseBookingAlert, parseBookingUpdate, parseSupportAnswer } from './alerts.ts';
 import { BookingGuestSchema, GuestProfileInputSchema, GuestProfileSchema, idLast4, isProfileComplete, maskId, normalizeIdNumber } from './guestIdentity.ts';
 import { isPaymentInFlight, isStillChanging, shouldResumeOnLaunch } from './booking.ts';
 import { formatCountdown, normalizeEthiopianPhone, priceStay } from './pricing.ts';
@@ -326,4 +326,24 @@ test('the offline queue never holds a booking twice and keeps what the server di
   // Something queued after the send is not lost.
   const later = enqueueCheckin(q, { token: 't4', reference: 'BD-DDDDDD', at: '2026-11-11T09:20:00Z' });
   assert.deepEqual(settleQueue(later, q, ['already', 'already', 'already']).queue.map((x) => x.reference), ['BD-DDDDDD']);
+});
+
+test('only a well-formed support-answer push opens a conversation', () => {
+  assert.deepEqual(parseSupportAnswer({ type: 'support_answer', ticket_id: 't1' }), { type: 'support_answer', ticket_id: 't1' });
+  for (const bad of [null, {}, { type: 'support_answer' }, { type: 'support_answer', ticket_id: '' }, { type: 'booking_update', ticket_id: 't1' }, { type: 'support_answer', ticket_id: 7 }]) {
+    assert.equal(parseSupportAnswer(bad), null, JSON.stringify(bad));
+  }
+});
+
+test('a change of dates that waits for its payment keeps the booking screen polling, and the quote is understood', () => {
+  const base = { status: 'CONFIRMED' as const };
+  assert.equal(isStillChanging({ ...base }), false);
+  assert.equal(isStillChanging({ ...base, pending_date_change: { check_in: '2026-12-01' } }), true);
+  const quote = DateChangeQuoteSchema.parse({
+    kind: 'pay', check_in: '2026-12-01', check_out: '2026-12-04', nights: 3, currency: 'ETB',
+    old_total_santim: 736000, new_total_santim: 1104000, difference_santim: 368000, pay_now_santim: 368000, refund_now_santim: 0,
+  });
+  assert.equal(quote.pay_now_santim, 368000);
+  assert.equal(quote.difference_at_hotel, false);
+  assert.equal(DateChangeQuoteSchema.safeParse({ ...quote, kind: 'free' }).success, false);
 });

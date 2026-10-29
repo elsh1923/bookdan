@@ -17,8 +17,8 @@ var applyFiles embed.FS
 // The strict Content-Security-Policy means the page can load nothing but its own files and the hotel photos from this server.
 func (s *Server) AdminPage(r chi.Router) {
 	serve := func(name, contentType string) http.HandlerFunc {
-		return func(w http.ResponseWriter, _ *http.Request) {
-			if !s.adminEnabled() {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if !s.adminEnabled(r.Context()) {
 				http.NotFound(w, nil)
 				return
 			}

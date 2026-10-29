@@ -628,7 +628,7 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 		Reply *replyOut `json:"reply"`
 	}
 	revRows, err := s.pool.Query(ctx, `SELECT r.id, coalesce(nullif(split_part(gp.full_name, ' ', 1), ''), nullif(u.display_name, ''), 'Guest'), r.rating, r.text, r.created_at, r.hotel_reply, r.hotel_reply_at
-		FROM reviews r JOIN users u ON u.id = r.user_id LEFT JOIN guest_profiles gp ON gp.user_id = r.user_id WHERE r.property_id = $1 ORDER BY r.created_at DESC LIMIT 20`, id)
+		FROM reviews r JOIN users u ON u.id = r.user_id LEFT JOIN guest_profiles gp ON gp.user_id = r.user_id WHERE r.property_id = $1 AND r.hidden_at IS NULL ORDER BY r.created_at DESC LIMIT 20`, id)
 	if err != nil {
 		return err
 	}

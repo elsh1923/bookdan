@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { useRootNavigationState, useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
-import { parseBookingUpdate } from '@bookdan/domain';
+import { parseBookingUpdate, parseSupportAnswer } from '@bookdan/domain';
 import { api } from './api';
 import { useAuth } from './auth';
 import { getDeviceId } from './device';
@@ -106,7 +106,14 @@ export function usePushUpdates(): void {
     if (!updatesSupported || !signedIn || !navigation?.key || !lastResponse) return;
     const id = lastResponse.notification.request.identifier;
     if (opened.current === id) return; // each tap opens its booking once
-    const update = parseBookingUpdate(lastResponse.notification.request.content.data);
+    const content = lastResponse.notification.request.content.data;
+    const answer = parseSupportAnswer(content);
+    if (answer) {
+      opened.current = id;
+      router.push({ pathname: '/support/[id]', params: { id: answer.ticket_id } });
+      return;
+    }
+    const update = parseBookingUpdate(content);
     if (!update) return;
     opened.current = id;
     router.push({ pathname: '/booking/[id]', params: { id: update.booking_id } });

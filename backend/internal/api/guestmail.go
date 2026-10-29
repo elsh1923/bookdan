@@ -116,7 +116,7 @@ func (s *Server) emailGuest(ctx context.Context, bookingID, kind string) {
 		intro = g.hotel + " told us it cannot host you on your dates. BookDan support is finding you another place and will write to you in the app. You can also cancel the booking now and get a full refund."
 	case "dates_changed":
 		subject, title = "Dates changed at "+g.hotel, "Your booking has new dates"
-		intro = "Your booking at " + g.hotel + " was moved to the new dates below. The price and your payment stay the same, and you can still cancel for free until 48 hours before check-in."
+		intro = "Your booking at " + g.hotel + " was moved to the new dates below. The total below is the price of the new dates; if it differs from before, the difference was paid or refunded. You can still cancel for free until 48 hours before check-in."
 	case "cancelled":
 		subject, title = "Booking cancelled at "+g.hotel, "Your booking was cancelled"
 		switch {

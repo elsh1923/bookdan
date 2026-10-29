@@ -2,11 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { canMarkNoShow, isAwaitingAnswer, todayAddis, type DeclineReason, type HotelProblemReason } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Button, EmptyState, Reveal, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
+import { HeaderBand } from '../../src/HeaderBand';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../src/api';
 import { checkinErrorKey } from '../../src/checkin';
@@ -95,11 +95,7 @@ export default function BookingScreen() {
   const booking = inbox.data?.items.find((b) => b.id === id);
   const back = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
-  const header = (
-    <Pressable accessibilityLabel={t('common.back')} onPress={back} style={{ width: 44, height: 44, justifyContent: 'center', marginLeft: spacing.lg }}>
-      <Ionicons name="arrow-back" size={24} color={colors.ink} />
-    </Pressable>
-  );
+  const header = <HeaderBand compact title={t('partner.booking_title')} eyebrow={booking?.reference} onBack={back} />;
 
   let body;
   if (inbox.isPending) {
@@ -155,10 +151,9 @@ export default function BookingScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       {header}
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-        <T variant="display" style={{ marginBottom: spacing.md }}>{t('partner.booking_title')}</T>
         <Reveal>{body}</Reveal>
         {booking ? <Reveal index={2} style={{ marginTop: spacing.lg }}><GuestProfileCard booking={booking} /></Reveal> : null}
       </ScrollView>
@@ -182,6 +177,6 @@ export default function BookingScreen() {
           if (outcome !== 'offline') setDeclining(false);
         }}
       />
-    </SafeAreaView>
+    </View>
   );
 }

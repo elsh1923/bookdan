@@ -77,6 +77,17 @@ func (s *Server) requestOTP(w http.ResponseWriter, r *http.Request) error {
 	if recent >= otpMaxInWindow {
 		return fail(http.StatusTooManyRequests, codeTooMany, "Too many codes requested. Try again in a few minutes.")
 	}
+	// One client address asking for codes for many addresses or numbers (to spam people, or to burn the SMS budget) is stopped too.
+	if ip := clientIP(r); ip != "" && s.cfg.OTPMaxPerIP > 0 {
+		var fromIP int
+		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM otp_challenges WHERE ip = NULLIF($1, '')::inet AND created_at > now() - $2::interval`,
+			ip, fmt.Sprintf("%d seconds", int(otpWindow.Seconds()))).Scan(&fromIP); err != nil {
+			return err
+		}
+		if fromIP >= s.cfg.OTPMaxPerIP {
+			return fail(http.StatusTooManyRequests, codeTooMany, "Too many codes requested from this connection. Try again in a few minutes.")
+		}
+	}
 
 	// In demo mode, an address or number that cannot receive a real message keeps the fixed demo code. Everything else gets a
 	// random one that is really sent.

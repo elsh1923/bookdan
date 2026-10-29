@@ -1,5 +1,6 @@
 import {
   BookingSchema,
+  DateChangeQuoteSchema,
   PaymentSessionSchema,
   PropertyDetailSchema,
   QuoteSchema,
@@ -324,14 +325,52 @@ export function createMockApi(opts: MockOptions = {}): Api {
       return view(r);
     },
 
-    async changeBookingDates(id, dates) {
+    // Moving a booking, as the server does it: the new price is the nightly price times the new number of nights. The demo has no payment page, so a
+    // dearer stay is settled at once (the real server holds the new nights until the difference is paid).
+    async quoteDateChange(id, dates) {
       await gate();
       const r = owned(id);
       if (r.b.status !== 'CONFIRMED') throw new ApiError('INVALID_STATE', 'Only a confirmed booking can be moved');
-      if (nightsBetween(dates.check_in, dates.check_out) !== nightsBetween(r.b.check_in, r.b.check_out)) throw new ApiError('PRICE_DIFFERS', 'The new dates cost a different price');
-      r.b = { ...r.b, check_in: dates.check_in, check_out: dates.check_out, original_check_in: r.b.original_check_in ?? r.b.check_in, original_check_out: r.b.original_check_out ?? r.b.check_out };
+      const oldNights = nightsBetween(r.b.check_in, r.b.check_out);
+      const nights = nightsBetween(dates.check_in, dates.check_out);
+      const newTotal = Math.round((r.b.total_santim / oldNights) * nights);
+      const diff = newTotal - r.b.total_santim;
+      const online = !!r.b.payment_method && r.b.payment_method !== 'pay_at_hotel';
+      const kind = diff === 0 ? 'same_price' : !online ? 'reprice' : diff > 0 ? 'pay' : 'refund';
+      return DateChangeQuoteSchema.parse({
+        kind, check_in: dates.check_in, check_out: dates.check_out, nights, currency: r.b.currency, old_total_santim: r.b.total_santim, new_total_santim: newTotal,
+        difference_santim: diff, pay_now_santim: kind === 'pay' ? diff : 0, refund_now_santim: kind === 'refund' ? -diff : 0, difference_at_hotel: kind === 'reprice',
+      });
+    },
+
+    async changeBookingDates(id, dates) {
+      await gate();
+      const q = await this.quoteDateChange(id, dates);
+      const r = owned(id);
+      if (q.kind !== 'same_price' && dates.confirm_total_santim !== q.new_total_santim) throw new ApiError('PRICE_DIFFERS', 'The new dates cost a different price');
+      r.b = {
+        ...r.b, check_in: dates.check_in, check_out: dates.check_out, total_santim: q.new_total_santim,
+        partially_refunded_santim: r.b.partially_refunded_santim + q.refund_now_santim,
+        original_check_in: r.b.original_check_in ?? r.b.check_in, original_check_out: r.b.original_check_out ?? r.b.check_out,
+      };
       await persist();
       return view(r);
+    },
+
+    async syncSaved(change) {
+      await gate();
+      // The demo keeps no list of its own: what the phone holds, minus what it removed, is the list.
+      return change.add.filter((id) => !change.remove.includes(id));
+    },
+
+    async payDateChange() {
+      await gate();
+      throw new ApiError('NO_PENDING_CHANGE', 'There is no change of dates waiting for a payment');
+    },
+
+    async cancelDateChange() {
+      await gate();
+      throw new ApiError('NO_PENDING_CHANGE', 'There is no change of dates waiting for a payment');
     },
 
     async logHotelCall() {

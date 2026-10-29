@@ -89,6 +89,9 @@ func (s *Server) cancelBooking(w http.ResponseWriter, r *http.Request) error {
 		if err := actor(ctx, tx, "guest:"+uid, "guest cancelled"); err != nil {
 			return err
 		}
+		if err := abandonDateChange(ctx, tx, id, "the booking was cancelled"); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `UPDATE bookings SET status = 'CANCELLED_REFUNDED', refund_santim = $2, cancelled_at = now(), cancelled_by = 'guest', hotel_deadline_at = NULL WHERE id = $1`, id, refund); err != nil {
 			return err
 		}
@@ -137,8 +140,8 @@ func (s *Server) cancelBooking(w http.ResponseWriter, r *http.Request) error {
 // the guest is owed their money, as one balanced ledger transaction. It reverses the exact amounts that were booked.
 func reverseConfirmedAndOweRefund(ctx context.Context, tx pgx.Tx, bookingID, paymentID, currency string, refund int64) error {
 	// Refunding only what is left of a payment that was partly refunded before reverses only that share of the hotel's money.
-	var paid int64
-	if err := tx.QueryRow(ctx, `SELECT amount_santim FROM payments WHERE id = $1`, paymentID).Scan(&paid); err != nil {
+	var paid int64 // everything paid online on this booking (a date change to dearer dates adds a second payment)
+	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(amount_santim), 0)::bigint FROM payments WHERE booking_id = $1 AND status = 'succeeded'`, bookingID).Scan(&paid); err != nil {
 		return err
 	}
 	if refund > 0 && refund < paid {

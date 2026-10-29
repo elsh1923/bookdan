@@ -44,7 +44,7 @@ func (s *Server) partnerReviews(w http.ResponseWriter, r *http.Request) error {
 			v.hotel_reply, v.hotel_reply_at, b.code
 		FROM reviews v JOIN properties p ON p.id = v.property_id JOIN users u ON u.id = v.user_id JOIN bookings b ON b.id = v.booking_id
 		LEFT JOIN guest_profiles gp ON gp.user_id = v.user_id
-		WHERE v.property_id = ANY($1::uuid[]) ORDER BY (v.hotel_reply IS NOT NULL), v.created_at DESC LIMIT 100`, owned)
+		WHERE v.property_id = ANY($1::uuid[]) AND v.hidden_at IS NULL ORDER BY (v.hotel_reply IS NOT NULL), v.created_at DESC LIMIT 100`, owned)
 	if err != nil {
 		return err
 	}
@@ -103,10 +103,10 @@ func (s *Server) setReply(w http.ResponseWriter, r *http.Request, text *string) 
 		var tag int64
 		var err error
 		if text == nil {
-			t, e := tx.Exec(ctx, `UPDATE reviews SET hotel_reply = NULL, hotel_reply_at = NULL, hotel_reply_by = NULL WHERE id = $1 AND property_id = ANY($2::uuid[])`, id, owned)
+			t, e := tx.Exec(ctx, `UPDATE reviews SET hotel_reply = NULL, hotel_reply_at = NULL, hotel_reply_by = NULL WHERE id = $1 AND property_id = ANY($2::uuid[]) AND hidden_at IS NULL`, id, owned)
 			tag, err = t.RowsAffected(), e
 		} else {
-			t, e := tx.Exec(ctx, `UPDATE reviews SET hotel_reply = $3, hotel_reply_at = now(), hotel_reply_by = $4 WHERE id = $1 AND property_id = ANY($2::uuid[])`, id, owned, *text, uid)
+			t, e := tx.Exec(ctx, `UPDATE reviews SET hotel_reply = $3, hotel_reply_at = now(), hotel_reply_by = $4 WHERE id = $1 AND property_id = ANY($2::uuid[]) AND hidden_at IS NULL`, id, owned, *text, uid)
 			tag, err = t.RowsAffected(), e
 		}
 		if err != nil {

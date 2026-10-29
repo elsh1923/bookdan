@@ -297,7 +297,7 @@ func (s *Server) adminResolveDispute(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
-	s.mailGuestAnswer(ctx, id, decision+"\n\n"+note)
+	s.notifyTicketOwner(ctx, id, decision+"\n\n"+note)
 	if in.Outcome != "rejected" {
 		s.runRefunds(ctx)
 	}

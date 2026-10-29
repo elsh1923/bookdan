@@ -12,6 +12,7 @@ import { api } from '../../src/api';
 import { StayLine } from '../../src/BookingCards';
 import { checkinErrorKey } from '../../src/checkin';
 import { Field } from '../../src/Field';
+import { HeaderBand } from '../../src/HeaderBand';
 import { price } from '../../src/format';
 import { useOffline } from '../../src/offline';
 
@@ -122,10 +123,11 @@ export default function CheckinScreen() {
   const cameraBlocked = permission && !permission.granted && !permission.canAskAgain;
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <View style={{ flex: 1 }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-          <T variant="display">{t('partner.checkin_title')}</T>
+        <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
+          <HeaderBand eyebrow={t('partner.tab_checkin')} title={t('partner.checkin_title')} />
+          <View style={{ padding: spacing.lg }}>
 
           {queue.length > 0 ? (
             <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.warningSoft }}>
@@ -230,8 +232,9 @@ export default function CheckinScreen() {
               <T variant="small" color={colors.danger} style={{ flex: 1 }}>{error}</T>
             </View>
           ) : null}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }

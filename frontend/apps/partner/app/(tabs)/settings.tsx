@@ -2,9 +2,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES, useTranslation } from '@bookdan/i18n';
 import { Badge, Button, Chip, PressableScale, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
+import { HeaderBand } from '../../src/HeaderBand';
 import { api, isMockApi } from '../../src/api';
 import { AlertsChecklist } from '../../src/AlertsChecklist';
 import { useAuth } from '../../src/auth';
@@ -21,9 +21,10 @@ export default function Settings() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-        <Reveal><T variant="display">{t('partner.settings_title')}</T></Reveal>
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+        <HeaderBand eyebrow={inbox.data?.property.name ?? ''} title={t('partner.settings_title')} />
+        <View style={{ padding: spacing.lg }}>
 
         <Reveal index={1}>
           <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('partner.hotel').toUpperCase()}</T>
@@ -78,7 +79,8 @@ export default function Settings() {
             <Button variant="ghost" title={t('partner.demo_revoke')} onPress={() => api.demo?.revokeRefreshToken()} />
           </View>
         ) : null}
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

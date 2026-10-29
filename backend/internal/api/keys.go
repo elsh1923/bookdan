@@ -177,6 +177,7 @@ var errVoucherExpired = errors.New("voucher expired")
 type claims struct {
 	Sub  string `json:"sub"`           // user id
 	Role string `json:"role"`          // guest | owner | receptionist | admin
+	AR   string `json:"ar,omitempty"`  // for an admin: super | support | finance
 	App  string `json:"app"`           // guest | partner
 	Dev  string `json:"dev,omitempty"` // device row id
 	Iat  int64  `json:"iat"`

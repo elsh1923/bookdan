@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -181,5 +182,76 @@ func TestDeletingAnAccountErasesWhatTheGuestWroteToSupport(t *testing.T) {
 	}
 	if !strings.Contains(string(got.raw), `"status":"closed"`) || !strings.Contains(string(got.raw), "We will look into it.") {
 		t.Errorf("the request is closed and support's own words remain: %s", got.raw)
+	}
+}
+
+func TestAPhoneIsAlertedWhenSupportAnswers(t *testing.T) {
+	n := time.Now().UnixNano()
+	g, _ := supportGuest(t, "spush")
+	hotel := hotelFor(t)
+	admin := adminClient(t)
+	gtoken, htoken := fmt.Sprintf("guest-support-phone-%d", n), fmt.Sprintf("hotel-support-phone-%d", n)
+	if r := registerToken(g, "/me/devices/push-token", gtoken); r.status != 200 {
+		t.Fatalf("guest phone: %d %s", r.status, r.raw)
+	}
+	if r := registerToken(hotel, "/partner/devices/push-token", htoken); r.status != 200 {
+		t.Fatalf("hotel phone: %d %s", r.status, r.raw)
+	}
+
+	// The guest's request: the alert goes to the guest's phone, names the request and not the answer, and carries what the app needs to open it.
+	tid := openTicket(g, "question", "Can I bring a small dog?", "We would like to bring a small dog to the hotel.", "").str("id")
+	secret := fmt.Sprintf("Your reference is private-%d", n)
+	if r := admin.do("POST", "/admin/support/tickets/"+tid+"/reply", map[string]string{"message": secret}); r.status != 200 {
+		t.Fatalf("answer: %d %s", r.status, r.raw)
+	}
+	got := push.to(gtoken)
+	if len(got) != 1 || got[0].data["type"] != "support_answer" || got[0].data["ticket_id"] != tid || got[0].data["channel"] != "booking_updates" {
+		t.Fatalf("the guest's phone is alerted: %+v", got)
+	}
+	if strings.Contains(got[0].body, "private-") || strings.Contains(got[0].title, "private-") || !strings.Contains(got[0].body, "small dog") {
+		t.Errorf("the alert names the request, never the answer: %q / %q", got[0].title, got[0].body)
+	}
+	if len(push.to(htoken)) != 0 {
+		for _, m := range push.to(htoken) {
+			if m.data["type"] == "support_answer" {
+				t.Errorf("the hotel's phone is not alerted about a guest's request")
+			}
+		}
+	}
+
+	// A hotel's request goes to the hotel's phone (the partner app), not to a guest's.
+	// The demo hotel owner is shared by many tests and a person can have only a few open requests: close what earlier tests left open.
+	pool.Exec(context.Background(), `UPDATE support_tickets SET status = 'closed', closed_at = now(), closed_by = 'test' WHERE property_id IS NOT NULL AND status <> 'closed'`)
+	hr := hotelTicket(hotel, "question", "How do we change our payout account?", "We changed banks and need to update the payout details.", "")
+	if hr.status != 200 {
+		t.Fatalf("hotel request: %d %s", hr.status, hr.raw)
+	}
+	ht := hr.str("id")
+	if r := admin.do("POST", "/admin/support/tickets/"+ht+"/reply", map[string]string{"message": "Send us the new details by email."}); r.status != 200 {
+		t.Fatalf("answer hotel: %d %s", r.status, r.raw)
+	}
+	var seen bool
+	for _, m := range push.to(htoken) {
+		if m.data["ticket_id"] == ht && m.data["type"] == "support_answer" {
+			seen = true
+			if m.data["channel"] != "" {
+				t.Errorf("the guest app's channel is not used for the hotel app: %v", m.data)
+			}
+		}
+	}
+	if !seen {
+		t.Errorf("the hotel's phone is alerted when its request is answered")
+	}
+	for _, m := range push.to(gtoken) {
+		if m.data["ticket_id"] == ht {
+			t.Errorf("a guest's phone does not get the hotel's answer")
+		}
+	}
+
+	// A decision on a dispute, a goodwill refund and the like are answers too (they go through the same path); a ticket owner without a phone is not an error.
+	g2, _ := supportGuest(t, "spush2")
+	t2 := openTicket(g2, "question", "No phone registered", "I have not allowed notifications on my phone.", "").str("id")
+	if r := admin.do("POST", "/admin/support/tickets/"+t2+"/reply", map[string]string{"message": "Answered anyway."}); r.status != 200 {
+		t.Errorf("answering a guest with no phone still works: %d", r.status)
 	}
 }

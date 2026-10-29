@@ -26,26 +26,49 @@ import (
 //   - the money moves when the gateway accepts it (runRefunds), one gateway refund per partial refund, and is retried until it does.
 // If the hotel was already paid out, "hotel" leaves it owing that part against its next payout.
 
-// refundable is what can still be refunded on a booking's online payment: the payment, what was paid, and what is left to refund.
+// refundable is what can still be refunded on a booking's online payments: all that was paid, what is left to refund, and each payment's own share of it.
+// Most bookings have one payment. A booking moved to dearer dates has a second one (the difference); PaymentID is the main one.
 type refundable struct {
 	PaymentID string
 	Currency  string
 	Paid      int64
 	Left      int64
+	Payments  []payLeft
 }
 
-// lockRefundable finds the booking's succeeded payment and locks it, so two refunds cannot both spend the same money.
+type payLeft struct {
+	ID   string
+	Left int64
+}
+
+// lockRefundable finds the booking's succeeded payments and locks them, so two refunds cannot both spend the same money.
 func lockRefundable(ctx context.Context, tx pgx.Tx, bookingID string) (refundable, error) {
 	var r refundable
-	err := tx.QueryRow(ctx, `SELECT id, currency, amount_santim FROM payments WHERE booking_id = $1 AND status = 'succeeded' FOR UPDATE`, bookingID).Scan(&r.PaymentID, &r.Currency, &r.Paid)
+	rows, err := tx.Query(ctx, `SELECT p.id, p.currency, p.amount_santim, p.amount_santim - coalesce((SELECT sum(x.amount_santim) FROM partial_refunds x WHERE x.payment_id = p.id), 0)::bigint
+		FROM payments p WHERE p.booking_id = $1 AND p.status = 'succeeded' ORDER BY (p.kind = 'booking') DESC, p.created_at FOR UPDATE OF p`, bookingID)
 	if err != nil {
 		return r, err
 	}
-	var partial int64
-	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(amount_santim), 0)::bigint FROM partial_refunds WHERE payment_id = $1`, r.PaymentID).Scan(&partial); err != nil {
+	defer rows.Close()
+	for rows.Next() {
+		var id, cur string
+		var amount, left int64
+		if err := rows.Scan(&id, &cur, &amount, &left); err != nil {
+			return r, err
+		}
+		if r.PaymentID == "" {
+			r.PaymentID, r.Currency = id, cur
+		}
+		r.Paid += amount
+		r.Left += left
+		r.Payments = append(r.Payments, payLeft{id, left})
+	}
+	if err := rows.Err(); err != nil {
 		return r, err
 	}
-	r.Left = r.Paid - partial
+	if r.PaymentID == "" {
+		return r, pgx.ErrNoRows
+	}
 	return r, nil
 }
 
@@ -138,6 +161,22 @@ func (s *Server) partialRefund(ctx context.Context, tx pgx.Tx, bookingID string,
 	if amount > rf.Left {
 		return fail(http.StatusConflict, "REFUND_TOO_LARGE", fmt.Sprintf("Only %s is left to refund on this payment", formatETB(rf.Left)))
 	}
+	// One gateway refund returns money of one payment: take it from the first payment that still has enough.
+	var from string
+	var biggest int64
+	for _, p := range rf.Payments {
+		if p.Left >= amount {
+			from = p.ID
+			break
+		}
+		if p.Left > biggest {
+			biggest = p.Left
+		}
+	}
+	if from == "" {
+		return fail(http.StatusConflict, "REFUND_TOO_LARGE", fmt.Sprintf("At most %s can be refunded in one go on this booking", formatETB(biggest)))
+	}
+	rf.PaymentID = from
 	if _, err := tx.Exec(ctx, `INSERT INTO partial_refunds (payment_id, booking_id, amount_santim, payer, reason, ticket_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		rf.PaymentID, bookingID, amount, payer, strings.TrimSpace(reason), ticketID, who); err != nil {
 		return err
@@ -253,7 +292,7 @@ func (s *Server) adminTicketRefund(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	s.mailGuestAnswer(ctx, id, "We refunded "+formatETB(in.Amount)+" of your payment.\n\n"+note)
+	s.notifyTicketOwner(ctx, id, "We refunded "+formatETB(in.Amount)+" of your payment.\n\n"+note)
 	s.runRefunds(ctx)
 	respond(w, http.StatusOK, httpx.NowMeta())
 	return nil

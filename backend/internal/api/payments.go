@@ -104,7 +104,7 @@ func (s *Server) payBooking(w http.ResponseWriter, r *http.Request) error {
 			if discount > 0 {
 				return fail(http.StatusConflict, "COUPON_ONLINE_ONLY", "A booking with a coupon is paid online")
 			}
-			if _, err := tx.Exec(ctx, `UPDATE payments SET status = 'failed' WHERE booking_id = $1 AND status = 'pending'`, id); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE payments SET status = 'failed' WHERE booking_id = $1 AND status = 'pending' AND kind = 'booking'`, id); err != nil {
 				return err
 			}
 			if err := actor(ctx, tx, "guest:"+uid, "chose to pay at the hotel"); err != nil {
@@ -121,7 +121,7 @@ func (s *Server) payBooking(w http.ResponseWriter, r *http.Request) error {
 		}
 		// Asking again while a payment of the same kind is pending returns the same page: never a second charge.
 		var pid, url string
-		err = tx.QueryRow(ctx, `SELECT id, coalesce(payment_url, '') FROM payments WHERE booking_id = $1 AND status = 'pending'`, id).Scan(&pid, &url)
+		err = tx.QueryRow(ctx, `SELECT id, coalesce(payment_url, '') FROM payments WHERE booking_id = $1 AND status = 'pending' AND kind = 'booking'`, id).Scan(&pid, &url)
 		if err == nil && chosen != nil && *chosen == in.Method {
 			session = &sessionOut{pid, id, in.Method, url}
 			return nil
@@ -173,7 +173,7 @@ func (s *Server) payBooking(w http.ResponseWriter, r *http.Request) error {
 
 // processPaymentEvent applies one gateway result. It is safe to call twice with the same event: the second call changes nothing.
 func (s *Server) processPaymentEvent(ctx context.Context, provider, eventID, providerRef, status string, raw []byte) error {
-	var notifyID string
+	var notifyID, movedID string
 	err := s.tx(ctx, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `INSERT INTO payment_events (provider, event_id, payload) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, provider, eventID, json.RawMessage(raw))
 		if err != nil {
@@ -182,11 +182,11 @@ func (s *Server) processPaymentEvent(ctx context.Context, provider, eventID, pro
 		if tag.RowsAffected() == 0 {
 			return nil // a repeat of an event we already have
 		}
-		var payID, bookingID, payStatus, bookingStatus, cur string
+		var payID, bookingID, payStatus, bookingStatus, cur, kind string
 		var amount int64
-		err = tx.QueryRow(ctx, `SELECT p.id, p.booking_id, p.status, b.status, p.amount_santim, p.currency
+		err = tx.QueryRow(ctx, `SELECT p.id, p.booking_id, p.status, b.status, p.amount_santim, p.currency, p.kind
 			FROM payments p JOIN bookings b ON b.id = p.booking_id WHERE p.provider = $1 AND p.provider_ref = $2 FOR UPDATE OF p, b`, provider, providerRef).
-			Scan(&payID, &bookingID, &payStatus, &bookingStatus, &amount, &cur)
+			Scan(&payID, &bookingID, &payStatus, &bookingStatus, &amount, &cur, &kind)
 		if err == pgx.ErrNoRows {
 			return errNotFound
 		}
@@ -212,7 +212,16 @@ func (s *Server) processPaymentEvent(ctx context.Context, provider, eventID, pro
 					entry{"gateway_clearing", amount}, entry{"guest_deposits_held", -amount}); err != nil {
 					return err
 				}
-				if bookingStatus == "HELD" {
+				if kind == "date_change" {
+					// The payment of the difference for new dates: it moves the booking, or (when the request ran out) it is refunded.
+					applied, err := s.settleDateChangePayment(ctx, tx, payID, bookingID, amount, cur)
+					if err != nil {
+						return err
+					}
+					if applied {
+						movedID = bookingID
+					}
+				} else if bookingStatus == "HELD" {
 					// The rooms are still reserved for us (even if the clock ran out a moment ago), so honour the payment.
 					if err := actor(ctx, tx, "gateway:"+provider, "payment succeeded"); err != nil {
 						return err
@@ -237,6 +246,10 @@ func (s *Server) processPaymentEvent(ctx context.Context, provider, eventID, pro
 	if notifyID != "" {
 		s.notifyHotel(ctx, notifyID)
 		s.emailGuest(ctx, notifyID, "requested")
+	}
+	if movedID != "" {
+		s.alertHotelOfDateChange(ctx, movedID)
+		s.emailGuest(ctx, movedID, "dates_changed")
 	}
 	s.runRefunds(ctx)
 	return nil
@@ -276,7 +289,8 @@ func (s *Server) paymentWebhook(w http.ResponseWriter, r *http.Request) error {
 // had ended when the payment arrived. A failed refund stays owed and is tried again by the sweeper.
 func (s *Server) runRefunds(ctx context.Context) {
 	rows, err := s.pool.Query(ctx, `SELECT p.id FROM payments p JOIN bookings b ON b.id = p.booking_id
-		WHERE p.status = 'succeeded' AND (b.status IN ('DECLINED_REFUNDED', 'EXPIRED') OR (b.status = 'CANCELLED_REFUNDED' AND coalesce(b.refund_santim, 0) > 0)) LIMIT 50`)
+		WHERE p.status = 'succeeded' AND (b.status IN ('DECLINED_REFUNDED', 'EXPIRED') OR (b.status = 'CANCELLED_REFUNDED' AND coalesce(b.refund_santim, 0) > 0)
+			OR (p.kind = 'date_change' AND NOT EXISTS (SELECT 1 FROM date_change_requests r WHERE r.payment_id = p.id AND r.status IN ('pending', 'applied')))) LIMIT 50`)
 	if err != nil {
 		slog.Error("refunds: list", "err", err)
 		return

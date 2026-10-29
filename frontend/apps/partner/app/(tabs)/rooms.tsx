@@ -7,6 +7,7 @@ import { ApiError } from '@bookdan/api-client';
 import { addDays, nightsBetween, todayAddis, type ChartNight, type ChartRoom, type NewRoomBlock, type RoomBlock } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Button, Chip, EmptyState, Skeleton, T, colors, radius, spacing } from '@bookdan/ui';
+import { HeaderBand } from '../../src/HeaderBand';
 import { api } from '../../src/api';
 import { Field } from '../../src/Field';
 import { shortDate } from '../../src/format';
@@ -73,13 +74,14 @@ export default function RoomsScreen() {
     ]);
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <View style={{ flex: 1 }}>
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+        contentContainerStyle={{ paddingBottom: spacing.xxl }}
         refreshControl={<RefreshControl refreshing={chart.isRefetching} onRefresh={refresh} tintColor={colors.primary} />}
       >
-        <T variant="display">{t('partner.rooms_title')}</T>
-        <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('partner.rooms_hint')}</T>
+        <HeaderBand eyebrow={chart.data?.property.name ?? t('partner.tab_rooms')} title={t('partner.rooms_title')} />
+        <View style={{ padding: spacing.lg }}>
+        <T color={colors.inkSoft}>{t('partner.rooms_hint')}</T>
 
         {chart.data && chart.data.hotels.length > 1 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingTop: spacing.md }}>
@@ -129,6 +131,7 @@ export default function RoomsScreen() {
             </View>
           </>
         )}
+        </View>
       </ScrollView>
 
       {/* One night: what is taken and by whom, and the two things to do about it. */}
@@ -163,7 +166,7 @@ export default function RoomsScreen() {
           onSaved={() => { setForm(null); refresh(); }}
         />
       ) : null}
-    </SafeAreaView>
+    </View>
   );
 }
 

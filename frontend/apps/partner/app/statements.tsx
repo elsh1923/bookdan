@@ -3,12 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Share, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { todayAddis, type Statement } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
 import { Button, Chip, EmptyState, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
+import { HeaderBand } from '../src/HeaderBand';
 import { price } from '../src/format';
 
 /** The months to choose from: this one and the five before it, newest first. */
@@ -58,13 +58,8 @@ export default function Statements() {
   const ownerOnly = q.error instanceof ApiError && q.error.code === 'FORBIDDEN';
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, gap: spacing.sm }}>
-        <Pressable accessibilityLabel={t('common.back')} onPress={() => (router.canGoBack() ? router.back() : router.replace('/earnings'))} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={24} color={colors.ink} />
-        </Pressable>
-        <T variant="h2" style={{ flex: 1 }}>{t('partner.statements')}</T>
-      </View>
+    <View style={{ flex: 1 }}>
+      <HeaderBand compact title={t('partner.statements')} onBack={() => (router.canGoBack() ? router.back() : router.replace('/earnings'))} />
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
           {months.map((m) => <Chip key={m} label={m} selected={month === m} onPress={() => setMonth(m)} />)}
@@ -106,6 +101,6 @@ export default function Statements() {
           ))
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

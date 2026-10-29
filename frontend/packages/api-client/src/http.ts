@@ -1,5 +1,6 @@
 import {
   BookingSchema,
+  DateChangeQuoteSchema,
   CheckinLookupSchema,
   SuggestResponseSchema,
   EarningsSchema,
@@ -205,7 +206,12 @@ export function createHttpApi(options: HttpOptions): Api {
     registerPushToken: async (r) => {
       await request('PUT', '/me/devices/push-token', null, r);
     },
+    syncSaved: async (change) =>
+      (await request('POST', '/me/saved/sync', z.object({ items: z.array(z.object({ property_id: z.string() })) }), change)).items.map((x) => x.property_id),
+    quoteDateChange: (id, d) => request('POST', `/bookings/${encodeURIComponent(id)}/change-dates/quote`, DateChangeQuoteSchema, d),
     changeBookingDates: (id, d) => request('POST', `/bookings/${encodeURIComponent(id)}/change-dates`, BookingSchema, d),
+    payDateChange: (id, method) => request('POST', `/bookings/${encodeURIComponent(id)}/change-dates/pay`, BookingSchema, { method: method ?? 'chapa' }),
+    cancelDateChange: (id) => request('POST', `/bookings/${encodeURIComponent(id)}/change-dates/cancel`, BookingSchema),
     logHotelCall: async (id) => {
       await request('POST', `/bookings/${encodeURIComponent(id)}/call`, null);
     },

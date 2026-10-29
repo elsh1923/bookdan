@@ -50,6 +50,7 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) error {
 			args []any
 		}{
 			{`DELETE FROM guest_profiles WHERE user_id = $1`, []any{uid}},
+			{`DELETE FROM saved_properties WHERE user_id = $1`, []any{uid}},
 			{`UPDATE booking_guests g SET id_number_enc = NULL, purged_at = now() FROM bookings b WHERE b.id = g.booking_id AND b.user_id = $1 AND g.purged_at IS NULL`, []any{uid}},
 			{`UPDATE bookings SET guest_phone = NULL, special_requests = NULL WHERE user_id = $1`, []any{uid}},
 			{`UPDATE reviews SET text = '' WHERE user_id = $1`, []any{uid}},
@@ -150,6 +151,10 @@ func (s *Server) exportAccount(w http.ResponseWriter, r *http.Request) error {
 		v.CreatedAt = created.UTC().Format(time.RFC3339)
 		reviews = append(reviews, v)
 	}
+	saved, err := s.savedList(r, uid, nil)
+	if err != nil {
+		return err
+	}
 	respond(w, http.StatusOK, struct {
 		httpx.Meta
 		ExportedAt string          `json:"exported_at"`
@@ -158,6 +163,7 @@ func (s *Server) exportAccount(w http.ResponseWriter, r *http.Request) error {
 		Profile    *profileOut     `json:"profile"`
 		Bookings   []exportBooking `json:"bookings"`
 		Reviews    []exportReview  `json:"reviews"`
-	}{httpx.NowMeta(), time.Now().UTC().Format(time.RFC3339), email, phone, profile, bookings, reviews})
+		Saved      []savedOut      `json:"saved_hotels"`
+	}{httpx.NowMeta(), time.Now().UTC().Format(time.RFC3339), email, phone, profile, bookings, reviews, saved})
 	return rr.Err()
 }

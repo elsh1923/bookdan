@@ -274,15 +274,11 @@ func (s *Server) confirm(ctx context.Context, tx pgx.Tx, id, roomType, in, out s
 	}
 	var payID string
 	var amount int64
-	err := tx.QueryRow(ctx, `SELECT id, amount_santim FROM payments WHERE booking_id = $1 AND status = 'succeeded'`, id).Scan(&payID, &amount)
+	err := tx.QueryRow(ctx, `SELECT id, amount_santim FROM payments WHERE booking_id = $1 AND status = 'succeeded' AND kind = 'booking'`, id).Scan(&payID, &amount)
 	if err == pgx.ErrNoRows {
 		return nil // pay at hotel: no money has moved through us
 	}
 	if err != nil {
-		return err
-	}
-	var commBP, commVatBP int64
-	if err := tx.QueryRow(ctx, `SELECT commission_bps, commission_vat_bps FROM pricing_config WHERE id = 1`).Scan(&commBP, &commVatBP); err != nil {
 		return err
 	}
 	// A coupon makes the guest pay less. The hotel still gets its share of the full price and BookDan pays for the discount, so the
@@ -291,10 +287,21 @@ func (s *Server) confirm(ctx context.Context, tx pgx.Tx, id, roomType, in, out s
 	if err := tx.QueryRow(ctx, `SELECT discount_santim FROM bookings WHERE id = $1`, id).Scan(&discount); err != nil {
 		return err
 	}
+	return ledgerConfirmed(ctx, tx, id, payID, cur, "hotel accepted: our commission and the hotel's share", amount, discount)
+}
+
+// ledgerConfirmed books what the hotel earns from money the guest paid: the hotel's share, BookDan's commission and the VAT on it, from the commission
+// settings. discount is what BookDan pays for a coupon on top of amount (the hotel is paid on the full price). It is used when the hotel accepts, and
+// again for the extra payment of a date change.
+func ledgerConfirmed(ctx context.Context, tx pgx.Tx, bookingID, payID, cur, memo string, amount, discount int64) error {
+	var commBP, commVatBP int64
+	if err := tx.QueryRow(ctx, `SELECT commission_bps, commission_vat_bps FROM pricing_config WHERE id = 1`).Scan(&commBP, &commVatBP); err != nil {
+		return err
+	}
 	full := amount + discount
 	commission := (full*commBP + 5000) / 10000
 	commVAT := (commission*commVatBP + 5000) / 10000
-	return ledger(ctx, tx, id, payID, "booking_confirmed", "hotel accepted: our commission and the hotel's share", cur,
+	return ledger(ctx, tx, bookingID, payID, "booking_confirmed", memo, cur,
 		entry{"guest_deposits_held", amount}, entry{"coupon_expense", discount}, entry{"property_payable", -(full - commission - commVAT)},
 		entry{"commission_revenue", -commission}, entry{"vat_on_commission_payable", -commVAT})
 }
@@ -312,7 +319,7 @@ func (s *Server) decline(ctx context.Context, tx pgx.Tx, id, roomType, in, out s
 	}
 	var payID, cur string
 	var amount int64
-	err := tx.QueryRow(ctx, `SELECT id, currency, amount_santim FROM payments WHERE booking_id = $1 AND status = 'succeeded'`, id).Scan(&payID, &cur, &amount)
+	err := tx.QueryRow(ctx, `SELECT id, currency, amount_santim FROM payments WHERE booking_id = $1 AND status = 'succeeded' AND kind = 'booking'`, id).Scan(&payID, &cur, &amount)
 	if err == pgx.ErrNoRows {
 		return nil
 	}
@@ -396,6 +403,7 @@ func (s *Server) savePushToken(app string, w http.ResponseWriter, r *http.Reques
 // refunded). It is cheap and idempotent, so it runs on a timer and also whenever a hotel looks at its bookings.
 func (s *Server) sweep(ctx context.Context) {
 	s.stepAlerts(ctx)
+	s.expireDateChanges(ctx)
 	var timedOut []string // hotels that did not answer: their guests are told after the commit
 	if err := s.tx(ctx, func(tx pgx.Tx) error {
 		timedOut = nil

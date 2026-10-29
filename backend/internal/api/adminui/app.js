@@ -8,7 +8,7 @@
   var TYPES = [['hotel', 'Hotel'], ['guesthouse', 'Guesthouse'], ['lodge', 'Lodge'], ['resort', 'Resort']];
   var STATUSES = [['draft', 'Draft (not shown to guests)'], ['active', 'Published'], ['hidden', 'Hidden']];
 
-  var state = { token: null, role: null, contact: '', config: { password: false, owners: false } };
+  var state = { token: null, role: null, contact: '', adminRole: '', can: {}, mfa: false, hasAccount: false, mustChange: false, config: { password: false, owners: false } };
   try { state.token = sessionStorage.getItem('admin-token'); state.role = sessionStorage.getItem('admin-role'); } catch (e) { /* private mode */ }
   var app = document.getElementById('app');
 
@@ -20,6 +20,7 @@
       if (v === undefined || v === null || v === false) continue;
       if (k === 'class') el.className = v;
       else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else if (k === 'style') el.style.cssText = v; // set through the style object: the page's content policy blocks inline style attributes
       else if (k === 'value') el.value = v;
       else if (k === 'checked') el.checked = !!v;
       else el.setAttribute(k, v === true ? '' : v);
@@ -61,8 +62,16 @@
   function signedIn(res) {
     state.token = res.token; state.role = res.role;
     try { sessionStorage.setItem('admin-token', res.token); sessionStorage.setItem('admin-role', res.role); } catch (e) { /* ignore */ }
-    call('GET', '/admin/me').then(function (me) { state.contact = me.contact; render(); }, function () { render(); });
+    loadMe().then(function () { go('#/'); });
   }
+  // loadMe reads who is signed in and what their role may do, so the page shows the right tabs.
+  function loadMe() {
+    return call('GET', '/admin/me').then(function (me) {
+      state.contact = me.contact; state.role = me.role; state.adminRole = me.admin_role || ''; state.can = me.can || {};
+      state.mfa = !!me.mfa; state.hasAccount = !!me.has_account; state.mustChange = !!me.must_change_password;
+    }, function () { /* signed out by call() */ });
+  }
+  function can(what) { return state.role === 'admin' && !!state.can[what]; }
 
   // ---- login
   function loginView() {
@@ -84,12 +93,20 @@
       var email = h('input', { type: 'email', autocomplete: 'username', required: true });
       var pass = h('input', { type: 'password', autocomplete: 'current-password', required: true });
       var btn = h('button', { type: 'submit' }, 'Sign in');
+      var code = h('input', { type: 'text', inputmode: 'numeric', maxlength: '6', placeholder: '6-digit code', autocomplete: 'one-time-code' });
+      var codeField = h('div', { class: 'field', style: 'display:none' }, h('label', {}, 'Code from your authenticator app'), code);
+      var note = h('div', {});
       return h('form', { onsubmit: function (e) {
-        e.preventDefault(); btn.disabled = true;
-        call('POST', '/admin/login', { email: email.value, password: pass.value }).then(signedIn, function (err) { paint(err.message); });
+        e.preventDefault(); btn.disabled = true; clear(note);
+        call('POST', '/admin/login', { email: email.value, password: pass.value, code: code.value }).then(signedIn, function (err) {
+          btn.disabled = false;
+          if (err.code === 'MFA_REQUIRED') { codeField.style.display = ''; code.focus(); return; }
+          add(note, msg('err', err.message));
+        });
       } },
         h('div', { class: 'field' }, h('label', {}, 'Email'), email),
         h('div', { class: 'field' }, h('label', {}, 'Password'), pass),
+        codeField, note,
         h('div', { class: 'field' }, btn));
     }
     function ownerForm() {
@@ -119,9 +136,23 @@
     return h('div', {},
       h('header', { class: 'top' },
         h('span', { class: 'brand' }, 'BookDan Admin'),
-        h('span', { class: 'who' }, state.contact, ' ', h('span', { class: 'chip' }, state.role === 'admin' ? 'Platform admin' : 'Hotel owner'),
+        h('span', { class: 'who' }, state.contact, ' ', h('span', { class: 'chip' }, state.role === 'admin' ? { super: 'Super admin', support: 'Support', finance: 'Finance' }[state.adminRole] || 'Platform admin' : 'Hotel owner'),
+          state.role === 'admin' && !state.mustChange ? h('button', { class: 'ghost', onclick: function () { go('#/account'); } }, 'My account') : null,
           h('button', { class: 'ghost', onclick: signOut }, 'Sign out'))),
       h('main', {}, content));
+  }
+
+  // The tabs a platform admin sees: only what their role may open (the server checks it again on every request).
+  function navButtons() {
+    var tabs = [['Coupons', '#/coupons', null], ['Payouts', '#/payouts', 'finance'], ['Payment issues', '#/issues', 'finance'], ['Support', '#/support', 'support'], ['Reviews', '#/reviews', 'reviews'],
+      ['Rates', '#/rates', null], ['Calls', '#/calls', null], ['Analytics', '#/analytics', null], ['Applications', '#/applications', 'applications'], ['Admins', '#/admins', 'admins']];
+    var span = h('span', {});
+    tabs.forEach(function (t) {
+      if (t[2] && !can(t[2])) return;
+      add(span, h('button', { class: 'secondary', onclick: function () { go(t[1]); } }, t[0]), ' ');
+    });
+    if (can('hotels_write')) add(span, h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel'));
+    return span;
   }
 
   // ---- hotel list
@@ -140,7 +171,7 @@
     }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
     return shell(h('div', {},
       h('div', { class: 'row between' }, h('h1', {}, 'Hotels'),
-        state.role === 'admin' ? h('span', {}, h('button', { class: 'secondary', onclick: function () { go('#/coupons'); } }, 'Coupons'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/payouts'); } }, 'Payouts'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/issues'); } }, 'Payment issues'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/support'); } }, 'Support'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/rates'); } }, 'Rates'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/calls'); } }, 'Calls'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/analytics'); } }, 'Analytics'), ' ', h('button', { class: 'secondary', onclick: function () { go('#/applications'); } }, 'Applications'), ' ', h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel')) : null),
+        state.role === 'admin' ? navButtons() : null),
       holder));
   }
 
@@ -865,6 +896,153 @@
       h('div', { class: 'field' }, days), holder));
   }
 
+  // ---- my account (every platform admin): my password and the authenticator app
+  function accountView(forced) {
+    var holder = h('div', {});
+    function paint() {
+      clear(holder);
+      if (!state.hasAccount) {
+        add(holder, h('div', { class: 'card' }, h('h3', {}, 'You are using the shared setup password'),
+          h('p', { class: 'soft' }, 'It has no password or authenticator app of its own. A super admin can create your own account in the Admins tab, using your email address. After that only your own password works for you, and the shared one can be removed from the server settings.')));
+        return;
+      }
+      var cur = h('input', { type: 'password', autocomplete: 'current-password' });
+      var nw = h('input', { type: 'password', autocomplete: 'new-password' });
+      var out = h('div', {});
+      add(holder, h('div', { class: 'card' }, h('h3', {}, forced ? 'Choose your own password' : 'Change my password'),
+        forced ? h('p', { class: 'soft' }, 'The password you were given was only temporary. Choose one that only you know: at least 12 characters, not your email name.') : null,
+        h('div', { class: 'field' }, h('label', {}, 'Current password'), cur),
+        h('div', { class: 'field' }, h('label', {}, 'New password'), nw),
+        h('button', { onclick: function () {
+          clear(out);
+          call('POST', '/admin/me/password', { current_password: cur.value, new_password: nw.value }).then(function (res) {
+            signedIn(res);
+          }, function (err) { add(out, msg('err', err.message)); });
+        } }, 'Save password'), out));
+      if (forced) return;
+      var mfaOut = h('div', {});
+      var box = h('div', { class: 'card' }, h('h3', {}, 'Authenticator app (second step)'));
+      add(box, h('p', { class: 'soft' }, state.mfa
+        ? 'On. Signing in needs the 6-digit code from your authenticator app as well as the password.'
+        : 'Off. Add an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…) so a stolen password is not enough to get in.'));
+      if (state.mfa) {
+        var pw = h('input', { type: 'password', autocomplete: 'current-password' });
+        var code = h('input', { type: 'text', inputmode: 'numeric', maxlength: '6', placeholder: '6-digit code' });
+        add(box, h('div', { class: 'field' }, h('label', {}, 'Password'), pw), h('div', { class: 'field' }, h('label', {}, 'A current code (wait for a new one if you just signed in)'), code),
+          h('button', { class: 'secondary', onclick: function () {
+            clear(mfaOut);
+            call('POST', '/admin/me/mfa/disable', { password: pw.value, code: code.value }).then(function () { state.mfa = false; paint(); }, function (err) { add(mfaOut, msg('err', err.message)); });
+          } }, 'Turn it off'), mfaOut);
+      } else {
+        add(box, h('button', { onclick: function () {
+          clear(mfaOut);
+          call('POST', '/admin/me/mfa/setup').then(function (res) {
+            var code2 = h('input', { type: 'text', inputmode: 'numeric', maxlength: '6', placeholder: '6-digit code' });
+            clear(mfaOut);
+            add(mfaOut, h('p', {}, 'In your authenticator app choose "Enter a setup key" and type this key (account: BookDan, type: time based):'),
+              h('p', {}, h('code', { style: 'font-size:16px;word-break:break-all' }, res.secret)),
+              h('div', { class: 'field' }, h('label', {}, 'Then type the 6-digit code the app shows'), code2),
+              h('button', { onclick: function () {
+                call('POST', '/admin/me/mfa/enable', { code: code2.value }).then(function () { state.mfa = true; paint(); }, function (err) { add(mfaOut, msg('err', err.message)); });
+              } }, 'Confirm and turn on'));
+          }, function (err) { add(mfaOut, msg('err', err.message)); });
+        } }, 'Set up'), mfaOut);
+      }
+      add(holder, box);
+    }
+    paint();
+    return shell(h('div', {}, forced ? null : h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'My account'), holder));
+  }
+
+  // ---- admins (super admin): who can use this page, and what they may do
+  function adminsView() {
+    var holder = h('div', { class: 'card', style: 'overflow-x:auto' }, h('p', { class: 'muted' }, 'Loading…'));
+    var notice = h('div', {});
+    var ROLES = { super: 'Super admin', support: 'Support', finance: 'Finance' };
+    function shown(title, password) {
+      clear(notice);
+      add(notice, h('div', { class: 'msg ok', role: 'status' }, title, ' ', h('code', { style: 'font-size:16px;user-select:all' }, password),
+        h('div', { class: 'soft' }, 'Copy it now: it is shown only once. They must choose their own password the first time they sign in.')));
+    }
+    function load() {
+      call('GET', '/admin/admins').then(function (res) {
+        clear(holder);
+        if (!res.admins.length) { add(holder, h('p', {}, 'No admin accounts yet. You are signed in with the shared setup password. Create your own account first, using your email address.')); return; }
+        var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Email'), h('th', {}, 'Role'), h('th', {}, 'Status'), h('th', {}, 'Authenticator'), h('th', {}, 'Last sign-in'), h('th', {}, ''))));
+        var body = h('tbody', {});
+        res.admins.forEach(function (a) {
+          var role = h('select', { onchange: function () {
+            call('PUT', '/admin/admins/' + a.id, { role: role.value }).then(load, function (e) { alert(e.message); load(); });
+          } });
+          Object.keys(ROLES).forEach(function (k) { add(role, h('option', { value: k, selected: a.role === k ? 'selected' : null }, ROLES[k])); });
+          var status = a.disabled ? h('span', { class: 'chip hidden' }, 'Disabled') : a.locked ? h('span', { class: 'chip draft' }, 'Locked') : a.must_change_password ? h('span', { class: 'chip draft' }, 'Must set a password') : h('span', { class: 'chip active' }, 'Active');
+          var actions = h('span', {},
+            h('button', { class: 'ghost', onclick: function () { call('PUT', '/admin/admins/' + a.id, { disabled: !a.disabled }).then(load, function (e) { alert(e.message); }); } }, a.disabled ? 'Enable' : 'Disable'), ' ',
+            a.locked ? h('button', { class: 'ghost', onclick: function () { call('PUT', '/admin/admins/' + a.id, { unlock: true }).then(load, function (e) { alert(e.message); }); } }, 'Unlock') : null, ' ',
+            h('button', { class: 'ghost', onclick: function () {
+              if (confirm('Give ' + a.email + ' a new temporary password? Their current sessions end.')) call('POST', '/admin/admins/' + a.id + '/reset-password').then(function (r) { shown('New password for ' + a.email + ':', r.temporary_password); load(); }, function (e) { alert(e.message); });
+            } }, 'Reset password'), ' ',
+            a.mfa ? h('button', { class: 'ghost', onclick: function () {
+              if (confirm('Remove the authenticator app of ' + a.email + '? Use this when they lost their phone.')) call('POST', '/admin/admins/' + a.id + '/reset-mfa').then(load, function (e) { alert(e.message); });
+            } }, 'Remove authenticator') : null);
+          add(body, h('tr', {}, h('td', {}, a.email), h('td', {}, role), h('td', {}, status), h('td', {}, a.mfa ? 'On' : 'Off'), h('td', {}, a.last_login_at ? new Date(a.last_login_at).toLocaleString() : 'Never'), h('td', {}, actions)));
+        });
+        add(table, body);
+        add(holder, table);
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    var email = h('input', { type: 'email', placeholder: 'name@example.com' });
+    var role = h('select', {});
+    Object.keys(ROLES).forEach(function (k) { add(role, h('option', { value: k }, ROLES[k] + (k === 'super' ? ' (everything)' : k === 'support' ? ' (support queue, reviews)' : ' (payouts, statements, rates)'))); });
+    var out = h('div', {});
+    var create = h('div', { class: 'card' }, h('h3', {}, 'Add an admin'),
+      h('div', { class: 'grid' }, h('div', { class: 'field' }, h('label', {}, 'Email'), email), h('div', { class: 'field' }, h('label', {}, 'Role'), role)),
+      h('p', { class: 'soft' }, 'A temporary password is generated and shown once. Send it to them by a private channel. They choose their own at the first sign-in.'),
+      h('button', { onclick: function () {
+        clear(out);
+        call('POST', '/admin/admins', { email: email.value, role: role.value }).then(function (r) { email.value = ''; shown('Temporary password for ' + r.email + ':', r.temporary_password); load(); }, function (err) { add(out, msg('err', err.message)); });
+      } }, 'Add admin'), out);
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Admins'),
+      h('p', { class: 'soft' }, 'Everyone who works at BookDan has their own sign-in. Super admins can do everything; Support answers guests and hotels, settles disputes and removes abusive reviews; Finance handles payouts, statements, payment issues and exchange rates. A disabled admin is signed out at once, and five wrong passwords lock an account for 15 minutes.'),
+      notice, create, holder));
+  }
+
+  // ---- reviews (platform admin): take down an abusive review, bring it back
+  function reviewsView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    var status = h('select', {}, h('option', { value: 'visible' }, 'Shown to guests'), h('option', { value: 'hidden' }, 'Hidden'), h('option', { value: 'all' }, 'All'));
+    var sort = h('select', {}, h('option', { value: 'latest' }, 'Newest first'), h('option', { value: 'lowest' }, 'Lowest rating first'));
+    var words = h('input', { type: 'search', placeholder: 'Words or booking code' });
+    function load() {
+      call('GET', '/admin/reviews?status=' + status.value + '&sort=' + sort.value + '&q=' + encodeURIComponent(words.value.trim())).then(function (res) {
+        clear(holder);
+        if (!res.reviews.length) { add(holder, h('div', { class: 'card' }, h('p', {}, 'No reviews match.'))); return; }
+        res.reviews.forEach(function (v) {
+          var actions = v.hidden
+            ? h('button', { class: 'secondary', onclick: function () { call('POST', '/admin/reviews/' + v.id + '/restore').then(load, function (e) { alert(e.message); }); } }, 'Show again')
+            : h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () {
+                var reason = prompt('Why is this review being hidden? (abusive, spam, private details…)');
+                if (reason === null) return;
+                call('POST', '/admin/reviews/' + v.id + '/hide', { reason: reason }).then(load, function (e) { alert(e.message); });
+              } }, 'Hide');
+          add(holder, h('div', { class: 'card' },
+            h('div', { class: 'row' }, h('strong', {}, v.hotel), ' ', h('span', { class: 'muted' }, '★'.repeat(v.rating) + ' · ' + v.author + ' · ' + v.booking_code + ' · ' + v.date), v.hidden ? h('span', { class: 'chip', style: 'color:var(--bad)' }, 'Hidden') : null),
+            h('p', {}, v.text || '(no comment)'),
+            v.reply ? h('p', { class: 'soft' }, 'Hotel reply: ' + v.reply) : null,
+            v.hidden ? h('p', { class: 'soft' }, 'Hidden' + (v.hidden_by ? ' by ' + v.hidden_by : '') + ': ' + v.hidden_reason) : null,
+            actions));
+        });
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    status.onchange = load; sort.onchange = load;
+    words.onkeydown = function (e) { if (e.key === 'Enter') load(); };
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Reviews'),
+      h('p', { class: 'soft' }, 'Hide a review that is abusive, spam or shows private details. A hidden review disappears from the hotel page and its rating, and the hotel can no longer answer it; the guest who wrote it still sees it. Every change is recorded with your reason, and you can show it again.'),
+      h('div', { class: 'field' }, status, ' ', sort, ' ', words), holder));
+  }
+
   // ---- analytics (platform admin)
   function pct(a, b) { return b ? Math.round((a / b) * 100) + '%' : '–'; }
 
@@ -991,18 +1169,22 @@
   function render() {
     clear(app);
     if (!state.token) { add(app, loginView()); return; }
+    if (state.mustChange) { add(app, accountView(true)); return; }
     var m = location.hash.match(/^#\/hotel\/([0-9a-f-]{36})$/);
     if (m) add(app, hotelView(m[1], 'details'));
-    else if (location.hash === '#/new' && state.role === 'admin') add(app, newView());
-    else if (location.hash === '#/payouts' && state.role === 'admin') add(app, payoutsView());
+    else if (location.hash === '#/new' && can('hotels_write')) add(app, newView());
+    else if (location.hash === '#/payouts' && can('finance')) add(app, payoutsView());
     else if (location.hash === '#/coupons' && state.role === 'admin') add(app, couponsView());
-    else if (location.hash === '#/issues' && state.role === 'admin') add(app, issuesView());
-    else if (location.hash === '#/support' && state.role === 'admin') add(app, supportView());
+    else if (location.hash === '#/issues' && can('finance')) add(app, issuesView());
+    else if (location.hash === '#/support' && can('support')) add(app, supportView());
     else if (location.hash === '#/rates' && state.role === 'admin') add(app, ratesView());
     else if (location.hash === '#/calls' && state.role === 'admin') add(app, callsView());
+    else if (location.hash === '#/reviews' && can('reviews')) add(app, reviewsView());
     else if (location.hash === '#/analytics' && state.role === 'admin') add(app, analyticsView());
-    else if (location.hash === '#/applications' && state.role === 'admin') add(app, applicationsView());
-    else if (/^#\/support\/[0-9a-f-]{36}$/.test(location.hash) && state.role === 'admin') add(app, ticketView(location.hash.slice(10)));
+    else if (location.hash === '#/applications' && can('applications')) add(app, applicationsView());
+    else if (location.hash === '#/admins' && can('admins')) add(app, adminsView());
+    else if (location.hash === '#/account' && state.role === 'admin') add(app, accountView(false));
+    else if (/^#\/support\/[0-9a-f-]{36}$/.test(location.hash) && can('support')) add(app, ticketView(location.hash.slice(10)));
     else add(app, listView());
   }
   window.addEventListener('hashchange', render);
@@ -1010,6 +1192,6 @@
   call('GET', '/admin/config').then(function (cfg) {
     state.config = cfg;
     if (!state.token) return render();
-    return call('GET', '/admin/me').then(function (me) { state.contact = me.contact; state.role = me.role; render(); }, function () { render(); });
+    return loadMe().then(render, render);
   }, function (err) { clear(app); add(app, h('div', { class: 'card login' }, msg('err', err.message))); });
 })();

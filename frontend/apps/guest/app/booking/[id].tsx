@@ -10,6 +10,7 @@ import { useTranslation } from '@bookdan/i18n';
 import { Badge, Button, EmptyState, Pop, Reveal, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
 import { CancelCard } from '../../src/CancelCard';
+import { PendingChangeCard } from '../../src/PendingChangeCard';
 import { NotifyMeCard } from '../../src/NotifyMeCard';
 import { ReviewCard } from '../../src/ReviewCard';
 import { addStayToCalendar, callPhone } from '../../src/links';
@@ -257,6 +258,7 @@ export default function BookingScreen() {
         {b.original_check_in && b.original_check_out ? (
           <T variant="small" color={colors.muted} style={{ marginTop: spacing.md }}>{t('change.original', { from: shortDate(b.original_check_in, months), to: shortDate(b.original_check_out, months) })}</T>
         ) : null}
+        {b.pending_date_change ? <PendingChangeCard booking={b} months={months} onChanged={onBookingChanged} /> : null}
         {b.can_change_dates ? (
           <Button variant="secondary" icon="calendar-outline" title={t('change.button')} onPress={() => router.push({ pathname: '/change-dates', params: { id: b.id } })} style={{ marginTop: spacing.md }} />
         ) : null}

@@ -70,6 +70,9 @@ func (s *Server) hotelSideCancel(ctx context.Context, tx pgx.Tx, bookingID, who,
 	if err := actor(ctx, tx, who, "cancelled by the "+by+": "+reason); err != nil {
 		return err
 	}
+	if err := abandonDateChange(ctx, tx, bookingID, "the booking was cancelled"); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `UPDATE bookings SET status = 'CANCELLED_REFUNDED', refund_santim = $2, cancelled_at = coalesce(cancelled_at, now()), cancelled_by = $3, cancel_reason = $4,
 		hotel_deadline_at = NULL, disputed_from = NULL WHERE id = $1`, bookingID, refund, by, reason); err != nil {
 		return err
@@ -307,7 +310,7 @@ func (s *Server) adminResolveRelocation(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return err
 	}
-	s.mailGuestAnswer(ctx, id, text+"\n\n"+note)
+	s.notifyTicketOwner(ctx, id, text+"\n\n"+note)
 	if in.Outcome == "refunded" {
 		s.runRefunds(ctx)
 	}

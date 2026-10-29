@@ -4,7 +4,7 @@ import type { ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isAwaitingAnswer } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { colors, fonts } from '@bookdan/ui';
+import { colors, dark, fonts } from '@bookdan/ui';
 import { ApiError } from '@bookdan/api-client';
 import { useEarnings, useInbox } from '../../src/queries';
 import { useOfflineSync } from '../../src/useOfflineSync';
@@ -30,10 +30,11 @@ export default function TabsLayout() {
         headerShown: false,
         animation: 'fade',
         sceneStyle: { backgroundColor: colors.background },
-        tabBarActiveTintColor: colors.primaryInk,
-        tabBarInactiveTintColor: colors.muted,
+        // Deep navy bar with a soft terracotta active tab, as in the guest app.
+        tabBarActiveTintColor: dark.accent,
+        tabBarInactiveTintColor: dark.muted,
         tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 11, marginBottom: 2 },
-        tabBarStyle: { height: 70 + insets.bottom, paddingBottom: Math.max(insets.bottom, 8), paddingTop: 8, backgroundColor: colors.surface, borderTopColor: colors.line },
+        tabBarStyle: { height: 70 + insets.bottom, paddingBottom: Math.max(insets.bottom, 8), paddingTop: 8, backgroundColor: dark.surface, borderTopColor: dark.line },
       }}
     >
       <Tabs.Screen

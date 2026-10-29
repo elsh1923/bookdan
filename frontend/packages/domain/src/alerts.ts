@@ -74,6 +74,20 @@ export function parseBookingUpdate(data: unknown): BookingUpdateData | null {
   return null;
 }
 
+/** A push saying support answered a request: open that conversation. */
+export interface SupportAnswerData {
+  type: 'support_answer';
+  ticket_id: string;
+}
+
+export function parseSupportAnswer(data: unknown): SupportAnswerData | null {
+  const d = data as { type?: unknown; ticket_id?: unknown } | null;
+  if (d && d.type === 'support_answer' && typeof d.ticket_id === 'string' && d.ticket_id.length > 0) {
+    return { type: 'support_answer', ticket_id: d.ticket_id };
+  }
+  return null;
+}
+
 export function parseBookingAlert(data: unknown): BookingAlertData | null {
   const d = data as { type?: unknown; booking_id?: unknown } | null;
   if (d && (d.type === 'new_booking' || d.type === 'booking_cancelled') && typeof d.booking_id === 'string' && d.booking_id.length > 0) {

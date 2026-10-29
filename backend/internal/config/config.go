@@ -72,7 +72,10 @@ type Config struct {
 	IDRetentionDays int
 	// RateReadPerMin and RateWritePerMin limit requests per client address per minute: reading hotels, and taking rooms or money. 0 = off in
 	// development and tests; production uses 600 and 60 when these are unset.
-	RateReadPerMin  int
+	RateReadPerMin int
+	// OTPMaxPerIP is how many sign-in codes one client address may ask for in 10 minutes, over all addresses and numbers (on top of the limit per address).
+	// Mobile networks put many people behind one address, so it is generous. 0 = off (tests).
+	OTPMaxPerIP     int
 	RateWritePerMin int
 	// PaymentWebhookSecret signs payment-gateway callbacks (HMAC-SHA256 of the body).
 	PaymentWebhookSecret string
@@ -123,6 +126,7 @@ func Load() Config {
 		PartnerAppURL:        get("PARTNER_APP_URL", ""),
 		IDRetentionDays:      atoi(get("ID_RETENTION_DAYS", "0")),
 		RateReadPerMin:       atoi(get("RATE_LIMIT_READ_PER_MIN", "0")),
+		OTPMaxPerIP:          atoi(get("OTP_MAX_PER_IP", "30")),
 		RateWritePerMin:      atoi(get("RATE_LIMIT_WRITE_PER_MIN", "0")),
 		PaymentWebhookSecret: get("PAYMENT_WEBHOOK_SECRET", ""),
 		ChapaSecretKey:       get("CHAPA_SECRET_KEY", ""),

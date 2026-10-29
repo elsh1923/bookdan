@@ -1,11 +1,9 @@
 package api
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
+	"context"
 	"net/http"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -56,64 +54,33 @@ func (l *loginLimiter) allow(key string, now time.Time) bool {
 	return true
 }
 
-func (s *Server) adminEnabled() bool { return s.cfg.AdminPassword != "" || s.ownerAdminEnabled() }
+// adminEnabled says whether the admin page is on: the first-time shared password is set, hotel owners may use it, or someone has an admin account.
+func (s *Server) adminEnabled(ctx context.Context) bool {
+	if s.cfg.AdminPassword != "" || s.ownerAdminEnabled() {
+		return true
+	}
+	var any bool
+	_ = s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM admin_accounts)`).Scan(&any)
+	return any
+}
 
-func (s *Server) adminToken(userID, role string) string {
+// adminToken signs an admin-page session. adminRole (super, support or finance) is set for a platform admin and empty for a hotel owner.
+func (s *Server) adminToken(userID, role, adminRole string) string {
 	now := s.now()
-	return s.keys.SignJWT(claims{Sub: userID, Role: role, App: "admin", Iat: now.Unix(), Exp: now.Add(adminTokenTTL).Unix()})
+	return s.keys.SignJWT(claims{Sub: userID, Role: role, AR: adminRole, App: "admin", Iat: now.Unix(), Exp: now.Add(adminTokenTTL).Unix()})
 }
 
 // adminConfig tells the page which sign-in forms to offer.
-func (s *Server) adminConfig(w http.ResponseWriter, _ *http.Request) error {
+func (s *Server) adminConfig(w http.ResponseWriter, r *http.Request) error {
+	var accounts bool
+	if err := s.pool.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM admin_accounts)`).Scan(&accounts); err != nil {
+		return err
+	}
 	respond(w, http.StatusOK, struct {
 		httpx.Meta
 		Password bool `json:"password"`
 		Owners   bool `json:"owners"`
-	}{httpx.NowMeta(), s.cfg.AdminPassword != "", s.ownerAdminEnabled()})
-	return nil
-}
-
-func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) error {
-	if s.cfg.AdminPassword == "" {
-		return errNotFound
-	}
-	var in struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	if err := decode(r, &in); err != nil {
-		return err
-	}
-	email := strings.ToLower(strings.TrimSpace(in.Email))
-	if !s.adminLimit.allow(clientIP(r)+"|"+email, s.now()) {
-		return fail(http.StatusTooManyRequests, codeTooMany, "Too many attempts. Try again in a few minutes.")
-	}
-	// Both checks always run, so the response time does not reveal whether the email was on the list.
-	want := sha256.Sum256([]byte(s.cfg.AdminPassword))
-	got := sha256.Sum256([]byte(in.Password))
-	passOK := hmac.Equal(want[:], got[:])
-	listed := false
-	for _, e := range s.cfg.AdminEmails {
-		if e == email {
-			listed = true
-		}
-	}
-	if !passOK || !listed {
-		return fail(http.StatusUnauthorized, httpx.CodeUnauthenticated, "Wrong email or password")
-	}
-	var uid string
-	if err := s.pool.QueryRow(r.Context(), `INSERT INTO users (email, role) VALUES ($1, 'admin')
-		ON CONFLICT (email) DO UPDATE SET role = 'admin' RETURNING id`, email).Scan(&uid); err != nil {
-		return err
-	}
-	if _, err := s.pool.Exec(r.Context(), `INSERT INTO audit_log (user_id, action, ip, details) VALUES ($1, 'admin_login', NULLIF($2, '')::inet, '{}')`, uid, clientIP(r)); err != nil {
-		return err
-	}
-	respond(w, http.StatusOK, struct {
-		httpx.Meta
-		Token string `json:"token"`
-		Role  string `json:"role"`
-	}{httpx.NowMeta(), s.adminToken(uid, "admin"), "admin"})
+	}{httpx.NowMeta(), s.cfg.AdminPassword != "" || accounts, s.ownerAdminEnabled()})
 	return nil
 }
 
@@ -185,7 +152,7 @@ func (s *Server) adminOTPVerify(w http.ResponseWriter, r *http.Request) error {
 		httpx.Meta
 		Token string `json:"token"`
 		Role  string `json:"role"`
-	}{httpx.NowMeta(), s.adminToken(uid, "owner"), "owner"})
+	}{httpx.NowMeta(), s.adminToken(uid, "owner", ""), "owner"})
 	return nil
 }
 
@@ -240,63 +207,69 @@ func (s *Server) adminRoutes(r chi.Router) {
 	r.Post("/admin/otp/request", s.h(s.adminOTPRequest))
 	r.Post("/admin/otp/verify", s.h(s.adminOTPVerify))
 	r.Group(func(r chi.Router) {
-		r.Use(s.authenticate("admin"))
+		r.Use(s.authenticate("admin"), s.adminGate)
+		// Who may do what: super admins everything; support the support queue and reviews; finance the money pages. Hotel owners pass the role check and are limited
+		// to their own hotels in each handler. Reading the hotel list, analytics, calls, coupons and rates is open to every admin role.
+		super, support, finance := s.allow(), s.allow("support"), s.allow("finance")
+
 		r.Get("/admin/me", s.h(s.adminMe))
+		r.Post("/admin/me/password", s.h(s.adminChangePassword))
+		r.Post("/admin/me/mfa/setup", s.h(s.adminMFASetup))
+		r.Post("/admin/me/mfa/enable", s.h(s.adminMFAEnable))
+		r.Post("/admin/me/mfa/disable", s.h(s.adminMFADisable))
+		r.With(super).Get("/admin/admins", s.h(s.adminList))
+		r.With(super).Post("/admin/admins", s.h(s.adminCreate))
+		r.With(super).Put("/admin/admins/{id}", s.h(s.adminUpdate))
+		r.With(super).Post("/admin/admins/{id}/reset-password", s.h(s.adminResetPassword))
+		r.With(super).Post("/admin/admins/{id}/reset-mfa", s.h(s.adminResetMFA))
+
 		r.Get("/admin/hotels", s.h(s.adminListHotels))
-		r.Post("/admin/hotels", s.h(s.adminCreateHotel))
 		r.Get("/admin/hotels/{id}", s.h(s.adminGetHotel))
-		r.Put("/admin/hotels/{id}", s.h(s.adminUpdateHotel))
-		r.Post("/admin/hotels/{id}/rooms", s.h(s.adminCreateRoom))
-		r.Put("/admin/hotels/{id}/rooms/{room}", s.h(s.adminUpdateRoom))
-		r.Put("/admin/hotels/{id}/rooms/{room}/price", s.h(s.adminSetPrice))
-		r.Post("/admin/hotels/{id}/photos", s.h(s.adminUploadPhoto))
-		r.Post("/admin/hotels/{id}/rooms/{room}/photos", s.h(s.adminUploadRoomPhoto))
-		r.Post("/admin/hotels/{id}/photos/{photo}/cover", s.h(s.adminCoverPhoto))
-		r.Delete("/admin/hotels/{id}/photos/{photo}", s.h(s.adminDeletePhoto))
-		r.Put("/admin/hotels/{id}/business", s.h(s.adminSetBusiness))
-		r.Post("/admin/hotels/{id}/business/payout/reveal", s.h(s.adminRevealPayout))
 		r.Get("/admin/coupons", s.h(s.adminCoupons))
-		r.Post("/admin/coupons", s.h(s.adminCreateCoupon))
-		r.Put("/admin/coupons/{id}", s.h(s.adminUpdateCoupon))
-		r.Get("/admin/payouts", s.h(s.adminPayouts))
-		r.Get("/admin/support/tickets", s.h(s.adminTickets))
-		r.Get("/admin/support/tickets/{id}", s.h(s.adminGetTicket))
-		r.Post("/admin/support/tickets/{id}/reply", s.h(s.adminReplyTicket))
-		r.Post("/admin/support/tickets/{id}/close", s.h(s.adminCloseTicket))
-		r.Post("/admin/support/tickets/{id}/resolve", s.h(s.adminResolveDispute))
-		r.Post("/admin/support/tickets/{id}/refund", s.h(s.adminTicketRefund))
-		r.Post("/admin/support/tickets/{id}/relocation", s.h(s.adminResolveRelocation))
-		r.Get("/admin/applications", s.h(s.adminApplications))
-		r.Post("/admin/applications/{id}/approve", s.h(s.adminApproveApplication))
-		r.Post("/admin/applications/{id}/reject", s.h(s.adminRejectApplication))
 		r.Get("/admin/analytics", s.h(s.adminAnalytics))
 		r.Get("/admin/calls", s.h(s.adminCalls))
 		r.Get("/admin/rates", s.h(s.adminRates))
-		r.Put("/admin/rates/{currency}", s.h(s.adminSetRate))
-		r.Get("/admin/payment-issues", s.h(s.adminPaymentIssues))
-		r.Post("/admin/payment-issues/{id}/resolve", s.h(s.adminResolvePaymentIssue))
-		r.Get("/admin/hotels/{id}/statements", s.h(s.adminStatement))
-		r.Post("/admin/hotels/{id}/receipts", s.h(s.adminRecordReceipt))
-		r.Get("/admin/hotels/{id}/payouts", s.h(s.adminHotelPayouts))
-		r.Post("/admin/hotels/{id}/payouts", s.h(s.adminRecordPayout))
-		r.Put("/admin/hotels/{id}/alerts", s.h(s.adminSetAlertRules))
-		r.Put("/admin/hotels/{id}/staff/{user}/alerts", s.h(s.adminSetStaffAlerts))
-		r.Post("/admin/hotels/{id}/staff", s.h(s.adminAddStaff))
-		r.Delete("/admin/hotels/{id}/staff/{user}", s.h(s.adminRemoveStaff))
+
+		r.With(super).Post("/admin/hotels", s.h(s.adminCreateHotel))
+		r.With(super).Put("/admin/hotels/{id}", s.h(s.adminUpdateHotel))
+		r.With(super).Post("/admin/hotels/{id}/rooms", s.h(s.adminCreateRoom))
+		r.With(super).Put("/admin/hotels/{id}/rooms/{room}", s.h(s.adminUpdateRoom))
+		r.With(super).Put("/admin/hotels/{id}/rooms/{room}/price", s.h(s.adminSetPrice))
+		r.With(super).Post("/admin/hotels/{id}/photos", s.h(s.adminUploadPhoto))
+		r.With(super).Post("/admin/hotels/{id}/rooms/{room}/photos", s.h(s.adminUploadRoomPhoto))
+		r.With(super).Post("/admin/hotels/{id}/photos/{photo}/cover", s.h(s.adminCoverPhoto))
+		r.With(super).Delete("/admin/hotels/{id}/photos/{photo}", s.h(s.adminDeletePhoto))
+		r.With(super).Put("/admin/hotels/{id}/business", s.h(s.adminSetBusiness))
+		r.With(super).Post("/admin/coupons", s.h(s.adminCreateCoupon))
+		r.With(super).Put("/admin/coupons/{id}", s.h(s.adminUpdateCoupon))
+		r.With(super).Get("/admin/applications", s.h(s.adminApplications))
+		r.With(super).Post("/admin/applications/{id}/approve", s.h(s.adminApproveApplication))
+		r.With(super).Post("/admin/applications/{id}/reject", s.h(s.adminRejectApplication))
+		r.With(super).Put("/admin/hotels/{id}/alerts", s.h(s.adminSetAlertRules))
+		r.With(super).Put("/admin/hotels/{id}/staff/{user}/alerts", s.h(s.adminSetStaffAlerts))
+		r.With(super).Post("/admin/hotels/{id}/staff", s.h(s.adminAddStaff))
+		r.With(super).Delete("/admin/hotels/{id}/staff/{user}", s.h(s.adminRemoveStaff))
+
+		r.With(support).Get("/admin/support/tickets", s.h(s.adminTickets))
+		r.With(support).Get("/admin/support/tickets/{id}", s.h(s.adminGetTicket))
+		r.With(support).Post("/admin/support/tickets/{id}/reply", s.h(s.adminReplyTicket))
+		r.With(support).Post("/admin/support/tickets/{id}/close", s.h(s.adminCloseTicket))
+		r.With(support).Post("/admin/support/tickets/{id}/resolve", s.h(s.adminResolveDispute))
+		r.With(support).Post("/admin/support/tickets/{id}/refund", s.h(s.adminTicketRefund))
+		r.With(support).Post("/admin/support/tickets/{id}/relocation", s.h(s.adminResolveRelocation))
+		r.With(support).Get("/admin/reviews", s.h(s.adminReviews))
+		r.With(support).Post("/admin/reviews/{id}/hide", s.h(s.adminHideReview))
+		r.With(support).Post("/admin/reviews/{id}/restore", s.h(s.adminRestoreReview))
+
+		r.With(finance).Post("/admin/hotels/{id}/business/payout/reveal", s.h(s.adminRevealPayout))
+		r.With(finance).Get("/admin/payouts", s.h(s.adminPayouts))
+		r.With(finance).Get("/admin/hotels/{id}/payouts", s.h(s.adminHotelPayouts))
+		r.With(finance).Post("/admin/hotels/{id}/payouts", s.h(s.adminRecordPayout))
+		r.With(finance).Post("/admin/hotels/{id}/receipts", s.h(s.adminRecordReceipt))
+		r.With(finance).Get("/admin/hotels/{id}/statements", s.h(s.adminStatement))
+		r.With(finance).Get("/admin/payment-issues", s.h(s.adminPaymentIssues))
+		r.With(finance).Post("/admin/payment-issues/{id}/resolve", s.h(s.adminResolvePaymentIssue))
+		r.With(finance).Put("/admin/rates/{currency}", s.h(s.adminSetRate))
 	})
 	r.Get("/photos/{id}/{size}", s.h(s.servePhoto))
-}
-
-func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) error {
-	c := claimsFrom(r)
-	var contact string
-	if err := s.pool.QueryRow(r.Context(), `SELECT coalesce(email, phone) FROM users WHERE id = $1`, c.Sub).Scan(&contact); err != nil {
-		return err
-	}
-	respond(w, http.StatusOK, struct {
-		httpx.Meta
-		Role    string `json:"role"`
-		Contact string `json:"contact"`
-	}{httpx.NowMeta(), c.Role, contact})
-	return nil
 }

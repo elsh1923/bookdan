@@ -457,20 +457,61 @@ func (s *Server) adminReplyTicket(w http.ResponseWriter, r *http.Request) error 
 	if err := s.addMessage(ctx, r, id, "", who, true, message); err != nil {
 		return err
 	}
-	s.mailGuestAnswer(ctx, id, message)
+	s.notifyTicketOwner(ctx, id, message)
 	respond(w, http.StatusOK, httpx.NowMeta())
 	return nil
 }
 
-// mailGuestAnswer emails the guest the answer. A guest signed in by phone (no email) sees it in the app.
-func (s *Server) mailGuestAnswer(ctx context.Context, ticketID, body string) {
+// notifyTicketOwner tells whoever wrote the ticket (a guest, or a hotel's staff member) that support answered: a push to their phone, and an email when they
+// signed in with an address. A phone-only guest with no push set up sees the answer when they open the app. Failures are logged, never returned.
+func (s *Server) notifyTicketOwner(ctx context.Context, ticketID, body string) {
 	var email *string
 	var subject string
 	var hotel bool
 	if err := s.pool.QueryRow(ctx, `SELECT u.email, t.subject, t.property_id IS NOT NULL FROM support_tickets t JOIN users u ON u.id = t.user_id WHERE t.id = $1`, ticketID).Scan(&email, &subject, &hotel); err != nil {
-		slog.Error("support mail: read guest", "ticket", ticketID, "err", err)
+		slog.Error("support notify: read ticket owner", "ticket", ticketID, "err", err)
 		return
 	}
+	s.pushTicketAnswer(ctx, ticketID, subject, hotel)
+	s.mailTicketAnswer(ctx, email, subject, body, hotel)
+}
+
+// pushTicketAnswer alerts the phones of the person who wrote the ticket. The text names the request, never the answer, so nothing private shows on a lock screen.
+// The data lets the app open the conversation when the alert is tapped.
+func (s *Server) pushTicketAnswer(ctx context.Context, ticketID, subject string, hotel bool) {
+	app := "guest"
+	if hotel {
+		app = "partner"
+	}
+	rows, err := s.pool.Query(ctx, `SELECT d.push_token FROM support_tickets t JOIN devices d ON d.user_id = t.user_id AND d.app = $2 AND d.push_token IS NOT NULL AND d.revoked_at IS NULL
+		WHERE t.id = $1`, ticketID, app)
+	if err != nil {
+		slog.Error("support push: devices", "ticket", ticketID, "err", err)
+		return
+	}
+	defer rows.Close()
+	var tokens []string
+	for rows.Next() {
+		var t string
+		if rows.Scan(&t) == nil {
+			tokens = append(tokens, t)
+		}
+	}
+	if len(tokens) == 0 {
+		return
+	}
+	if len([]rune(subject)) > 80 {
+		subject = string([]rune(subject)[:80]) + "..."
+	}
+	data := map[string]string{"type": "support_answer", "ticket_id": ticketID}
+	if !hotel {
+		data["channel"] = "booking_updates" // the guest app's Android channel
+	}
+	s.push(ctx, tokens, "BookDan support answered you", subject, data)
+}
+
+// mailTicketAnswer emails the answer. Nothing is sent to an account that has no address or was deleted.
+func (s *Server) mailTicketAnswer(ctx context.Context, email *string, subject, body string, hotel bool) {
 	if email == nil || strings.HasSuffix(*email, "@deleted.invalid") {
 		return
 	}

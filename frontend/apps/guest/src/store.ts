@@ -12,6 +12,7 @@ interface PrefsState {
   currency: Currency;
   recentSearches: string[];
   saved: string[]; // wishlist: property ids
+  savedRemoved: string[]; // removed on this phone and not yet told to the server
   viewed: string[]; // property ids the guest opened, newest first
   draftGuestName: string; // typed at checkout; survives a session expiry
   setLanguage: (l: Language) => void;
@@ -20,6 +21,7 @@ interface PrefsState {
   addRecent: (q: string) => void;
   clearRecent: () => void;
   toggleSaved: (id: string) => void;
+  setSaved: (ids: string[], sent: { add: string[]; remove: string[] }) => void;
   addViewed: (id: string) => void;
   setDraftGuestName: (name: string) => void;
 }
@@ -33,6 +35,7 @@ export const usePrefs = create<PrefsState>()(
       currency: 'ETB',
       recentSearches: [],
       saved: [],
+      savedRemoved: [],
       viewed: [],
       draftGuestName: '',
       setLanguage: (language) => set({ language }),
@@ -47,7 +50,19 @@ export const usePrefs = create<PrefsState>()(
       clearRecent: () => set({ recentSearches: [] }),
       setDraftGuestName: (draftGuestName) => set({ draftGuestName }),
       addViewed: (id) => set((s) => (s.viewed[0] === id ? s : { viewed: [id, ...s.viewed.filter((x) => x !== id)].slice(0, 10) })),
-      toggleSaved: (id) => set((st) => ({ saved: st.saved.includes(id) ? st.saved.filter((x) => x !== id) : [id, ...st.saved] })),
+      toggleSaved: (id) =>
+        set((st) =>
+          st.saved.includes(id)
+            ? { saved: st.saved.filter((x) => x !== id), savedRemoved: [id, ...st.savedRemoved.filter((x) => x !== id)] }
+            : { saved: [id, ...st.saved], savedRemoved: st.savedRemoved.filter((x) => x !== id) },
+        ),
+      // The server's list replaces the phone's, except for what the guest changed while the sync was on its way.
+      setSaved: (ids, sent) =>
+        set((st) => {
+          const addedSince = st.saved.filter((x) => !sent.add.includes(x) && !ids.includes(x));
+          const removedSince = st.savedRemoved.filter((x) => !sent.remove.includes(x));
+          return { saved: [...addedSince, ...ids.filter((x) => !removedSince.includes(x))], savedRemoved: removedSince };
+        }),
     }),
     {
       name: 'guest-prefs',
@@ -58,6 +73,7 @@ export const usePrefs = create<PrefsState>()(
         currency: s.currency,
         recentSearches: s.recentSearches,
         saved: s.saved,
+        savedRemoved: s.savedRemoved,
         viewed: s.viewed,
         draftGuestName: s.draftGuestName,
       }),

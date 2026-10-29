@@ -331,10 +331,12 @@ type bookingOut struct {
 	DisputeTicketID *string `json:"dispute_ticket_id"`
 	// Dates: whether the guest may move the booking to other dates now (once, same price: see datechange.go), and the dates it first had.
 	// PartiallyRefunded is the part of the payment already returned while the booking stands (a dispute settled in part, or a goodwill credit).
-	PartiallyRefunded int64   `json:"partially_refunded_santim"`
-	CanChangeDates    bool    `json:"can_change_dates"`
-	OriginalCheckIn   *string `json:"original_check_in"`
-	OriginalCheckOut  *string `json:"original_check_out"`
+	PartiallyRefunded int64 `json:"partially_refunded_santim"`
+	CanChangeDates    bool  `json:"can_change_dates"`
+	// A change of dates waiting for its payment (the difference to pay): the new dates and the payment page. Only on the single-booking view.
+	PendingDateChange *pendingChange `json:"pending_date_change"`
+	OriginalCheckIn   *string        `json:"original_check_in"`
+	OriginalCheckOut  *string        `json:"original_check_out"`
 	// CheckInTime and CheckOutTime are the hotel's times (HH:MM, Addis Ababa).
 	CheckInTime  string `json:"check_in_time"`
 	CheckOutTime string `json:"check_out_time"`
@@ -450,7 +452,18 @@ func (s *Server) loadBooking(ctx context.Context, q interface {
 	if err == pgx.ErrNoRows || isBadUUID(err) {
 		return b, errNotFound
 	}
-	return b, err
+	if err != nil {
+		return b, err
+	}
+	if b.Status == "CONFIRMED" {
+		if b.PendingDateChange, err = pendingChangeOf(ctx, q, id); err != nil {
+			return b, err
+		}
+		if b.PendingDateChange != nil {
+			b.CanChangeDates = false
+		}
+	}
+	return b, nil
 }
 
 func (s *Server) getBooking(w http.ResponseWriter, r *http.Request) error {

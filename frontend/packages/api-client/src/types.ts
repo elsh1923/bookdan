@@ -1,6 +1,7 @@
 import type {
   Amenity,
   Booking,
+  DateChangeQuote,
   CheckinLookup,
   CheckinQuery,
   Earnings,
@@ -171,11 +172,26 @@ export interface Api extends AuthApi {
    */
   raiseDispute(bookingId: string, dispute: { reason: DisputeReason; message: string }): Promise<Booking>;
   /**
-   * Moves a confirmed booking to other dates, once, at exactly the same price (booking.can_change_dates says when). Fails with PRICE_DIFFERS
-   * (the message carries the new price: cancel and book again instead), SOLD_OUT, CHANGE_LIMIT, CHANGE_TOO_LATE and NEW_DATES_TOO_SOON
-   * (both check-ins must be more than 48 hours away), NON_REFUNDABLE and COUPON_NO_CHANGE. Returns the updated booking.
+   * What moving a confirmed booking to other dates would do: nothing changes (same_price), the difference goes back (refund), the guest pays the
+   * difference (pay), or the difference is settled at the hotel (reprice). Changes nothing on the server.
    */
-  changeBookingDates(bookingId: string, dates: { check_in: string; check_out: string }): Promise<Booking>;
+  quoteDateChange(bookingId: string, dates: { check_in: string; check_out: string }): Promise<DateChangeQuote>;
+  /**
+   * Moves a confirmed booking to other dates, once (booking.can_change_dates says when). When the price differs, confirm_total_santim must be the new total
+   * from the quote (else PRICE_DIFFERS). A dearer stay does not move yet: the booking comes back with pending_date_change and the page to pay the difference
+   * on, and moves when that payment arrives. Fails with SOLD_OUT, CHANGE_LIMIT, CHANGE_PENDING, CHANGE_TOO_LATE, NEW_DATES_TOO_SOON (both check-ins must be
+   * more than 48 hours away), NON_REFUNDABLE and COUPON_NO_CHANGE. Returns the updated booking.
+   */
+  changeBookingDates(bookingId: string, dates: { check_in: string; check_out: string; confirm_total_santim?: number; method?: PaymentMethod }): Promise<Booking>;
+  /** Starts (or resumes) the payment of a change of dates that waits for it. Returns the booking. */
+  payDateChange(bookingId: string, method?: PaymentMethod): Promise<Booking>;
+  /** Drops a change of dates that waits for its payment; the booking stays as it was. Returns the booking. */
+  cancelDateChange(bookingId: string): Promise<Booking>;
+  /**
+   * Syncs the saved hotels (wishlist) with the server: send the hotel ids saved on the phone and the ones removed since the last sync; the answer is the whole
+   * list the server now holds (newest first), which the phone keeps. Needs a signed-in guest.
+   */
+  syncSaved(change: { add: string[]; remove: string[] }): Promise<string[]>;
   /** Registers this phone for booking updates (the hotel confirmed or declined). Re-sent whenever the token changes. */
   registerPushToken(registration: PushRegistration): Promise<void>;
   /**
