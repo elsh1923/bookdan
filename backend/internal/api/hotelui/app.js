@@ -142,9 +142,12 @@
   }
   function shell(active, title, content) {
     var items = NAV.filter(function (n) { return !n[2] || state.role === 'owner'; });
-    var nav = h('nav', { class: 'side' }, items.map(function (n) {
-      return h('a', { href: n[0], class: n[0] === active ? 'on' : '' }, n[1]);
-    }));
+    var nav = h('nav', { class: 'side' });
+    var SECTIONS = { '#/': 'Today', '#/hotel': 'Manage', '#/earnings': 'Money', '#/help': 'Support' };
+    items.forEach(function (n) {
+      if (SECTIONS[n[0]]) add(nav, h('h4', {}, SECTIONS[n[0]]));
+      add(nav, h('a', { href: n[0], class: n[0] === active ? 'on' : '' }, n[1]));
+    });
     var switcher = null;
     if (state.hotels.length > 1) {
       var sel = h('select', { 'aria-label': 'Hotel', onchange: function () { state.hotelId = sel.value; store('hp-hotel', sel.value); render(); } },
@@ -153,7 +156,7 @@
       switcher = h('div', { class: 'switch' }, h('label', {}, 'Hotel'), sel);
     }
     return h('div', { class: 'layout' },
-      h('aside', {}, h('div', { class: 'brand' }, 'BookDan', h('span', {}, 'Hotel Portal')), switcher, nav,
+      h('aside', {}, h('div', { class: 'brand' }, h('b', {}, 'BookDan', h('span', {}, 'Hotel Portal'))), switcher, nav,
         h('div', { class: 'who' }, h('div', { class: 'soft' }, state.contact), h('div', {}, h('span', { class: 'chip' }, state.role === 'owner' ? 'Owner' : 'Reception')),
           h('button', { class: 'ghost', onclick: signOut }, 'Sign out'))),
       h('main', {}, h('h1', {}, title), content));

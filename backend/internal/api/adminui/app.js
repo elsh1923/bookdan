@@ -131,28 +131,38 @@
     return h('div', {}, box);
   }
 
-  // ---- shell
-  function shell(content) {
-    return h('div', {},
-      h('header', { class: 'top' },
-        h('span', { class: 'brand' }, 'BookDan Admin'),
-        h('span', { class: 'who' }, state.contact, ' ', h('span', { class: 'chip' }, state.role === 'admin' ? { super: 'Super admin', support: 'Support', finance: 'Finance' }[state.adminRole] || 'Platform admin' : 'Hotel owner'),
-          state.role === 'admin' && !state.mustChange ? h('button', { class: 'ghost', onclick: function () { go('#/account'); } }, 'My account') : null,
-          h('button', { class: 'ghost', onclick: signOut }, 'Sign out'))),
-      h('main', {}, content));
+  // ---- shell: a navy sidebar with the pages this person's role may open (the server checks the role again on every request), and the page beside it
+  function navGroups() {
+    if (state.role !== 'admin') return [['', [['Hotels', '#/', null]]]];
+    return [
+      ['Hotels', [['All hotels', '#/', null], ['Add a hotel', '#/new', 'hotels_write'], ['Applications', '#/applications', 'applications'], ['Hotel changes', '#/activity', 'admins']]],
+      ['Guests', [['Support', '#/support', 'support'], ['Reviews', '#/reviews', 'reviews'], ['Payment issues', '#/issues', 'finance']]],
+      ['Money', [['Payouts', '#/payouts', 'finance'], ['Coupons', '#/coupons', null], ['Rates', '#/rates', null]]],
+      ['Insights', [['Analytics', '#/analytics', null], ['Calls', '#/calls', null]]],
+      ['Settings', [['Admins', '#/admins', 'admins'], ['My account', '#/account', null]]]
+    ];
   }
-
-  // The tabs a platform admin sees: only what their role may open (the server checks it again on every request).
-  function navButtons() {
-    var tabs = [['Coupons', '#/coupons', null], ['Payouts', '#/payouts', 'finance'], ['Payment issues', '#/issues', 'finance'], ['Support', '#/support', 'support'], ['Reviews', '#/reviews', 'reviews'],
-      ['Rates', '#/rates', null], ['Calls', '#/calls', null], ['Analytics', '#/analytics', null], ['Applications', '#/applications', 'applications'], ['Hotel changes', '#/activity', 'admins'], ['Admins', '#/admins', 'admins']];
-    var span = h('span', {});
-    tabs.forEach(function (t) {
-      if (t[2] && !can(t[2])) return;
-      add(span, h('button', { class: 'secondary', onclick: function () { go(t[1]); } }, t[0]), ' ');
+  // which sidebar link a page belongs to (a hotel's page and a support request open from their lists)
+  function activeNav() {
+    var hsh = location.hash || '#/';
+    if (hsh.indexOf('#/hotel/') === 0) return '#/';
+    if (hsh.indexOf('#/support/') === 0) return '#/support';
+    return hsh;
+  }
+  function shell(content) {
+    var active = activeNav();
+    var nav = h('nav', { class: 'side' });
+    navGroups().forEach(function (g) {
+      var links = g[1].filter(function (l) { return !l[2] || can(l[2]); });
+      if (!links.length || (state.mustChange && g[0] !== 'Settings')) return;
+      if (g[0]) add(nav, h('h4', {}, g[0]));
+      links.forEach(function (l) { add(nav, h('a', { href: l[1], class: l[1] === active ? 'on' : '' }, l[0])); });
     });
-    if (can('hotels_write')) add(span, h('button', { onclick: function () { go('#/new'); } }, 'Add a hotel'));
-    return span;
+    var roleName = state.role === 'admin' ? { super: 'Super admin', support: 'Support', finance: 'Finance' }[state.adminRole] || 'Platform admin' : 'Hotel owner';
+    return h('div', { class: 'layout' },
+      h('aside', {}, h('div', { class: 'brand' }, h('b', {}, 'BookDan', h('span', {}, 'Admin'))), nav,
+        h('div', { class: 'who' }, h('div', { class: 'soft' }, state.contact), h('div', {}, h('span', { class: 'chip' }, roleName)), h('button', { class: 'ghost', onclick: signOut }, 'Sign out'))),
+      h('main', {}, content));
   }
 
   // ---- hotel list
@@ -164,14 +174,15 @@
       res.items.forEach(function (x) {
         add(holder, h('div', { class: 'card hotel', tabindex: '0', onclick: function () { go('#/hotel/' + x.id); },
           onkeydown: function (e) { if (e.key === 'Enter') go('#/hotel/' + x.id); } },
-          h('div', { class: 'row between' },
-            h('div', {}, h('h3', {}, x.name), h('div', { class: 'soft' }, x.city + ' · ' + x.type + ' · ' + x.room_types + ' room type' + (x.room_types === 1 ? '' : 's') + ' · ' + x.photos + ' photo' + (x.photos === 1 ? '' : 's'))),
-            h('span', { class: 'chip ' + x.status }, x.status === 'active' ? 'Published' : x.status === 'draft' ? 'Draft' : 'Hidden'))));
+          h('div', { class: 'avatar' }, (x.name || '?').trim().charAt(0).toUpperCase()),
+          h('div', { class: 'grow' }, h('h3', {}, x.name), h('div', { class: 'soft' }, x.city + ' · ' + x.type + ' · ' + x.room_types + ' room type' + (x.room_types === 1 ? '' : 's') + ' · ' + x.photos + ' photo' + (x.photos === 1 ? '' : 's'))),
+          h('span', { class: 'chip ' + x.status }, x.status === 'active' ? 'Published' : x.status === 'draft' ? 'Draft' : 'Hidden'),
+          h('span', { class: 'go', 'aria-hidden': 'true' }, '→')));
       });
     }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
     return shell(h('div', {},
-      h('div', { class: 'row between' }, h('h1', {}, 'Hotels'),
-        state.role === 'admin' ? navButtons() : null),
+      h('div', { class: 'pagehead' }, h('div', {}, h('h1', {}, 'Hotels'), h('p', {}, state.role === 'admin' ? 'Every hotel on BookDan. Open one to manage its rooms, prices, photos and team.' : 'Your hotels.')),
+        can('hotels_write') ? h('button', { onclick: function () { go('#/new'); } }, '+ Add a hotel') : null),
       holder));
   }
 
