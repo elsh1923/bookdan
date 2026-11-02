@@ -129,6 +129,7 @@ func (s *Server) Routes(root chi.Router) {
 			r.Get("/bookings/{id}/voucher", s.h(s.voucher))
 			r.Put("/me/devices/push-token", s.h(s.registerPushToken("guest")))
 			r.Get("/me/profile", s.h(s.getProfile))
+			r.Get("/me/loyalty", s.h(s.getLoyalty))
 			r.Put("/me/profile", s.h(s.putProfile))
 			r.Delete("/me/profile", s.h(s.deleteProfile))
 			r.Delete("/me/account", s.h(s.deleteAccount))

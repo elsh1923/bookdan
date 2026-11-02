@@ -13,6 +13,7 @@ import {
   PartnerReviewListSchema,
   StatementListSchema,
   PaymentSessionSchema,
+  LoyaltySchema,
   PropertyDetailSchema,
   QuoteSchema,
   RatesSchema,
@@ -183,6 +184,7 @@ export function createHttpApi(options: HttpOptions): Api {
       return all;
     },
     getProfile: async () => (await request('GET', '/me/profile', ProfileEnvelope)).profile,
+    getLoyalty: () => request('GET', '/me/loyalty', LoyaltySchema),
     saveProfile: async (input) => {
       const r = await request('PUT', '/me/profile', ProfileEnvelope, input);
       if (!r.profile) throw new ApiError('SERVER', 'The server did not return the saved profile');

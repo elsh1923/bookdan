@@ -387,7 +387,7 @@ export default function Checkout() {
                 <Row label={t('checkout.vat')} value={price(q.vat_santim, q.currency)} />
                 <View style={{ height: 1, backgroundColor: colors.line, marginTop: spacing.md }} />
                 <Row strong label={t('checkout.total')} value={price(q.total_santim, q.currency)} />
-                {q.discount_santim > 0 ? <T variant="small" color={colors.success} style={{ textAlign: 'right', marginTop: spacing.xs }}>{t('checkout.coupon_saved', { amount: price(q.discount_santim, q.currency) })}</T> : null}
+                {q.discount_santim > 0 ? <T variant="small" color={colors.success} style={{ textAlign: 'right', marginTop: spacing.xs }}>{q.coupon_code || !q.member_tier ? t('checkout.coupon_saved', { amount: price(q.discount_santim, q.currency) }) : t('loyalty.member_saved', { tier: t(`loyalty.tier_${q.member_tier}`, { defaultValue: q.member_tier }), amount: price(q.discount_santim, q.currency) })}</T> : null}
                 {step === 2 ? <View style={{ marginTop: spacing.lg }}><PolicyCard meal={q.meal} refundable={q.refundable} /></View> : null}
 
                 <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center', marginTop: spacing.lg }}>

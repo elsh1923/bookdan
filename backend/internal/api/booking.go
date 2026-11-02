@@ -143,6 +143,8 @@ type quoteOut struct {
 	CouponCode *string `json:"coupon_code"`
 	Discount   int64   `json:"discount_santim"`
 	ListTotal  int64   `json:"list_total_santim"`
+	// The member tier that gave the discount (null when a coupon or nothing applied).
+	MemberTier *string `json:"member_tier"`
 	// The hotel's first photo (a small copy, empty when it has none) and its check-in and check-out times, for the review screen.
 	PhotoURL     *string `json:"photo_url"`
 	CheckInTime  string  `json:"check_in_time"`
@@ -226,11 +228,23 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 	}
 	var coupon *couponRule
 	var disc func(int64) (int64, error)
+	var memberTier *string
 	if strings.TrimSpace(in.CouponCode) != "" {
 		if coupon, err = s.loadCoupon(ctx, s.pool, claimsFrom(r).Sub, in.CouponCode, in.PropertyID, false); err != nil {
 			return err
 		}
 		disc = coupon.discount
+	} else {
+		// A member discount applies when there is no coupon. It comes off the room charges, the way a coupon does.
+		bp, tier, err := s.memberDiscount(ctx, claimsFrom(r).Sub)
+		if err != nil {
+			return err
+		}
+		if bp > 0 {
+			rate := int64(bp)
+			disc = func(base int64) (int64, error) { return (base*rate + 5000) / 10000, nil }
+			memberTier = tier
+		}
 	}
 	price, err := s.priceStay(ctx, s.pool, in.RoomTypeID, in.CheckIn, in.CheckOut, in.Rooms, opt, disc)
 	if err != nil {
@@ -259,7 +273,8 @@ func (s *Server) createQuote(w http.ResponseWriter, r *http.Request) error {
 		CheckIn: in.CheckIn, CheckOut: in.CheckOut, Nights: len(price.Nights), Guests: in.Guests, Rooms: in.Rooms, RoomsAvailable: left,
 		Nightly: price.Nightly, Subtotal: price.Base + price.Service, VAT: price.VAT, Total: price.Total, Currency: price.Currency,
 		// A booking with a coupon is paid online: nobody could fund the discount on money collected at the hotel.
-		PayAtHotel: payAtHotel && coupon == nil,
+		PayAtHotel: payAtHotel && coupon == nil && memberTier == nil,
+		MemberTier: memberTier,
 		Meal:       opt.Meal, Refundable: opt.Refundable, CouponCode: couponCode, Discount: price.Discount, ListTotal: price.Total + price.Discount, Children: in.Children,
 		PhotoURL: photoLink(s, coverID), CheckInTime: checkInTime, CheckOutTime: checkOutTime,
 	})

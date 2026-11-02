@@ -232,6 +232,17 @@ const am: Resources = {
     address: 'አድራሻ',
     total_for: 'ለ{{nights}}',
   },
+  loyalty: {
+    title: 'የአባልነት ደረጃዎ',
+    none_yet: 'ገና አባል አይደሉም',
+    tier_bronze: 'ነሐስ',
+    tier_silver: 'ብር',
+    tier_gold: 'ወርቅ',
+    hotels_count: 'በ{{count}} የተለያዩ ሆቴሎች ቆይተዋል',
+    discount: 'በመስመር ላይ በሚከፍሉት እያንዳንዱ ቦታ ማስያዝ {{percent}}% ይቆጥቡ',
+    to_next: 'ወደ {{tier}} ለመድረስ ተጨማሪ {{count}} ሆቴሎች',
+    member_saved: '{{tier}} አባል፦ {{amount}} ይቆጥባሉ',
+  },
   bookings: {
     title: 'ቦታ ማስያዣዎቼ',
     upcoming: 'የሚመጡ',

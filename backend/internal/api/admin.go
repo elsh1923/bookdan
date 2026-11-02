@@ -230,6 +230,8 @@ func (s *Server) adminRoutes(r chi.Router) {
 		r.Get("/admin/calls", s.h(s.adminCalls))
 		r.With(super).Get("/admin/activity", s.h(s.adminActivity))
 		r.Get("/admin/rates", s.h(s.adminRates))
+		r.Get("/admin/loyalty", s.h(s.adminLoyalty))
+		r.With(super).Put("/admin/loyalty", s.h(s.adminSetLoyalty))
 
 		r.With(super).Post("/admin/hotels", s.h(s.adminCreateHotel))
 		r.With(super).Put("/admin/hotels/{id}", s.h(s.adminUpdateHotel))

@@ -137,7 +137,7 @@
     return [
       ['Hotels', [['All hotels', '#/', null], ['Add a hotel', '#/new', 'hotels_write'], ['Applications', '#/applications', 'applications'], ['Hotel changes', '#/activity', 'admins']]],
       ['Guests', [['Support', '#/support', 'support'], ['Reviews', '#/reviews', 'reviews'], ['Payment issues', '#/issues', 'finance']]],
-      ['Money', [['Payouts', '#/payouts', 'finance'], ['Coupons', '#/coupons', null], ['Rates', '#/rates', null]]],
+      ['Money', [['Payouts', '#/payouts', 'finance'], ['Coupons', '#/coupons', null], ['Member tiers', '#/loyalty', null], ['Rates', '#/rates', null]]],
       ['Insights', [['Analytics', '#/analytics', null], ['Calls', '#/calls', null]]],
       ['Settings', [['Admins', '#/admins', 'admins'], ['My account', '#/account', null]]]
     ];
@@ -646,6 +646,40 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     if (c.starts_on || c.ends_on) bits.push((c.starts_on || '…') + ' to ' + (c.ends_on || '…'));
     bits.push(c.property_name || 'every hotel');
     return bits.join(' · ');
+  }
+
+  // Member tiers: a guest moves up by the number of different hotels they have finished a stay at.
+  // Only a super admin can change them; other admins see them.
+  function loyaltyView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
+    var canEdit = state.adminRole === 'super';
+    function load() {
+      call('GET', '/admin/loyalty').then(function (res) {
+        clear(holder);
+        add(holder, h('p', { class: 'soft' }, 'A guest moves up when they have finished stays at this many different hotels. The discount comes off the room price at checkout when they pay online and use no coupon. BookDan pays it, and the hotel keeps its full share.'));
+        var out = h('div', {});
+        var rows = res.tiers.map(function (t) {
+          return { name: h('input', { value: t.name, disabled: !canEdit }), min: h('input', { value: String(t.min_hotels), inputmode: 'numeric', style: 'width:110px', disabled: !canEdit }), pct: h('input', { value: String(t.discount_bps / 100), inputmode: 'decimal', style: 'width:110px', disabled: !canEdit }) };
+        });
+        var table = h('table', {}, h('thead', {}, h('tr', {}, ['Tier name', 'Different hotels to reach it', 'Discount (%)'].map(function (x) { return h('th', {}, x); }))));
+        var body = h('tbody', {});
+        rows.forEach(function (r) { add(body, h('tr', {}, h('td', {}, r.name), h('td', {}, r.min), h('td', {}, r.pct))); });
+        add(table, body);
+        add(holder, h('div', { style: 'overflow-x:auto' }, table));
+        if (canEdit) {
+          var save = h('button', { type: 'button', onclick: function () {
+            save.disabled = true; clear(out);
+            var tiers = rows.map(function (r) { return { name: r.name.value.trim(), min_hotels: parseInt(r.min.value, 10), discount_bps: Math.round(parseFloat(r.pct.value) * 100) }; });
+            call('PUT', '/admin/loyalty', { tiers: tiers }).then(function () { add(out, msg('ok', 'Saved.')); save.disabled = false; }, function (err) { save.disabled = false; add(out, msg('err', err.message)); });
+          } }, 'Save tiers');
+          add(holder, h('div', { class: 'field' }, save), out);
+        } else {
+          add(holder, h('p', { class: 'muted' }, 'Only a super admin can change the tiers.'));
+        }
+      }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    load();
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Member tiers'), holder));
   }
 
   function couponsView() {
@@ -1235,6 +1269,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     else if (location.hash === '#/new' && can('hotels_write')) add(app, newView());
     else if (location.hash === '#/payouts' && can('finance')) add(app, payoutsView());
     else if (location.hash === '#/coupons' && state.role === 'admin') add(app, couponsView());
+    else if (location.hash === '#/loyalty' && state.role === 'admin') add(app, loyaltyView());
     else if (location.hash === '#/issues' && can('finance')) add(app, issuesView());
     else if (location.hash === '#/support' && can('support')) add(app, supportView());
     else if (location.hash === '#/rates' && state.role === 'admin') add(app, ratesView());

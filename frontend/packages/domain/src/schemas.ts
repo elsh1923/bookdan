@@ -204,6 +204,8 @@ export const QuoteSchema = z.object({
   photo_url: z.string().nullable().default(null),
   check_in_time: z.string().default('14:00'),
   check_out_time: z.string().default('12:00'),
+  /** The member tier that gave the discount (null when a coupon or nothing applied). */
+  member_tier: z.string().nullable().default(null),
   server_time: z.string(),
 });
 
@@ -397,3 +399,14 @@ export const RatesSchema = z.object({
   server_time: z.string(),
 });
 export type Rates = z.infer<typeof RatesSchema>;
+
+/** The guest's member level: the tier held (null before the first finished stay), hotels stayed at, and what is next. */
+export const LoyaltySchema = z.object({
+  tier: z.string().nullable(),
+  hotels: z.number().int(),
+  discount_bps: z.number().int(),
+  next_tier: z.string().nullable(),
+  hotels_to_next: z.number().int(),
+  server_time: z.string(),
+});
+export type Loyalty = z.infer<typeof LoyaltySchema>;

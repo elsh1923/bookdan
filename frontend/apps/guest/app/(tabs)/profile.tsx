@@ -8,6 +8,7 @@ import { currencyInfo, maskId } from '@bookdan/domain';
 import { Badge, Button, Chip, PressableScale, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
 import { useAuth } from '../../src/auth';
+import { LoyaltyCard } from '../../src/LoyaltyCard';
 import { useProfile } from '../../src/queries';
 import { signOutAndWipe } from '../../src/session';
 import { useDisplay } from '../../src/display';
@@ -42,6 +43,8 @@ export default function Profile() {
   return (
     <SafeAreaView style={{ flex: 1, padding: spacing.lg }} edges={['top']}>
       <Reveal><T variant="h1">{t('profile.title')}</T></Reveal>
+
+      {identity ? <LoyaltyCard /> : null}
 
       {identity ? (
         <Reveal index={1}>

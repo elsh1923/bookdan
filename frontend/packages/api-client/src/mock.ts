@@ -296,6 +296,11 @@ export function createMockApi(opts: MockOptions = {}): Api {
       return q;
     },
 
+    async getLoyalty() {
+      await gate();
+      return { server_time: new Date().toISOString(), tier: null, hotels: 0, discount_bps: 0, next_tier: 'bronze', hotels_to_next: 1 };
+    },
+
     async getProfile() {
       await gate();
       const p = profiles.get(identityOf());

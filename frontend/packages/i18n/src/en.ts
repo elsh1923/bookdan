@@ -229,6 +229,17 @@ const en = {
     address: 'Address',
     total_for: 'for {{nights}}',
   },
+  loyalty: {
+    title: 'Your member level',
+    none_yet: 'Not a member yet',
+    tier_bronze: 'Bronze',
+    tier_silver: 'Silver',
+    tier_gold: 'Gold',
+    hotels_count: 'You have stayed at {{count}} different hotels',
+    discount: 'Save {{percent}}% on every booking paid online',
+    to_next: '{{count}} more hotels to reach {{tier}}',
+    member_saved: '{{tier}} member: you save {{amount}}',
+  },
   bookings: {
     title: 'My bookings',
     upcoming: 'Upcoming',

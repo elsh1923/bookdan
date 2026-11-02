@@ -54,6 +54,10 @@ export function useQuote(p: CreateQuoteParams, enabled: boolean) {
 }
 
 /** The guest's saved name and ID (the ID masked to its last four characters), or null if they have not saved any. */
+export function useLoyalty(enabled: boolean) {
+  return useQuery({ queryKey: ['loyalty'], queryFn: () => api.getLoyalty(), enabled, staleTime: 60_000 });
+}
+
 export function useProfile(enabled: boolean) {
   return useQuery({ queryKey: ['profile'], queryFn: () => api.getProfile(), enabled, staleTime: 60_000 });
 }

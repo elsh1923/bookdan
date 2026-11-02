@@ -9,6 +9,7 @@ import type {
   RoomBlock,
   RoomsChart,
   DeclineReason,
+  Loyalty,
   HotelDispute,
   HotelProblemReason,
   PartnerReview,
@@ -141,6 +142,8 @@ export interface Api extends AuthApi {
   listBookings(): Promise<Booking[]>;
   /** The guest's own saved details, or null if none yet. The ID number comes back masked (last four only). */
   getProfile(): Promise<GuestProfile | null>;
+  /** The guest's member level and how far to the next one. */
+  getLoyalty(): Promise<Loyalty>;
   /** Saves the guest's name, ID and nationality. Fails with INVALID_ID for a number that cannot be an ID. */
   saveProfile(input: GuestProfileInput): Promise<GuestProfile>;
   /** Removes the guest's saved ID details. */
