@@ -233,9 +233,12 @@ func (s *Server) adminRoutes(r chi.Router) {
 
 		r.With(super).Post("/admin/hotels", s.h(s.adminCreateHotel))
 		r.With(super).Put("/admin/hotels/{id}", s.h(s.adminUpdateHotel))
-		r.With(super).Post("/admin/hotels/{id}/rooms", s.h(s.adminCreateRoom))
-		r.With(super).Put("/admin/hotels/{id}/rooms/{room}", s.h(s.adminUpdateRoom))
-		r.With(super).Put("/admin/hotels/{id}/rooms/{room}/price", s.h(s.adminSetPrice))
+		// Hotel owners manage their own rooms and prices (the handlers check that the hotel is theirs).
+		superOrOwner := s.allow() // platform admins with the super role, and hotel owners (the handlers keep owners to their own hotel)
+		r.With(superOrOwner).Post("/admin/hotels/{id}/rooms", s.h(s.adminCreateRoom))
+		r.With(superOrOwner).Put("/admin/hotels/{id}/rooms/{room}", s.h(s.adminUpdateRoom))
+		r.With(superOrOwner).Delete("/admin/hotels/{id}/rooms/{room}", s.h(s.adminDeleteRoom))
+		r.With(superOrOwner).Put("/admin/hotels/{id}/rooms/{room}/price", s.h(s.adminSetPrice))
 		r.With(super).Post("/admin/hotels/{id}/photos", s.h(s.adminUploadPhoto))
 		r.With(super).Post("/admin/hotels/{id}/rooms/{room}/photos", s.h(s.adminUploadRoomPhoto))
 		r.With(super).Post("/admin/hotels/{id}/photos/{photo}/cover", s.h(s.adminCoverPhoto))
@@ -248,8 +251,9 @@ func (s *Server) adminRoutes(r chi.Router) {
 		r.With(super).Post("/admin/applications/{id}/reject", s.h(s.adminRejectApplication))
 		r.With(super).Put("/admin/hotels/{id}/alerts", s.h(s.adminSetAlertRules))
 		r.With(super).Put("/admin/hotels/{id}/staff/{user}/alerts", s.h(s.adminSetStaffAlerts))
-		r.With(super).Post("/admin/hotels/{id}/staff", s.h(s.adminAddStaff))
-		r.With(super).Delete("/admin/hotels/{id}/staff/{user}", s.h(s.adminRemoveStaff))
+		// Owners add and remove their own hotel's receptionists; the handlers keep owners to platform admins.
+		r.With(superOrOwner).Post("/admin/hotels/{id}/staff", s.h(s.adminAddStaff))
+		r.With(superOrOwner).Delete("/admin/hotels/{id}/staff/{user}", s.h(s.adminRemoveStaff))
 
 		r.With(support).Get("/admin/support/tickets", s.h(s.adminTickets))
 		r.With(support).Get("/admin/support/tickets/{id}", s.h(s.adminGetTicket))

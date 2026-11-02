@@ -935,3 +935,37 @@ func isUnique(err error) bool {
 	}
 	return pe != nil && pe.SQLState() == "23505"
 }
+
+// adminDeleteRoom removes a room type. A room that has ever been booked or blocked is kept: its bookings and money records must stay
+// as they are, and the database would otherwise delete them along with the room. Its rooms can be set to zero instead.
+func (s *Server) adminDeleteRoom(w http.ResponseWriter, r *http.Request) error {
+	id, room := chi.URLParam(r, "id"), chi.URLParam(r, "room")
+	if err := s.canManage(r, id); err != nil {
+		return err
+	}
+	err := s.tx(r.Context(), func(tx pgx.Tx) error {
+		var used int
+		if err := tx.QueryRow(r.Context(), `SELECT (SELECT count(*) FROM bookings WHERE room_type_id = $1) + (SELECT count(*) FROM room_blocks WHERE room_type_id = $1)`, room).Scan(&used); err != nil {
+			return err
+		}
+		if used > 0 {
+			return fail(http.StatusConflict, codeInvalidState, "This room has bookings or blocks, so it cannot be removed")
+		}
+		tag, err := tx.Exec(r.Context(), `DELETE FROM room_types WHERE id = $1 AND property_id = $2`, room, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errNotFound
+		}
+		return s.adminAudit(r, tx, "admin_room_removed", id, map[string]any{"room_type_id": room})
+	})
+	if err != nil {
+		if isBadUUID(err) {
+			return errNotFound
+		}
+		return err
+	}
+	respond(w, http.StatusOK, httpx.NowMeta())
+	return nil
+}

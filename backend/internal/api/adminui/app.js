@@ -344,7 +344,8 @@
             if (!isNaN(p) && p * 100 !== r.price_santim) return call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + r.id + '/price', { price_santim: p * 100 });
           }).then(function () { reload(); }, function (err) { btn.disabled = false; add(out, msg('err', r.name + ': ' + err.message)); });
         } }, 'Save');
-        add(body, h('tr', {}, h('td', {}, name), h('td', {}, cap), h('td', {}, total), h('td', {}, feat), h('td', {}, price), h('td', {}, bf), h('td', {}, nr), h('td', {}, btn, ' ', pbtn)));
+var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove "' + r.name + '"? Only a room that has never been booked can be removed.')) call('DELETE', '/admin/hotels/' + hotel.id + '/rooms/' + r.id).then(reload, function (err) { add(out, msg('err', r.name + ': ' + err.message)); }); } }, 'Remove');
+        add(body, h('tr', {}, h('td', {}, name), h('td', {}, cap), h('td', {}, total), h('td', {}, feat), h('td', {}, price), h('td', {}, bf), h('td', {}, nr), h('td', {}, btn, ' ', pbtn, ' ', del)));
         add(body, photosRow);
       });
       add(table, body);
