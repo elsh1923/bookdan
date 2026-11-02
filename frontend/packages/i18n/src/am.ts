@@ -107,6 +107,7 @@ const am: Resources = {
   },
   results: {
     tag_breakfast: 'ቁርስ ይገኛል',
+    best_price: 'በዚህ ውጤት ውስጥ ዝቅተኛው ዋጋ',
     other_dates_title: 'የሚሆኑ ሌሎች ቀናት',
     other_dates_hint: 'እነዚህ ሆቴሎች ለመረጡት ቀናት ሞልተዋል፣ ግን በሌሎች ቀናት ክፍል አላቸው። ማረፊያ ይንኩ።',
     tag_deals: 'ርካሽ የማይመለስ ዋጋ',

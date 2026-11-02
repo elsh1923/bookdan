@@ -164,6 +164,11 @@ export default function Results() {
   );
   const query = useSearch(criteria);
   const items = query.data?.pages.flatMap((pg) => pg.items) ?? [];
+  // The lowest price among the hotels loaded so far: shown only when it is strictly below the next one, so it means something.
+  const bestPriceId = useMemo(() => {
+    const open = items.filter((i) => i.available).sort((a, b) => a.from_price_santim - b.from_price_santim);
+    return open.length >= 2 && open[0].from_price_santim < open[1].from_price_santim ? open[0].id : null;
+  }, [items]);
   const total = query.data?.pages[0]?.total ?? items.length;
   // Hotels that are full for these dates but can offer nearby dates (the first page carries the list).
   const otherDates = query.data?.pages[0]?.other_dates ?? [];
@@ -274,7 +279,7 @@ export default function Results() {
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ padding: spacing.lg }}
           renderItem={({ item, index }) => (
-            <Reveal index={index}><PropertyCard item={item} onPress={() => router.push({ pathname: '/property/[id]', params: { id: item.id, in: p.in, out: p.out, guests: p.guests, children: p.children ?? '0', rooms: p.rooms ?? '1' } })} /></Reveal>
+            <Reveal index={index}><PropertyCard item={item} bestPrice={item.id === bestPriceId} onPress={() => router.push({ pathname: '/property/[id]', params: { id: item.id, in: p.in, out: p.out, guests: p.guests, children: p.children ?? '0', rooms: p.rooms ?? '1' } })} /></Reveal>
           )}
           onEndReached={() => query.hasNextPage && !query.isFetchingNextPage && query.fetchNextPage()}
           onEndReachedThreshold={0.5}

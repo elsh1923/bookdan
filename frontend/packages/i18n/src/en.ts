@@ -104,6 +104,7 @@ const en = {
   },
   results: {
     tag_breakfast: 'Breakfast available',
+    best_price: 'Lowest price in these results',
     other_dates_title: 'Other dates that work',
     other_dates_hint: 'These hotels are full for your dates, but have rooms on other days. Tap a stay to see it.',
     tag_deals: 'Cheaper non-refundable rate',

@@ -12,7 +12,7 @@ import { useDisplay } from './display';
 const LOW_STOCK = 3; // "Only 3 left" appears at this many rooms or fewer
 
 /** One hotel in the results: photo, score, name, how far from a landmark, rooms left, and the price per night. */
-export function PropertyCard({ item, onPress }: { item: SearchItem; onPress: () => void }) {
+export function PropertyCard({ item, bestPrice, onPress }: { item: SearchItem; bestPrice?: boolean; onPress: () => void }) {
   useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
   const saved = usePrefs((s) => s.saved.includes(item.id));
@@ -26,6 +26,12 @@ export function PropertyCard({ item, onPress }: { item: SearchItem; onPress: () 
       <PressableScale onPress={onPress} accessibilityRole="button" accessibilityLabel={item.name} scaleTo={0.99}>
         <View>
           <Photo uri={item.photo_url} accent={item.accent} name={item.name} style={{ width: '100%', aspectRatio: 4 / 3 }} />
+          {/* Lowest price among the results on screen (only when it is strictly lower than the next hotel). */}
+          {bestPrice ? (
+            <View style={{ position: 'absolute', right: spacing.md, bottom: spacing.md, backgroundColor: 'rgba(22,101,52,0.95)', borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 }}>
+              <T variant="label" color="#FFFFFF">{t('results.best_price')}</T>
+            </View>
+          ) : null}
           {/* Rooms-left badge on the photo, so the scarcity is seen before the card is opened. */}
           {low ? (
             <View accessibilityLabel={t('results.rooms_left', { count: item.rooms_left })} style={{ position: 'absolute', left: spacing.md, bottom: spacing.md, backgroundColor: 'rgba(184,67,47,0.95)', borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 }}>
