@@ -26,6 +26,12 @@ export function PropertyCard({ item, onPress }: { item: SearchItem; onPress: () 
       <PressableScale onPress={onPress} accessibilityRole="button" accessibilityLabel={item.name} scaleTo={0.99}>
         <View>
           <Photo uri={item.photo_url} accent={item.accent} name={item.name} style={{ width: '100%', aspectRatio: 4 / 3 }} />
+          {/* Rooms-left badge on the photo, so the scarcity is seen before the card is opened. */}
+          {low ? (
+            <View accessibilityLabel={t('results.rooms_left', { count: item.rooms_left })} style={{ position: 'absolute', left: spacing.md, bottom: spacing.md, backgroundColor: 'rgba(184,67,47,0.95)', borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 }}>
+              <T variant="label" color="#FFFFFF">{t('results.rooms_left', { count: item.rooms_left })}</T>
+            </View>
+          ) : null}
           {item.badge === 'verified' ? (
             <View style={{ position: 'absolute', top: spacing.md, left: spacing.md, backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 }}>
               <T variant="label" color={colors.primaryInk}>✓ {t('property.verified')}</T>
@@ -70,7 +76,7 @@ export function PropertyCard({ item, onPress }: { item: SearchItem; onPress: () 
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.md }}>
             <View style={{ flexShrink: 1 }}>
               {item.available ? (
-                low ? <T variant="label" color={colors.danger}>⚑ {t('results.rooms_left', { count: item.rooms_left })}</T> : null
+                null
               ) : (
                 <T variant="label" color={colors.danger}>✕ {t('results.sold_out')}</T>
               )}
