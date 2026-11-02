@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo } from 'react';
-import { RefreshControl, SectionList, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { FlatList, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Booking } from '@bookdan/domain';
 import { todayAddis } from '@bookdan/domain';
 import { splitBookings } from '../../src/bookingHistory';
 import { useTranslation } from '@bookdan/i18n';
-import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
+import { Chip, EmptyState, PressableScale, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { useAuth } from '../../src/auth';
 import { priceExact as price, shortDate } from '../../src/format';
 import { useBookings } from '../../src/queries';
@@ -14,7 +14,9 @@ import { StatusBadge } from '../../src/StatusBadge';
 import { pruneVouchers } from '../../src/voucherStore';
 import { useDisplay } from '../../src/display';
 
-// The guest's bookings: the stays to come first, then the history of past stays.
+type Tab = 'upcoming' | 'past' | 'cancelled' | 'failed';
+
+// The guest's bookings in four tabs: upcoming, completed, cancelled and failed.
 export default function Bookings() {
   useDisplay((st) => st.version); // redraw when the display currency changes
   const { t, i18n } = useTranslation();
@@ -27,13 +29,22 @@ export default function Bookings() {
     if (query.data) pruneVouchers(query.data).catch(() => undefined);
   }, [query.data]);
 
-  const sections = useMemo(() => {
-    const { upcoming, past } = splitBookings(query.data ?? [], todayAddis());
-    return [
-      { key: 'upcoming', title: t('bookings.upcoming'), data: upcoming },
-      { key: 'past', title: t('bookings.past'), data: past },
-    ].filter((s) => s.data.length > 0);
-  }, [query.data, t]);
+  // One tab at a time: upcoming, completed, cancelled, failed.
+  const [tab, setTab] = useState<Tab>('upcoming');
+  const groups = useMemo(() => splitBookings(query.data ?? [], todayAddis()), [query.data]);
+  const shown = groups[tab];
+  const tabs: { key: Tab; label: string; count: number }[] = [
+    { key: 'upcoming', label: t('bookings.upcoming'), count: groups.upcoming.length },
+    { key: 'past', label: t('bookings.completed'), count: groups.past.length },
+    { key: 'cancelled', label: t('bookings.cancelled'), count: groups.cancelled.length },
+    { key: 'failed', label: t('bookings.failed'), count: groups.failed.length },
+  ];
+  const emptyText: Record<Tab, { title: string; body: string }> = {
+    upcoming: { title: t('bookings.empty_title'), body: t('bookings.empty_body') },
+    past: { title: t('bookings.empty_completed'), body: t('bookings.empty_completed_body') },
+    cancelled: { title: t('bookings.empty_cancelled'), body: t('bookings.empty_cancelled_body') },
+    failed: { title: t('bookings.empty_failed'), body: t('bookings.empty_failed_body') },
+  };
 
   const title = <T variant="h1" style={{ padding: spacing.lg }}>{t('bookings.title')}</T>;
 
@@ -62,18 +73,21 @@ export default function Bookings() {
       ) : query.isError ? (
         <EmptyState icon="⚠️" title={t('bookings.error_title')} body={t('results.error_body')} actionLabel={t('common.retry')} onAction={() => query.refetch()} />
       ) : (
-        <SectionList
-          sections={sections}
+        <FlatList
+          data={shown}
           keyExtractor={(b) => b.id}
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
-          stickySectionHeadersEnabled={false}
           refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} tintColor={colors.primary} />}
-          ListEmptyComponent={
-            <EmptyState icon="🎫" title={t('bookings.empty_title')} body={t('bookings.empty_body')} actionLabel={t('bookings.find')} onAction={() => router.navigate('/')} />
+          ListHeaderComponent={
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}>
+              {tabs.map((x) => (
+                <Chip key={x.key} label={`${x.label} (${x.count})`} selected={tab === x.key} onPress={() => setTab(x.key)} />
+              ))}
+            </ScrollView>
           }
-          renderSectionHeader={({ section }) => (
-            <T variant="h3" color={colors.inkSoft} style={{ marginTop: spacing.md, marginBottom: spacing.sm }}>{section.title}</T>
-          )}
+          ListEmptyComponent={
+            <EmptyState icon="🎫" title={emptyText[tab].title} body={emptyText[tab].body} actionLabel={tab === 'upcoming' ? t('bookings.find') : undefined} onAction={tab === 'upcoming' ? () => router.navigate('/') : undefined} />
+          }
           renderItem={({ item: b, index }) => (
             <Reveal index={index}>
             <PressableScale
