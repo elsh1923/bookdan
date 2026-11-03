@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, ScrollView, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Booking } from '@bookdan/domain';
 import { todayAddis } from '@bookdan/domain';
@@ -79,10 +79,17 @@ export default function Bookings() {
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} tintColor={colors.primary} />}
           ListHeaderComponent={
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}>
-              {tabs.map((x) => (
-                <Chip key={x.key} label={`${x.label} (${x.count})`} selected={tab === x.key} onPress={() => setTab(x.key)} />
-              ))}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.line, marginBottom: spacing.md }}>
+              {tabs.map((x) => {
+                const selected = tab === x.key;
+                return (
+                  <Pressable key={x.key} accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => setTab(x.key)} style={{ paddingTop: spacing.sm, paddingBottom: spacing.sm }}>
+                    <T variant="h3" color={selected ? colors.ink : colors.muted} style={{ fontWeight: selected ? '700' : '500' }}>{`${x.label}  ${x.count}`}</T>
+                    {/* The underline shows the open tab. */}
+                    <View style={{ height: 3, borderRadius: 2, marginTop: spacing.xs, backgroundColor: selected ? colors.primary : 'transparent' }} />
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           }
           ListEmptyComponent={
@@ -94,19 +101,27 @@ export default function Bookings() {
               accessibilityRole="button"
               onPress={() => router.push({ pathname: '/booking/[id]', params: { id: b.id } })}
               scaleTo={0.98}
-              style={[{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md }, shadow.card]}
+              style={[{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.line }, shadow.card]}
             >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <T variant="h3">{b.property_name}</T>
-                  <T variant="small" color={colors.inkSoft}>{b.room_name}</T>
+              <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                {/* The check-in date as a small tile: day on top, month under it. */}
+                <View style={{ width: 62, borderRadius: radius.md, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.sm }}>
+                  <T variant="h2" color={colors.primaryInk}>{b.check_in.split('-')[2]}</T>
+                  <T variant="label" color={colors.primaryInk}>{(months[Number(b.check_in.split('-')[1]) - 1] ?? '').toUpperCase()}</T>
                 </View>
-                <StatusBadge status={b.status} />
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm }}>
+                    <T variant="h3" style={{ flex: 1 }} numberOfLines={1}>{b.property_name}</T>
+                    <StatusBadge status={b.status} />
+                  </View>
+                  <T variant="small" color={colors.inkSoft} numberOfLines={1}>{b.room_name}</T>
+                  <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.xs }}>
+                    {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {t('common.night', { count: b.nights })}
+                  </T>
+                </View>
               </View>
-              <T variant="small" color={colors.inkSoft} style={{ marginTop: spacing.sm }}>
-                {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)} · {t('common.night', { count: b.nights })}
-              </T>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs }}>
+              <View style={{ height: 1, backgroundColor: colors.hairline, marginVertical: spacing.md }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <T variant="label" color={colors.muted}>{b.reference}</T>
                 <T variant="h3" color={colors.primaryInk}>{price(b.total_santim, b.currency)}</T>
               </View>

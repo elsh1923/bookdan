@@ -30,11 +30,11 @@ function hashUnit(id: string, seed: number): number {
 }
 
 const CATEGORY_ICON: Record<Category, keyof typeof Ionicons.glyphMap> = {
-  all: "apps-outline",
-  hotel: "business-outline",
-  guesthouse: "home-outline",
-  lodge: "bonfire-outline",
-  resort: "sunny-outline",
+  all: 'apps-outline',
+  hotel: 'business-outline',
+  guesthouse: 'home-outline',
+  lodge: 'bonfire-outline',
+  resort: 'sunny-outline',
 };
 
 function Pill({ label, icon, selected, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; selected: boolean; onPress: () => void }) {
@@ -53,21 +53,23 @@ function Pill({ label, icon, selected, onPress }: { label: string; icon: keyof t
       {selected ? (
         <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md }}>
-        <Ionicons name={icon} size={15} color={selected ? "#FFFFFF" : colors.inkSoft} />
-        <T variant="small" color={selected ? "#FFFFFF" : colors.inkSoft}>{label}</T>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md }}>
+        <Ionicons name={icon} size={15} color={selected ? '#FFFFFF' : colors.inkSoft} />
+        <T variant="small" color={selected ? '#FFFFFF' : colors.inkSoft}>{label}</T>
       </View>
     </PressableScale>
   );
 }
 
-// One tappable field inside the floating search card.
+// One tappable field inside the search card.
 function SearchField({ icon, label, value, onPress, style }: {
   icon: keyof typeof Ionicons.glyphMap; label: string; value: string; onPress: () => void; style?: object;
 }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}: ${value}`} style={[{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, style]}>
-      <Ionicons name={icon} size={18} color={colors.primaryInk} />
+      <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name={icon} size={17} color={colors.primaryInk} />
+      </View>
       <View style={{ flex: 1 }}>
         <T variant="label" color={colors.muted}>{label}</T>
         <T variant="h3" color={colors.ink} numberOfLines={1}>{value}</T>
@@ -76,8 +78,63 @@ function SearchField({ icon, label, value, onPress, style }: {
   );
 }
 
-function SectionTitle({ children }: { children: string }) {
-  return <T variant="displaySm" color={colors.ink} style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.md }}>{children}</T>;
+/** A quick-action tile: an icon in a soft circle, a short label. */
+function QuickTile({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+  return (
+    <PressableScale onPress={onPress} accessibilityRole="button" accessibilityLabel={label} scaleTo={0.97} style={[{ flex: 1, alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }, shadow.card]}>
+      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name={icon} size={22} color={colors.primaryInk} />
+      </View>
+      <T variant="small" color={colors.ink} style={{ textAlign: 'center' }}>{label}</T>
+    </PressableScale>
+  );
+}
+
+/** A promo card with a soft gradient, a title, one line of text and a call to action. */
+function OfferCard({ icon, title, body, cta, gradient, width, onPress }: {
+  icon: keyof typeof Ionicons.glyphMap; title: string; body: string; cta: string; gradient: readonly [string, string, ...string[]]; width: number; onPress: () => void;
+}) {
+  return (
+    <PressableScale onPress={onPress} accessibilityRole="button" scaleTo={0.98} style={{ width, borderRadius: radius.lg, overflow: 'hidden' }}>
+      <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: spacing.lg, minHeight: 150, justifyContent: 'space-between' }}>
+        <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name={icon} size={20} color="#FFFFFF" />
+        </View>
+        <View style={{ marginTop: spacing.md }}>
+          <T variant="h3" color="#FFFFFF">{title}</T>
+          <T variant="small" color="rgba(255,255,255,0.88)" style={{ marginTop: 2 }}>{body}</T>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm }}>
+            <T variant="small" color="#FFFFFF" style={{ fontWeight: '700' }}>{cta}</T>
+            <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
+          </View>
+        </View>
+      </LinearGradient>
+    </PressableScale>
+  );
+}
+
+/** A small reason-to-book card: an icon, a title and one line. */
+function WhyCard({ icon, title, body, width }: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string; width: number }) {
+  return (
+    <View style={[{ width, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, gap: spacing.xs }, shadow.card]}>
+      <Ionicons name={icon} size={22} color={colors.primaryInk} />
+      <T variant="h3">{title}</T>
+      <T variant="small" color={colors.inkSoft}>{body}</T>
+    </View>
+  );
+}
+
+function SectionHeader({ title, actionLabel, onAction }: { title: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md }}>
+      <T variant="displaySm" color={colors.ink}>{title}</T>
+      {actionLabel && onAction ? (
+        <Pressable accessibilityRole="button" onPress={onAction} hitSlop={12}>
+          <T variant="small" color={colors.primaryInk} style={{ fontWeight: '700' }}>{actionLabel}</T>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
 
 export default function Home() {
@@ -92,6 +149,7 @@ export default function Home() {
   const column = Math.min(width, MAX_COLUMN);
   const wideWidth = Math.round(column * 0.82); // the next card peeks in
   const gridWidth = Math.floor((column - spacing.lg * 2 - spacing.md) / 2);
+  const offerWidth = Math.round(column * 0.72);
 
   // Home runs on tonight plus one night and one guest until the guest picks dates in the search sheet.
   const [today] = useState(() => todayAddis());
@@ -124,29 +182,29 @@ export default function Home() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={false} tintColor={colors.primary} onRefresh={() => { setShuffleSeed(Math.random()); all.refetch(); }} />}
       >
-        {/* Hero band: logo, welcome and the floating search card sit over a deep navy gradient. */}
+        {/* Hero: logo, a short welcome, and the search card floating over the navy band. */}
         <View>
           <LinearGradient
             colors={gradients.header}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={{ paddingTop: insets.top + spacing.md, paddingBottom: 80, paddingHorizontal: spacing.lg, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
+            style={{ paddingTop: insets.top + spacing.md, paddingBottom: 88, paddingHorizontal: spacing.lg, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                <Image source={require('../../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 34, height: 34, borderRadius: 10 }} />
+                <Image source={require('../../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 36, height: 36, borderRadius: 11 }} />
                 <T variant="h2" color="#FFFFFF">Bookdan</T>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <CurrencyChip onDark />
-              <Pressable
-                onPress={() => router.navigate('/profile')}
-                accessibilityRole="button"
-                accessibilityLabel={t('tabs.profile')}
-                style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <Ionicons name="person-outline" size={20} color="#FFFFFF" />
-              </Pressable>
+                <CurrencyChip onDark />
+                <Pressable
+                  onPress={() => router.navigate('/profile')}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('tabs.profile')}
+                  style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Ionicons name="person-outline" size={20} color="#FFFFFF" />
+                </Pressable>
               </View>
             </View>
 
@@ -156,54 +214,63 @@ export default function Home() {
             </Reveal>
           </LinearGradient>
 
-          {/* Floating search card, overlapping the band. */}
+          {/* The search card: one container with the three fields and a full-width search button. */}
           <Reveal index={1}>
             <PressableScale
               onPress={() => router.push('/search')}
               accessibilityRole="search"
               scaleTo={0.99}
-              style={{ marginTop: -56, marginHorizontal: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, ...shadow.card }}
+              style={[{ marginTop: -60, marginHorizontal: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.line }, shadow.card]}
             >
-              <SearchField icon="location" label={t('search.heading')} value={t('search.placeholder')} onPress={() => router.push('/search')} />
+              <SearchField icon="location-outline" label={t('search.heading')} value={t('search.placeholder')} onPress={() => router.push('/search')} />
               <View style={{ height: 1, backgroundColor: colors.hairline, marginVertical: spacing.md }} />
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <SearchField icon="calendar-outline" label={t('search.check_in')} value={t('home.dates')} onPress={() => router.push('/search')} style={{ flex: 1 }} />
-                <View style={{ width: 1, height: 36, backgroundColor: colors.hairline, marginHorizontal: spacing.sm }} />
+                <View style={{ width: 1, height: 40, backgroundColor: colors.hairline, marginHorizontal: spacing.sm }} />
                 <SearchField icon="person-outline" label={t('search.guests')} value="1" onPress={() => router.push('/search')} style={{ flex: 1 }} />
               </View>
-              <View style={{ marginTop: spacing.md, height: 48, borderRadius: radius.md, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
-                <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                  <Ionicons name="search" size={18} color="#FFFFFF" />
-                  <T variant="h3" color="#FFFFFF">{t('search.submit')}</T>
-                </View>
+              <View style={{ marginTop: spacing.lg }}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => router.push('/search')}
+                  style={{ height: 52, borderRadius: 14, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <Ionicons name="search" size={18} color="#FFFFFF" />
+                    <T variant="h3" color="#FFFFFF">{t('search.submit')}</T>
+                  </View>
+                </Pressable>
               </View>
             </PressableScale>
           </Reveal>
         </View>
 
-        {/* Category filter */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm }}>
+        {/* Quick actions: the three things most guests come here for. */}
+        <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, marginTop: spacing.xl }}>
+          <QuickTile icon="search-outline" label={t('search.submit')} onPress={() => router.push('/search')} />
+          <QuickTile icon="navigate-outline" label={t('search.use_gps')} onPress={() => router.push('/search')} />
+          <QuickTile icon="receipt-outline" label={t('bookings.title')} onPress={() => router.navigate('/bookings')} />
+        </View>
+
+        {/* Category pills with icons. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xs, gap: spacing.sm }}>
           {CATEGORIES.map((c) => (
             <Pill key={c} icon={CATEGORY_ICON[c]} label={c === 'all' ? t('common.all') : t(`type.${c}`)} selected={category === c} onPress={() => setCategory(c)} />
           ))}
         </ScrollView>
 
-        {/* Deals strip */}
-        <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.sm, marginBottom: spacing.lg, borderRadius: radius.md, overflow: 'hidden' }}>
-          <LinearGradient colors={gradients.deal} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md }}>
-            <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="pricetag" size={22} color="#FFFFFF" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <T variant="h3" color="#FFFFFF">{t('home.deal_title')}</T>
-              <T variant="small" color="rgba(255,255,255,0.9)">{t('home.deal_body')}</T>
-            </View>
-          </LinearGradient>
+        {/* Offers: soft gradients, one for paying at the hotel and one for members. */}
+        <View style={{ marginTop: spacing.xl }}>
+          <SectionHeader title={t('home.offers')} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} snapToInterval={offerWidth + spacing.md} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
+            <OfferCard icon="pricetag-outline" title={t('home.deal_title')} body={t('home.deal_body')} cta={t('home.see_all')} gradient={['#EE8C74', '#E05A47']} width={offerWidth} onPress={() => router.push('/search')} />
+            <OfferCard icon="ribbon-outline" title={t('home.member_title')} body={t('home.member_body')} cta={t('home.see_all')} gradient={['#15243D', '#24304A']} width={offerWidth} onPress={() => router.navigate('/profile')} />
+          </ScrollView>
         </View>
 
         {all.isPending ? (
-          <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg }}>
+          <View style={{ flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, marginTop: spacing.xl }}>
             <Skeleton width={wideWidth} height={Math.round(wideWidth * 0.5625)} radius={radius.lg} />
             <Skeleton width={wideWidth} height={Math.round(wideWidth * 0.5625)} radius={radius.lg} />
           </View>
@@ -213,16 +280,28 @@ export default function Home() {
           <EmptyState icon="🔎" title={t('results.empty_title')} body={t('results.empty_body')} />
         ) : (
           <>
-            <SectionTitle>{t('home.featured')}</SectionTitle>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
-              {featured.map((item, i) => (
-                <Reveal key={item.id} index={i}><StayCard item={item} large width={wideWidth} height={Math.round(wideWidth * 0.5625)} onPress={() => open(item)} /></Reveal>
-              ))}
-            </ScrollView>
+            <View style={{ marginTop: spacing.xl }}>
+              <SectionHeader title={t('home.featured')} actionLabel={t('home.see_all')} onAction={() => router.push('/search')} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} snapToInterval={wideWidth + spacing.md} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
+                {featured.map((item, i) => (
+                  <Reveal key={item.id} index={i}><StayCard item={item} large width={wideWidth} height={Math.round(wideWidth * 0.5625)} onPress={() => open(item)} /></Reveal>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Why BookDan: three short reasons to book here. */}
+            <View style={{ marginTop: spacing.xl }}>
+              <SectionHeader title={t('home.why_title')} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
+                <WhyCard icon="shield-checkmark-outline" title={t('home.why_secure')} body={t('home.why_secure_body')} width={Math.round(column * 0.62)} />
+                <WhyCard icon="flash-outline" title={t('home.why_fast')} body={t('home.why_fast_body')} width={Math.round(column * 0.62)} />
+                <WhyCard icon="card-outline" title={t('home.why_pay')} body={t('home.why_pay_body')} width={Math.round(column * 0.62)} />
+              </ScrollView>
+            </View>
 
             {recent.length > 0 ? (
               <View style={{ marginTop: spacing.xl }}>
-                <SectionTitle>{t('home.recently_viewed')}</SectionTitle>
+                <SectionHeader title={t('home.recently_viewed')} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
                   {recent.map((item) => (
                     <StayCard key={item.id} item={item} width={gridWidth} height={Math.round(gridWidth * 0.95)} onPress={() => open(item)} />
@@ -233,7 +312,7 @@ export default function Home() {
 
             {more.length > 0 ? (
               <View style={{ marginTop: spacing.xl }}>
-                <SectionTitle>{t('home.more')}</SectionTitle>
+                <SectionHeader title={t('home.more')} />
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, paddingHorizontal: spacing.lg }}>
                   {more.map((item, i) => (
                     <Reveal key={item.id} index={i}><StayCard item={item} width={gridWidth} height={Math.round(gridWidth * 0.95)} onPress={() => open(item)} /></Reveal>
