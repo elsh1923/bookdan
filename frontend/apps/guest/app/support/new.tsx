@@ -1,12 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { ApiError } from '@bookdan/api-client';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, Chip, T, colors, spacing } from '@bookdan/ui';
+import { Button, Chip, ScreenHeader, T, colors, dark, spacing } from '@bookdan/ui';
 import { api } from '../../src/api';
 import { useAuth } from '../../src/auth';
 import { Field } from '../../src/Field';
@@ -50,16 +48,12 @@ export default function NewSupportRequest() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScreenHeader title={t('support.new_request')} onBack={close} backLabel={t('common.cancel')} backIcon="close">
+        {p.booking && p.ref ? <T color={dark.textSoft} style={{ marginTop: spacing.xs }}>{t('support.about_booking', { code: p.ref })}</T> : null}
+      </ScreenHeader>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={{ paddingHorizontal: spacing.lg }}>
-          <Pressable accessibilityLabel={t('common.cancel')} onPress={close} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-            <Ionicons name="close" size={26} color={colors.ink} />
-          </Pressable>
-        </View>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-          <T variant="display">{t('support.new_request')}</T>
-          {p.booking && p.ref ? <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('support.about_booking', { code: p.ref })}</T> : null}
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
 
           <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
             <Chip label={t('support.kind_question')} selected={kind === 'question'} onPress={() => setKind('question')} />
@@ -82,6 +76,6 @@ export default function NewSupportRequest() {
           <Button title={t('support.send')} loading={busy} onPress={send} style={{ marginTop: spacing.xl }} />
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }

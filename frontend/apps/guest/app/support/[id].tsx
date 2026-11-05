@@ -1,12 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { ApiError } from '@bookdan/api-client';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, T, colors, radius, spacing } from '@bookdan/ui';
+import { Badge, Button, ScreenHeader, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../../src/api';
 import { useAuth } from '../../src/auth';
 import { Field } from '../../src/Field';
@@ -40,15 +38,15 @@ export default function SupportThread() {
 
   const ticket = q.data;
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, gap: spacing.sm }}>
-          <Pressable accessibilityLabel={t('common.back')} onPress={() => (router.canGoBack() ? router.back() : router.replace('/support'))} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-            <Ionicons name="arrow-back" size={24} color={colors.ink} />
-          </Pressable>
-          <T variant="h3" style={{ flex: 1 }} numberOfLines={1}>{ticket?.subject ?? t('support.title')}</T>
-          {ticket ? <Badge tone={statusTone(ticket.status)} label={t(`support.status_${ticket.status}`)} /> : null}
-        </View>
+        <ScreenHeader
+          compact
+          title={ticket?.subject ?? t('support.title')}
+          onBack={() => (router.canGoBack() ? router.back() : router.replace('/support'))}
+          backLabel={t('common.back')}
+          right={ticket ? <Badge tone={statusTone(ticket.status)} label={t(`support.status_${ticket.status}`)} /> : null}
+        />
         {!ticket ? (
           <ActivityIndicator style={{ marginTop: spacing.xxl }} color={colors.primary} />
         ) : (
@@ -101,6 +99,6 @@ export default function SupportThread() {
           </ScrollView>
         )}
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }

@@ -1,13 +1,11 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { ApiError } from '@bookdan/api-client';
 import { DISPUTE_REASONS, type DisputeReason } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, Chip, T, colors, radius, spacing } from '@bookdan/ui';
+import { Button, Chip, ScreenHeader, T, colors, dark, radius, spacing } from '@bookdan/ui';
 import { api } from '../../src/api';
 import { useAuth } from '../../src/auth';
 import { Field } from '../../src/Field';
@@ -54,16 +52,12 @@ export default function RaiseDispute() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScreenHeader title={t('support.dispute_title')} onBack={close} backLabel={t('common.cancel')} backIcon="close">
+        {p.ref ? <T color={dark.textSoft} style={{ marginTop: spacing.xs }}>{t('support.about_booking', { code: p.ref })}</T> : null}
+      </ScreenHeader>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={{ paddingHorizontal: spacing.lg }}>
-          <Pressable accessibilityLabel={t('common.cancel')} onPress={close} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-            <Ionicons name="close" size={26} color={colors.ink} />
-          </Pressable>
-        </View>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-          <T variant="display">{t('support.dispute_title')}</T>
-          {p.ref ? <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('support.about_booking', { code: p.ref })}</T> : null}
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
           <View style={{ marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.primarySoft }}>
             <T variant="small" color={colors.primaryInk}>{t('support.dispute_intro')}</T>
           </View>
@@ -89,6 +83,6 @@ export default function RaiseDispute() {
           <Button title={t('support.dispute_send')} loading={busy} onPress={send} style={{ marginTop: spacing.xl }} />
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
