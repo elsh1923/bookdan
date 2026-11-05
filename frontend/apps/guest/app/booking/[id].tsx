@@ -3,11 +3,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { formatCountdown, holdRemainingMs, shouldResumeOnLaunch, type Booking, type PaymentMethod } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, EmptyState, Pop, Reveal, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
+import { Badge, Button, EmptyState, Pop, Reveal, ScreenHeader, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../../src/api';
 import { CancelCard } from '../../src/CancelCard';
 import { PendingChangeCard } from '../../src/PendingChangeCard';
@@ -98,23 +97,17 @@ export default function BookingScreen() {
     qc.invalidateQueries({ queryKey: ['bookings'] });
   };
   const goBookings = () => router.replace('/bookings');
-  const header = (
-    <View style={{ paddingHorizontal: spacing.lg }}>
-      <Pressable accessibilityLabel={t('common.back')} onPress={goBookings} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-        <Ionicons name="arrow-back" size={24} color={colors.ink} />
-      </Pressable>
-    </View>
-  );
+  const header = <ScreenHeader compact title={t('tabs.bookings')} onBack={goBookings} backLabel={t('common.back')} />;
 
   if (query.isPending) {
-    return <SafeAreaView style={{ flex: 1 }}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></SafeAreaView>;
+    return <View style={{ flex: 1, backgroundColor: colors.background }}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></View>;
   }
   if (query.isError) {
     return (
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         {header}
         <EmptyState icon="⚠️" title={t('results.error_title')} body={t('results.error_body')} actionLabel={t('common.retry')} onAction={() => query.refetch()} />
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -165,9 +158,9 @@ export default function BookingScreen() {
   const total = price(b.total_santim, b.currency);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {header}
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, paddingBottom: spacing.xxl * 2 }}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl * 2 }}>
         <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
           <Pop key={hero.icon + hero.title} style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: confirmed ? colors.successSoft : colors.fill, alignItems: 'center', justifyContent: 'center' }}>
             <Ionicons name={hero.icon} size={38} color={hero.color} />
@@ -322,6 +315,6 @@ export default function BookingScreen() {
         />
         <Button variant="ghost" title={t('booking.my_bookings')} onPress={goBookings} style={{ marginTop: spacing.sm }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

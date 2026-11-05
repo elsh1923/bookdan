@@ -4,10 +4,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, EmptyState, Pop, Reveal, T, colors, radius, shadow, spacing } from '@bookdan/ui';
+import { Badge, Button, EmptyState, Pop, Reveal, ScreenHeader, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { ActionTile } from '../../src/ActionTile';
 import { isMockApi } from '../../src/api';
 import { callPhone, openDirections } from '../../src/links';
@@ -44,13 +43,7 @@ export default function VoucherScreen() {
   }
 
   const back = () => (router.canGoBack() ? router.back() : router.replace('/bookings'));
-  const header = (
-    <View style={{ paddingHorizontal: spacing.lg }}>
-      <Pressable accessibilityLabel={t('common.back')} onPress={back} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-        <Ionicons name="arrow-back" size={24} color={colors.ink} />
-      </Pressable>
-    </View>
-  );
+  const header = <ScreenHeader compact title={t('voucher.title')} onBack={back} backLabel={t('common.back')} />;
 
   async function download() {
     setDownloading(true);
@@ -70,13 +63,13 @@ export default function VoucherScreen() {
   }
 
   if (voucher.isPending) {
-    return <SafeAreaView style={{ flex: 1 }}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></SafeAreaView>;
+    return <View style={{ flex: 1, backgroundColor: colors.background }}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></View>;
   }
 
   const v = voucher.data;
   if (!v) {
     return (
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         {header}
         <EmptyState
           icon="🎫"
@@ -85,7 +78,7 @@ export default function VoucherScreen() {
           actionLabel={downloading ? t('common.loading') : t('voucher.download')}
           onAction={download}
         />
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -94,11 +87,10 @@ export default function VoucherScreen() {
   const owed = v.balance_due_santim;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {header}
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, paddingBottom: spacing.xxl }}>
-        <T variant="display">{t('voucher.title')}</T>
-        <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('voucher.subtitle')}</T>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
+        <T color={colors.inkSoft}>{t('voucher.subtitle')}</T>
 
         <Pop delay={120} style={{ alignItems: 'center', marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: '#fff' }}>
           <QRCode value={v.token} size={qrSize} ecl="M" quietZone={8} />
@@ -148,6 +140,6 @@ export default function VoucherScreen() {
           />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

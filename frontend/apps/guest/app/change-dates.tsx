@@ -2,12 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, View } from 'react-native';
 import { ApiError } from '@bookdan/api-client';
 import { nightsBetween, todayAddis, type DateChangeQuote } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, T, colors, radius, spacing } from '@bookdan/ui';
+import { Button, ScreenHeader, T, colors, radius, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
 import { useAuth } from '../src/auth';
 import { DateRangePicker } from '../src/DateRangePicker';
@@ -100,13 +99,8 @@ export default function ChangeDates() {
     : t('change.confirm');
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg }}>
-        <T variant="h2">{t('change.title')}</T>
-        <Pressable accessibilityLabel={t('common.cancel')} onPress={close} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="close" size={24} color={colors.ink} />
-        </Pressable>
-      </View>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScreenHeader compact title={t('change.title')} onBack={close} backLabel={t('common.cancel')} backIcon="close" />
       {!b ? (
         <ActivityIndicator style={{ marginTop: spacing.xxl }} color={colors.primary} />
       ) : quote ? (
@@ -140,7 +134,7 @@ export default function ChangeDates() {
         </View>
       ) : (
         <>
-          <T variant="small" color={long ? colors.danger : colors.inkSoft} style={{ paddingHorizontal: spacing.lg }}>{long ? t('search.date_max') : t('change.hint')}</T>
+          <T variant="small" color={long ? colors.danger : colors.inkSoft} style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>{long ? t('search.date_max') : t('change.hint')}</T>
           <T variant="small" color={colors.muted} style={{ paddingHorizontal: spacing.lg, marginTop: spacing.xs }}>
             {b.property_name} · {shortDate(b.check_in, months)} – {shortDate(b.check_out, months)}
           </T>
@@ -158,6 +152,6 @@ export default function ChangeDates() {
           </View>
         </>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
