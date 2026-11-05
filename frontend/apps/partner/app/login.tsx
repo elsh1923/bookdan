@@ -1,12 +1,9 @@
 import { useState } from 'react';
 import { Image, KeyboardAvoidingView, Linking, Platform, ScrollView, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { StatusBar } from 'expo-status-bar';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { normalizeEmail, normalizeEthiopianPhone, type Identity, type IdentityType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, Chip, Pop, Reveal, StepTransition, T, colors, dark, gradients, radius, spacing } from '@bookdan/ui';
+import { Badge, Button, Chip, Pop, ScreenHeader, StepTransition, T, colors, dark, radius, spacing } from '@bookdan/ui';
 import { api, apiUrl, isMockApi } from '../src/api';
 import { useAuth } from '../src/auth';
 import { Field } from '../src/Field';
@@ -14,7 +11,6 @@ import { Field } from '../src/Field';
 /** Staff sign-in: a code by SMS or email. Only staff the platform knows can get in (the server decides). */
 export default function Login() {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
   const signIn = useAuth((s) => s.signIn);
 
   const [method, setMethod] = useState<IdentityType>('phone');
@@ -64,22 +60,15 @@ export default function Login() {
 
   return (
     <View style={{ flex: 1 }}>
-      <StatusBar style="light" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-          {/* The same navy band as the rest of the app: logo, title and what the sign-in is for. */}
-          <LinearGradient
-            colors={gradients.header}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ paddingTop: insets.top + spacing.lg, paddingBottom: spacing.xl, paddingHorizontal: spacing.lg, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }}
+          {/* The same navy header as every other page, with the logo on the right and what the sign-in is for underneath. */}
+          <ScreenHeader
+            title={t('partner.login_title')}
+            right={<Pop><Image source={require('../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 44, height: 44, borderRadius: radius.md }} /></Pop>}
           >
-            <Pop><Image source={require('../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 64, height: 64, borderRadius: radius.md }} /></Pop>
-            <Reveal index={1}>
-              <T variant="display" color="#FFFFFF" style={{ marginTop: spacing.lg }}>{t('partner.login_title')}</T>
-              <T color={dark.textSoft} style={{ marginTop: spacing.xs }}>{t('partner.login_subtitle')}</T>
-            </Reveal>
-          </LinearGradient>
+            <T color={dark.textSoft} style={{ marginTop: spacing.xs }}>{t('partner.login_subtitle')}</T>
+          </ScreenHeader>
           <View style={{ padding: spacing.lg }}>
 
           <StepTransition stepKey={identity === null ? 'enter' : 'code'}>
