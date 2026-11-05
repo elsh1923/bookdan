@@ -140,7 +140,7 @@ func (s *Server) submitApplication(w http.ResponseWriter, r *http.Request) error
 		frame("We received your application", para("Thank you, "+in.OwnerName+". We received the application of "+in.HotelName+" to be listed on BookDan (reference "+ref+").")+
 			para("We review every application, usually within 3 working days, and will email you at this address with our decision. If we approve it, you get an invitation to the BookDan Partner app and we help you add your rooms, prices and photos."))})
 	for _, to := range s.supportRecipients() {
-		_ = s.p.Mail.SendMail(ctx, to, "New hotel application: "+in.HotelName, fmt.Sprintf("%s (%s) in %s, %s applied to be listed.\nOwner: %s <%s>\nReference %s\n\nOpen the admin page, Applications, to review it.", in.HotelName, in.HotelType, in.Area, in.City, in.OwnerName, email.Value, ref), "")
+		_ = s.QueueMail(ctx, to, "New hotel application: "+in.HotelName, fmt.Sprintf("%s (%s) in %s, %s applied to be listed.\nOwner: %s <%s>\nReference %s\n\nOpen the admin page, Applications, to review it.", in.HotelName, in.HotelType, in.Area, in.City, in.OwnerName, email.Value, ref), "")
 	}
 	respond(w, http.StatusOK, struct {
 		httpx.Meta

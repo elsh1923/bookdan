@@ -186,7 +186,7 @@ func (s *Server) mailSupport(ctx context.Context, ticketID, headline string) {
 	}
 	text := fmt.Sprintf("%s (%s)\n\nFrom: %s\n%sSubject: %s\n\n%s\n\nAnswer it in the admin page, under Support.", headline, kind, guest, about, subject, body)
 	for _, to := range s.supportRecipients() {
-		if err := s.p.Mail.SendMail(ctx, to, headline+": "+subject, text, ""); err != nil {
+		if err := s.QueueMail(ctx, to, headline+": "+subject, text, ""); err != nil {
 			slog.Error("support mail: send", "to", to, "err", err)
 		}
 	}
@@ -520,7 +520,7 @@ func (s *Server) mailTicketAnswer(ctx context.Context, email *string, subject, b
 		where = "Open the BookDan Partner app, Settings, Help and support, to reply."
 	}
 	text := "BookDan support answered your request: " + subject + "\n\n" + body + "\n\n" + where
-	if err := s.p.Mail.SendMail(ctx, *email, "BookDan support: "+subject, text, ""); err != nil {
+	if err := s.QueueMail(ctx, *email, "BookDan support: "+subject, text, ""); err != nil {
 		slog.Error("support mail: send to guest", "err", err)
 	}
 }

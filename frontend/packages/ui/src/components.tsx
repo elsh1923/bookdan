@@ -11,8 +11,9 @@ import {
   ViewStyle,
   StyleProp,
 } from 'react-native';
-import { PressableScale } from './motion';
-import { colors, fonts, radius, shadow, spacing } from './theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Pop, PressableScale } from './motion';
+import { colors, fonts, gradients, radius, shadow, spacing } from './theme';
 
 type Variant = 'display' | 'displaySm' | 'h1' | 'h2' | 'h3' | 'body' | 'small' | 'label';
 
@@ -101,29 +102,48 @@ export function Button({
   );
 }
 
+/**
+ * A choice button. Unselected it is a clean white pill; selected it fills with the brand gradient, lifts on a soft shadow and,
+ * when it has no icon of its own, pops in a check mark. Pass an icon to put one in front of the label.
+ */
 export function Chip({
   label,
   selected,
   onPress,
+  icon,
 }: {
   label: string;
   selected?: boolean;
   onPress?: () => void;
+  icon?: keyof typeof Ionicons.glyphMap;
 }) {
+  const fg = selected ? '#FFFFFF' : colors.inkSoft;
   return (
     <PressableScale
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
       onPress={onPress}
-      scaleTo={0.94}
-      style={[
-        styles.chip,
-        selected && { backgroundColor: colors.primarySoft, borderColor: colors.primary },
-      ]}
+      scaleTo={0.92}
+      style={[styles.chip, selected && { borderColor: 'transparent' }, selected && shadow.button]}
     >
-      <T variant="small" color={selected ? colors.primaryInk : colors.inkSoft} style={selected ? { fontFamily: fonts.medium } : undefined}>
-        {selected ? '✓ ' : ''}{label}
-      </T>
+      {selected ? (
+        <LinearGradient
+          colors={gradients.primary}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: radius.pill }}
+        />
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {icon ? (
+          <Ionicons name={icon} size={15} color={fg} />
+        ) : selected ? (
+          <Pop><Ionicons name="checkmark" size={14} color={fg} /></Pop>
+        ) : null}
+        <T variant="small" color={fg} style={selected ? { fontFamily: fonts.medium } : undefined}>
+          {label}
+        </T>
+      </View>
     </PressableScale>
   );
 }

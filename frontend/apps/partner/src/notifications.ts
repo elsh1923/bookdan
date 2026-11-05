@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { useRootNavigationState, useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
-import { parseBookingAlert, parseSupportAnswer, type AlertFacts } from '@bookdan/domain';
+import { isReviewAlert, parseBookingAlert, parseSupportAnswer, type AlertFacts } from '@bookdan/domain';
 import { api } from './api';
 import { useAuth } from './auth';
 import { getDeviceId } from './device';
@@ -146,6 +146,11 @@ export function usePushAlerts(): void {
     if (answer) {
       opened.current = id;
       router.push({ pathname: '/support/[id]', params: { id: answer.ticket_id } });
+      return;
+    }
+    if (isReviewAlert(content)) {
+      opened.current = id;
+      router.push('/reviews');
       return;
     }
     const alert = parseBookingAlert(content);

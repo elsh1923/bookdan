@@ -19,6 +19,7 @@ import { usePushUpdates } from '../src/notifications';
 import { DisplaySync } from '../src/DisplaySync';
 import { SavedSync } from '../src/SavedSync';
 import { UpdateBanner } from '../src/UpdateBanner';
+import { UpgradeGate } from '../src/UpgradeGate';
 import { LaunchScreen } from '../src/LaunchScreen';
 import { usePrefs } from '../src/store';
 
@@ -64,6 +65,7 @@ export default function RootLayout() {
       >
         <StatusBar style="dark" />
           <UpdateBanner />
+          <UpgradeGate />
           <DisplaySync />
           <SavedSync />
         <View style={{ flex: 1, alignItems: 'center', backgroundColor: colors.background }}>
@@ -75,6 +77,7 @@ export default function RootLayout() {
           <Stack.Screen name="results" />
           <Stack.Screen name="property/[id]" />
           <Stack.Screen name="signin" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="sign-in-methods" />
           <Stack.Screen name="checkout" />
           <Stack.Screen name="booking/[id]" />
           <Stack.Screen name="voucher/[id]" />

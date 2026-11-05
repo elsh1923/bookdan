@@ -21,7 +21,7 @@ const raw: PartnerApi = isMockApi
         save: (json) => AsyncStorage.setItem('mock-partner-state', json),
       },
     })
-  : createHttpPartnerApi({ baseUrl: apiUrl, app: 'partner', deviceId: getDeviceId, platform: Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web' });
+  : createHttpPartnerApi({ baseUrl: apiUrl, app: 'partner', deviceId: getDeviceId, platform: Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web', appVersion: Constants.expoConfig?.version });
 
 // Silent session refresh is shared with the guest app.
 const session = createSessionManager(raw);

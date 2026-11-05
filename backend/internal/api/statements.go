@@ -501,7 +501,7 @@ func (s *Server) emailStatements(ctx context.Context) {
 			rr.Close()
 			text := statementText(st)
 			for _, e := range to {
-				if err := s.p.Mail.SendMail(ctx, e, "Your BookDan statement for "+st.Month+": "+st.Hotel, text, ""); err != nil {
+				if err := s.QueueMail(ctx, e, "Your BookDan statement for "+st.Month+": "+st.Hotel, text, ""); err != nil {
 					slog.Error("statement emails: send", "to", e, "err", err)
 					continue
 				}

@@ -41,7 +41,7 @@ func adminCan(role string) map[string]bool {
 	super := role == "super"
 	return map[string]bool{
 		"hotels_write": super, "coupons_write": super, "applications": super, "admins": super,
-		"support": super || role == "support", "reviews": super || role == "support",
+		"support": super || role == "support", "reviews": super || role == "support", "users": super || role == "support",
 		"finance": super || role == "finance", "rates_write": super || role == "finance",
 	}
 }
@@ -99,6 +99,12 @@ type adminLoginOut struct {
 	Role       string `json:"role"`
 	AdminRole  string `json:"admin_role"`
 	MustChange bool   `json:"must_change_password"`
+	// MustSetupMFA is true when the server requires the authenticator app (ADMIN_REQUIRE_MFA) and this account has none yet.
+	MustSetupMFA bool `json:"must_setup_mfa"`
+	// RecoveryLeft is how many recovery codes remain when one was just used to sign in (0 otherwise).
+	RecoveryLeft int `json:"recovery_codes_left"`
+	// UsedRecovery is true when this sign-in used up a recovery code (the page tells the person to make a new set).
+	UsedRecovery bool `json:"used_recovery_code"`
 }
 
 // adminLogin signs in a platform admin: their own account if they have one, otherwise the shared password of the first-time setup.
@@ -130,7 +136,7 @@ func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var uid, role string
-	mustChange := false
+	mustChange, mustSetup, usedRecovery := false, false, false
 	if acct != nil {
 		if acct.Disabled {
 			spendPasswordTime(in.Password)
@@ -149,12 +155,19 @@ func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) error {
 			if strings.TrimSpace(in.Code) == "" {
 				return fail(http.StatusUnauthorized, "MFA_REQUIRED", "Enter the code from your authenticator app")
 			}
-			if !s.acceptTOTP(ctx, acct.UserID, acct.TOTPEnc, in.Code, acct.LastStep) {
+			ok := s.acceptTOTP(ctx, acct.UserID, acct.TOTPEnc, in.Code, acct.LastStep)
+			// A lost phone: one of the recovery codes shown when the app was set up takes the place of the 6-digit code, once.
+			if !ok && looksLikeRecovery(in.Code) && s.useRecoveryCode(ctx, acct.UserID, in.Code) {
+				ok, usedRecovery = true, true
+				s.auditAnonymous(r, acct.UserID, "admin_recovery_code_used", map[string]any{"email": email})
+			}
+			if !ok {
 				s.adminFailed(ctx, acct.UserID)
 				s.auditAnonymous(r, acct.UserID, "admin_login_failed", map[string]any{"email": email, "reason": "code"})
 				return fail(http.StatusUnauthorized, "MFA_INVALID", "That code is wrong or has expired")
 			}
 		}
+		mustSetup = s.cfg.AdminRequireMFA && acct.TOTPEnc == nil
 		if _, err := s.pool.Exec(ctx, `UPDATE admin_accounts SET failed_attempts = 0, locked_until = NULL, last_login_at = now() WHERE user_id = $1`, acct.UserID); err != nil {
 			return err
 		}
@@ -182,7 +195,11 @@ func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO audit_log (user_id, action, ip, details) VALUES ($1, 'admin_login', NULLIF($2, '')::inet, $3)`, uid, clientIP(r), map[string]any{"role": role}); err != nil {
 		return err
 	}
-	respond(w, http.StatusOK, adminLoginOut{httpx.NowMeta(), s.adminToken(uid, "admin", role), "admin", role, mustChange})
+	left := 0
+	if usedRecovery {
+		left = s.recoveryLeft(ctx, uid)
+	}
+	respond(w, http.StatusOK, adminLoginOut{httpx.NowMeta(), s.adminToken(uid, "admin", role), "admin", role, mustChange, mustSetup, left, usedRecovery})
 	return nil
 }
 
@@ -217,9 +234,9 @@ func (s *Server) adminGate(next http.Handler) http.Handler {
 			return nil
 		}
 		var role string
-		var disabled, must bool
+		var disabled, must, hasMFA bool
 		var changed *time.Time
-		err := s.pool.QueryRow(r.Context(), `SELECT role, disabled_at IS NOT NULL, must_change_password, password_changed_at FROM admin_accounts WHERE user_id = $1`, c.Sub).Scan(&role, &disabled, &must, &changed)
+		err := s.pool.QueryRow(r.Context(), `SELECT role, disabled_at IS NOT NULL, must_change_password, password_changed_at, totp_enabled_at IS NOT NULL FROM admin_accounts WHERE user_id = $1`, c.Sub).Scan(&role, &disabled, &must, &changed, &hasMFA)
 		switch {
 		case err == pgx.ErrNoRows:
 			// No account of their own: only the first-time shared password, and only while it is still set and the email is on the list.
@@ -245,6 +262,10 @@ func (s *Server) adminGate(next http.Handler) http.Handler {
 		}
 		if must && r.URL.Path != "/v1/admin/me" && r.URL.Path != "/v1/admin/me/password" {
 			return fail(http.StatusForbidden, "PASSWORD_CHANGE_REQUIRED", "Choose your own password before you continue")
+		}
+		// When the server requires the authenticator app, an account without one can only set it up (and read who it is) until it has.
+		if s.cfg.AdminRequireMFA && err != pgx.ErrNoRows && !hasMFA && r.URL.Path != "/v1/admin/me" && r.URL.Path != "/v1/admin/me/password" && !strings.HasPrefix(r.URL.Path, "/v1/admin/me/mfa/") {
+			return fail(http.StatusForbidden, "MFA_SETUP_REQUIRED", "Set up the authenticator app before you continue")
 		}
 		next.ServeHTTP(w, r)
 		return nil
@@ -287,6 +308,9 @@ type adminMeOut struct {
 	MFA        bool            `json:"mfa"`
 	HasAccount bool            `json:"has_account"`
 	MustChange bool            `json:"must_change_password"`
+	// MustSetupMFA: the server requires the authenticator app and this account has none yet. RecoveryLeft: unused recovery codes.
+	MustSetupMFA bool `json:"must_setup_mfa"`
+	RecoveryLeft int  `json:"recovery_codes_left"`
 }
 
 func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) error {
@@ -302,6 +326,10 @@ func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) error {
 		err := s.pool.QueryRow(r.Context(), `SELECT totp_enabled_at, must_change_password FROM admin_accounts WHERE user_id = $1`, c.Sub).Scan(&mfa, &out.MustChange)
 		if err == nil {
 			out.HasAccount, out.MFA = true, mfa != nil
+			out.MustSetupMFA = s.cfg.AdminRequireMFA && mfa == nil
+			if mfa != nil {
+				out.RecoveryLeft = s.recoveryLeft(r.Context(), c.Sub)
+			}
 		} else if err != pgx.ErrNoRows {
 			return err
 		}
@@ -364,7 +392,7 @@ func (s *Server) adminChangePassword(w http.ResponseWriter, r *http.Request) err
 		}
 		return err
 	}
-	respond(w, http.StatusOK, adminLoginOut{httpx.NowMeta(), s.adminToken(uid, "admin", role), "admin", role, false})
+	respond(w, http.StatusOK, adminLoginOut{httpx.NowMeta(), s.adminToken(uid, "admin", role), "admin", role, false, false, 0, false})
 	return nil
 }
 
@@ -408,6 +436,7 @@ func (s *Server) adminMFAEnable(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx, uid := r.Context(), claimsFrom(r).Sub
+	var codes []string
 	err := s.tx(ctx, func(tx pgx.Tx) error {
 		if _, _, _, err := s.ownAccount(ctx, tx, r); err != nil {
 			return err
@@ -434,12 +463,18 @@ func (s *Server) adminMFAEnable(w http.ResponseWriter, r *http.Request) error {
 		if _, err := tx.Exec(ctx, `UPDATE admin_accounts SET totp_secret_enc = totp_pending_enc, totp_pending_enc = NULL, totp_enabled_at = now(), totp_last_step = $2 WHERE user_id = $1`, uid, step); err != nil {
 			return err
 		}
+		if codes, err = s.storeRecoveryCodes(ctx, tx, uid); err != nil {
+			return err
+		}
 		return s.audit(r, tx, "admin_mfa_enabled", nil)
 	})
 	if err != nil {
 		return err
 	}
-	respond(w, http.StatusOK, httpx.NowMeta())
+	respond(w, http.StatusOK, struct {
+		httpx.Meta
+		RecoveryCodes []string `json:"recovery_codes"`
+	}{httpx.NowMeta(), codes})
 	return nil
 }
 
@@ -480,6 +515,9 @@ func (s *Server) adminMFADisable(w http.ResponseWriter, r *http.Request) error {
 			return fail(http.StatusBadRequest, "MFA_INVALID", "That code is wrong or has expired")
 		}
 		if _, err := tx.Exec(ctx, `UPDATE admin_accounts SET totp_secret_enc = NULL, totp_enabled_at = NULL, totp_pending_enc = NULL, totp_last_step = 0 WHERE user_id = $1`, uid); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM admin_recovery_codes WHERE user_id = $1`, uid); err != nil {
 			return err
 		}
 		return s.audit(r, tx, "admin_mfa_disabled", nil)
@@ -746,6 +784,9 @@ func (s *Server) adminResetMFA(w http.ResponseWriter, r *http.Request) error {
 		}
 		if tag.RowsAffected() == 0 {
 			return errNotFound
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM admin_recovery_codes WHERE user_id = $1`, id); err != nil {
+			return err
 		}
 		return s.audit(r, tx, "admin_mfa_reset", map[string]any{"admin_id": id})
 	})

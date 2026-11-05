@@ -8,6 +8,7 @@ import { useTranslation } from '@bookdan/i18n';
 import { Animated, Badge, Button, Chip, EmptyState, Reveal, T, colors, radius, spacing, useBounce } from '@bookdan/ui';
 import { Extrapolation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Photo } from '../../src/Photo';
+import { SectionTabs } from '../../src/SectionTabs';
 import { PhotoCarousel, PhotoGallery } from '../../src/PhotoCarousel';
 import { RatingSummary } from '../../src/RatingSummary';
 import { RoomOptionPicker, optionKey } from '../../src/RoomOptions';
@@ -272,12 +273,16 @@ export default function PropertyScreen() {
           </View>
 
           {/* Jump to a part of the page */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.lg }}>
-            <Chip label={t('property.tab_overview')} selected={tab === 'overview'} onPress={() => goTo('overview')} />
-            <Chip label={t('property.tab_amenities')} selected={tab === 'amenities'} onPress={() => goTo('amenities')} />
-            <Chip label={t('property.tab_reviews')} selected={tab === 'reviews'} onPress={() => goTo('reviews')} />
-            <Chip label={t('property.tab_rules')} selected={tab === 'rules'} onPress={() => goTo('rules')} />
-          </ScrollView>
+          <SectionTabs
+            value={tab}
+            onChange={goTo}
+            tabs={[
+              { key: 'overview', label: t('property.tab_overview'), icon: 'information-circle-outline' },
+              { key: 'amenities', label: t('property.tab_amenities'), icon: 'sparkles-outline' },
+              { key: 'reviews', label: t('property.tab_reviews'), icon: 'star-outline' },
+              { key: 'rules', label: t('property.tab_rules'), icon: 'document-text-outline' },
+            ]}
+          />
 
           <T variant="displaySm">{t('property.about')}</T>
           <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{i18n.language === 'am' && prop.description_am ? prop.description_am : prop.description}</T>

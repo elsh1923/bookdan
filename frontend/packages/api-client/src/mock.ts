@@ -25,7 +25,7 @@ import {
   type SupportTicket,
   type Voucher,
 } from '@bookdan/domain';
-import { createMockAuth } from './mockAuth';
+import { createMockAuth, MOCK_OTP } from './mockAuth';
 import { SEED } from './seed';
 import { ApiError, type Api, type CreateQuoteParams, type GetPropertyParams, type SearchParams } from './types';
 
@@ -193,6 +193,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
   // ---- sign-in, expiring tokens and refresh are shared with the partner mock
   const auth = createMockAuth({ accessTtlMs: opts.accessTtlMs, gate });
   const identityOf = auth.identityOf;
+  const linkedExtra: { email: string | null; phone: string | null } = { email: null, phone: null }; // sign-in methods added in the demo
 
   // Status is derived from time on every read, the way the server would report it.
   function view(r: Row): Booking {
@@ -294,6 +295,25 @@ export function createMockApi(opts: MockOptions = {}): Api {
       quotes.set(q.id, { ...q, expires: Date.now() + QUOTE_MS });
       await persist();
       return q;
+    },
+
+    // Sign-in methods (simulated): only the one the person signed in with, plus whatever they add. A mock account is never merged.
+    async getIdentities() {
+      await gate();
+      const me = identityOf();
+      return { email: me.includes('@') ? me : linkedExtra.email, phone: me.includes('@') ? linkedExtra.phone : me, phone_available: true };
+    },
+    async sendLinkCode(identity) {
+      await gate();
+      if (identity.type === 'phone' && !/^\+251[79]\d{8}$/.test(identity.value)) throw new ApiError('INVALID_PHONE', 'Invalid phone number');
+    },
+    async confirmLink(identity, code) {
+      await gate();
+      if (code !== MOCK_OTP) throw new ApiError('INVALID_OTP', 'Wrong code');
+      if (identity.type === 'email') linkedExtra.email = identity.value;
+      else linkedExtra.phone = identity.value;
+      const me = identityOf();
+      return { email: me.includes('@') ? me : linkedExtra.email, phone: me.includes('@') ? linkedExtra.phone : me, phone_available: true, merged: false };
     },
 
     async getLoyalty() {

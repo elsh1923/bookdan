@@ -285,12 +285,47 @@ func (s *Server) paymentWebhook(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// runRefunds pays back every deposit that is owed: online-paid bookings the hotel declined, that timed out, or whose hold
-// had ended when the payment arrived. A failed refund stays owed and is tried again by the sweeper.
-func (s *Server) runRefunds(ctx context.Context) {
+// Refunds. A deposit is owed back when the hotel declined, the request timed out, the hold had ended when the payment arrived, or the guest cancelled with
+// a refund due. Paying it back has three steps, and none holds a database transaction open while it waits for the payment gateway:
+//
+//  1. claim: in a short transaction the refund is marked as started, its amount is fixed (what is left after partial refunds), and it is given a few minutes;
+//  2. the gateway is asked to return the money, with a reference that makes asking twice safe (nothing is held while waiting);
+//  3. in another short transaction the payment becomes 'refunded' and the ledger records it.
+//
+// If the server stops between 1 and 3, the claim runs out and the next pass asks the gateway again with the same reference and amount, finishes the record, and
+// the guest is paid once. A refund the gateway refuses is tried again with a growing pause, and the operators are told. Once a refund has started, no partial
+// refund can be added to that payment (see lockRefundable).
+const (
+	refundClaim    = 2 * time.Minute
+	refundMaxPause = 10 * time.Minute
+	refundTimeout  = 30 * time.Second
+)
+
+// refundPause is how long to wait before asking again after the nth try failed.
+func refundPause(attempts int) time.Duration {
+	p := time.Duration(attempts) * 20 * time.Second
+	if p < 20*time.Second {
+		p = 20 * time.Second
+	}
+	if p > refundMaxPause {
+		p = refundMaxPause
+	}
+	return p
+}
+
+// runRefunds is called after something that makes a refund owed (a decline, a cancellation, a payment that arrived too late). It pays the first few that are due, so
+// the person who caused it sees the money on its way; the sweeper pays the rest (sweepRefunds).
+func (s *Server) runRefunds(ctx context.Context) { s.payRefunds(ctx, 5) }
+
+// sweepRefunds is the timer's pass: every refund that is due.
+func (s *Server) sweepRefunds(ctx context.Context) { s.payRefunds(ctx, 50) }
+
+func (s *Server) payRefunds(ctx context.Context, limit int) {
 	rows, err := s.pool.Query(ctx, `SELECT p.id FROM payments p JOIN bookings b ON b.id = p.booking_id
-		WHERE p.status = 'succeeded' AND (b.status IN ('DECLINED_REFUNDED', 'EXPIRED') OR (b.status = 'CANCELLED_REFUNDED' AND coalesce(b.refund_santim, 0) > 0)
-			OR (p.kind = 'date_change' AND NOT EXISTS (SELECT 1 FROM date_change_requests r WHERE r.payment_id = p.id AND r.status IN ('pending', 'applied')))) LIMIT 50`)
+		WHERE p.status = 'succeeded' AND (p.refund_claimed_until IS NULL OR p.refund_claimed_until < now())
+		  AND (b.status IN ('DECLINED_REFUNDED', 'EXPIRED') OR (b.status = 'CANCELLED_REFUNDED' AND coalesce(b.refund_santim, 0) > 0)
+			OR (p.kind = 'date_change' AND NOT EXISTS (SELECT 1 FROM date_change_requests r WHERE r.payment_id = p.id AND r.status IN ('pending', 'applied'))))
+		ORDER BY p.created_at LIMIT $1`, limit)
 	if err != nil {
 		slog.Error("refunds: list", "err", err)
 		return
@@ -304,38 +339,87 @@ func (s *Server) runRefunds(ctx context.Context) {
 	}
 	rows.Close()
 	for _, id := range ids {
-		err := s.tx(ctx, func(tx pgx.Tx) error {
-			var ref, cur, bookingID string
-			var amount int64
-			// What is left of the payment after partial refunds (which are refunded by their own gateway calls).
-			err := tx.QueryRow(ctx, `SELECT provider_ref, amount_santim - coalesce((SELECT sum(r.amount_santim) FROM partial_refunds r WHERE r.payment_id = payments.id), 0)::bigint, currency, booking_id
-				FROM payments WHERE id = $1 AND status = 'succeeded' FOR UPDATE SKIP LOCKED`, id).Scan(&ref, &amount, &cur, &bookingID)
-			if err == pgx.ErrNoRows {
-				return nil // someone else is refunding it, or it is done
-			}
-			if err != nil {
-				return err
-			}
-			if amount <= 0 {
-				// Everything was already returned by partial refunds.
-				_, err := tx.Exec(ctx, `UPDATE payments SET status = 'refunded' WHERE id = $1`, id)
-				return err
-			}
-			if err := s.p.Gateway.Refund(ctx, ref, "", amount, cur); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `UPDATE payments SET status = 'refunded' WHERE id = $1`, id); err != nil {
-				return err
-			}
-			return ledger(ctx, tx, bookingID, id, "refund", "refund paid to the guest", cur,
-				entry{"refunds_payable", amount}, entry{"gateway_clearing", -amount})
-		})
-		if err != nil {
-			slog.Error("refund failed, will retry", "payment", id, "err", err)
-			ops.Report("refund-failed", "A refund could not be paid", "Payment "+id+": "+err.Error()+"\nIt is tried again every 20 seconds. If it keeps failing, refund the guest by hand.")
-		}
+		s.refundPayment(ctx, id)
 	}
-	s.runPartialRefunds(ctx)
+	s.payPartialRefunds(ctx, limit)
+}
+
+// refundPayment pays back what is left of one payment (steps 1 to 3 above).
+func (s *Server) refundPayment(ctx context.Context, id string) {
+	// The work must finish even if the request that started it is closed.
+	ctx = context.WithoutCancel(ctx)
+	var ref, cur, bookingID string
+	var amount int64
+	var attempts int
+	claimed := false
+	err := s.tx(ctx, func(tx pgx.Tx) error {
+		var frozen *int64
+		// What is left of the payment after partial refunds (which are refunded by their own gateway calls). A retry pays the amount decided at the first claim.
+		err := tx.QueryRow(ctx, `SELECT provider_ref, amount_santim - coalesce((SELECT sum(r.amount_santim) FROM partial_refunds r WHERE r.payment_id = payments.id), 0)::bigint,
+				currency, booking_id, refund_amount_santim, refund_attempts
+			FROM payments WHERE id = $1 AND status = 'succeeded' AND (refund_claimed_until IS NULL OR refund_claimed_until < now()) FOR UPDATE SKIP LOCKED`, id).
+			Scan(&ref, &amount, &cur, &bookingID, &frozen, &attempts)
+		if err == pgx.ErrNoRows {
+			return nil // someone else is refunding it, or it is done
+		}
+		if err != nil {
+			return err
+		}
+		if frozen != nil {
+			amount = *frozen
+		}
+		if amount <= 0 {
+			// Everything was already returned by partial refunds.
+			_, err := tx.Exec(ctx, `UPDATE payments SET status = 'refunded' WHERE id = $1`, id)
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE payments SET refund_amount_santim = $2, refund_started_at = coalesce(refund_started_at, now()),
+				refund_claimed_until = now() + $3::interval, refund_attempts = refund_attempts + 1 WHERE id = $1`, id, amount, fmt.Sprintf("%d seconds", int(refundClaim.Seconds()))); err != nil {
+			return err
+		}
+		attempts++
+		claimed = true
+		return nil
+	})
+	if err != nil {
+		slog.Error("refund: claim", "payment", id, "err", err)
+		return
+	}
+	if !claimed {
+		return
+	}
+
+	// Step 2: the gateway, with nothing held.
+	gwCtx, cancel := context.WithTimeout(ctx, refundTimeout)
+	err = s.p.Gateway.Refund(gwCtx, ref, "", amount, cur)
+	cancel()
+	if err != nil {
+		if _, e := s.pool.Exec(ctx, `UPDATE payments SET refund_claimed_until = now() + $2::interval, refund_last_error = $3 WHERE id = $1`,
+			id, fmt.Sprintf("%d seconds", int(refundPause(attempts).Seconds())), err.Error()); e != nil {
+			slog.Error("refund: schedule retry", "payment", id, "err", e)
+		}
+		slog.Error("refund failed, will retry", "payment", id, "attempt", attempts, "err", err)
+		ops.Report("refund-failed", "A refund could not be paid", "Payment "+id+": "+err.Error()+"\nIt is tried again every few minutes. If it keeps failing, refund the guest by hand.")
+		return
+	}
+
+	// Step 3: record it.
+	err = s.tx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE payments SET status = 'refunded', refund_claimed_until = NULL, refund_last_error = NULL WHERE id = $1 AND status = 'succeeded'`, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return nil // already recorded by another pass
+		}
+		return ledger(ctx, tx, bookingID, id, "refund", "refund paid to the guest", cur,
+			entry{"refunds_payable", amount}, entry{"gateway_clearing", -amount})
+	})
+	if err != nil {
+		// The gateway has the money moving. The claim runs out and the next pass asks again (answered once) and records it.
+		slog.Error("refund paid but not recorded, will finish on the next pass", "payment", id, "err", err)
+		ops.Report("refund-not-recorded", "A refund was paid but not recorded", "Payment "+id+": "+err.Error()+"\nThe next pass finishes the record. No action is needed unless this repeats.")
+	}
 }
 
 // ---- alert to the hotel
@@ -345,15 +429,19 @@ func (s *Server) runRefunds(ctx context.Context) {
 // push sends an alert and forgets any phone the push service says is gone. Failures are logged, never returned: an alert
 // that cannot be sent must not undo the booking that caused it.
 func (s *Server) push(ctx context.Context, tokens []string, title, body string, data map[string]string) {
-	invalid, err := s.p.Push.Notify(ctx, tokens, title, body, data)
-	if err != nil {
-		slog.Error("push failed", "err", err)
-	}
+	s.QueuePush(ctx, tokens, title, body, data) // written to the outbox, sent at once, and tried again if it fails (outbox.go)
+}
+
+// deliverPush is the actual send, for the outbox: it asks the push service, and forgets any phone the service says is gone. A failure is returned so the outbox
+// tries again.
+func (s *Server) deliverPush(ctx context.Context, p pushPayload) error {
+	invalid, err := s.p.Push.Notify(ctx, p.Tokens, p.Title, p.Body, p.Data)
 	if len(invalid) > 0 {
-		if _, err := s.pool.Exec(ctx, `UPDATE devices SET push_token = NULL WHERE push_token = ANY($1::text[])`, invalid); err != nil {
-			slog.Error("forget push tokens", "err", err)
+		if _, e := s.pool.Exec(ctx, `UPDATE devices SET push_token = NULL WHERE push_token = ANY($1::text[])`, invalid); e != nil {
+			slog.Error("forget push tokens", "err", e)
 		}
 	}
+	return err
 }
 
 // Guest messages. The text is English because the server does not know the guest's language yet; the data carries the

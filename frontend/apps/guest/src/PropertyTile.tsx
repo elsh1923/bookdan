@@ -46,7 +46,7 @@ export function PropertyTile({ item, width, onPress }: { item: SearchItem; width
       </PressableScale>
 
       {item.rating && item.rating >= GUEST_FAVORITE_MIN_RATING ? (
-        <View pointerEvents="none" style={{ position: 'absolute', top: spacing.sm + 4, left: spacing.sm + 4, backgroundColor: '#fff', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 }}>
+        <View pointerEvents="none" style={{ position: 'absolute', top: spacing.sm + 4, left: spacing.sm + 4, backgroundColor: 'rgba(8,12,22,0.66)', borderWidth: 1, borderColor: colors.line, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 }}>
           <T variant="label" color={colors.ink}>{t('home.guest_favorite')}</T>
         </View>
       ) : null}

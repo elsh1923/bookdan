@@ -23,6 +23,7 @@ var activityText = map[string]string{
 	"admin_hotel_updated":  "edited the hotel details",
 	"admin_room_created":   "added a room type",
 	"admin_room_updated":   "edited a room type",
+	"admin_room_removed":   "removed a room type",
 	"admin_price_set":      "changed a room price",
 	"admin_photo_added":    "added a photo",
 	"admin_photo_cover":    "changed the cover photo",

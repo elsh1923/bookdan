@@ -25,6 +25,7 @@ func (s *Server) RunMaintenance(ctx context.Context) {
 	s.accrueHotelCommissions(ctx)
 	s.emailStatements(ctx)
 	s.eraseOldIDs(ctx)
+	s.tidyOutbox(ctx)
 }
 
 func (s *Server) completeStays(ctx context.Context) {

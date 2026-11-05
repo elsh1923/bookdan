@@ -7,6 +7,7 @@ import { Badge, Button, Chip, PressableScale, Reveal, T, colors, radius, spacing
 import { HeaderBand } from '../../src/HeaderBand';
 import { api, isMockApi } from '../../src/api';
 import { AlertsChecklist } from '../../src/AlertsChecklist';
+import { AlertPreferences } from '../../src/AlertPreferences';
 import { useAuth } from '../../src/auth';
 import { useInbox } from '../../src/queries';
 import { endSession } from '../../src/session';
@@ -57,6 +58,7 @@ export default function Settings() {
         </View>
 
         <Reveal index={3}><AlertsChecklist /></Reveal>
+        <Reveal index={4}><AlertPreferences /></Reveal>
 
         <View style={{ marginTop: spacing.xl }}>
           {identity ? <T color={colors.inkSoft}>{t('partner.signed_in_as', { who: identity.value })}</T> : null}

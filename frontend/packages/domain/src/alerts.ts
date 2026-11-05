@@ -52,7 +52,7 @@ export function alertReadiness(f: AlertFacts): { ready: boolean; items: AlertIte
 
 /** What the server pushes when a booking needs an answer. The app opens that booking when it is tapped. */
 export interface BookingAlertData {
-  type: 'new_booking' | 'booking_cancelled';
+  type: 'new_booking' | 'booking_cancelled' | 'booking_dates_changed' | 'booking_dispute';
   booking_id: string;
 }
 
@@ -90,8 +90,16 @@ export function parseSupportAnswer(data: unknown): SupportAnswerData | null {
 
 export function parseBookingAlert(data: unknown): BookingAlertData | null {
   const d = data as { type?: unknown; booking_id?: unknown } | null;
-  if (d && (d.type === 'new_booking' || d.type === 'booking_cancelled') && typeof d.booking_id === 'string' && d.booking_id.length > 0) {
+  if (
+    d && (d.type === 'new_booking' || d.type === 'booking_cancelled' || d.type === 'booking_dates_changed' || d.type === 'booking_dispute') &&
+    typeof d.booking_id === 'string' && d.booking_id.length > 0
+  ) {
     return { type: d.type, booking_id: d.booking_id };
   }
   return null;
+}
+
+/** A push telling an owner a guest reviewed the hotel: tapping it opens the reviews screen. */
+export function isReviewAlert(data: unknown): boolean {
+  return (data as { type?: unknown } | null)?.type === 'new_review';
 }

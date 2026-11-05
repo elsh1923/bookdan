@@ -79,6 +79,17 @@ export default function Profile() {
       </PressableScale>
       </Reveal>
 
+      {identity ? (
+        <PressableScale scaleTo={0.98} onPress={() => router.push('/sign-in-methods')} accessibilityRole="button" style={{ marginTop: spacing.md, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }}>
+          <Ionicons name="key-outline" size={22} color={colors.primaryInk} />
+          <View style={{ flex: 1 }}>
+            <T variant="h3">{t('link.title')}</T>
+            <T variant="small" color={colors.inkSoft}>{t('link.entry_sub')}</T>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        </PressableScale>
+      ) : null}
+
       <T variant="label" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('profile.language').toUpperCase()}</T>
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
         {SUPPORTED_LANGUAGES.map((l) => (

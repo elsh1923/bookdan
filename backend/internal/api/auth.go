@@ -64,6 +64,16 @@ func (s *Server) requestOTP(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.sendCode(r, id, channel); err != nil {
+		return err
+	}
+	respond(w, http.StatusOK, httpx.NowMeta())
+	return nil
+}
+
+// sendCode creates a one-time code for the identity and sends it (or logs the fixed demo code), within the limits per address and per connection.
+// Signing in and linking a second sign-in method to an account both use it.
+func (s *Server) sendCode(r *http.Request, id identity, channel string) error {
 	ctx := r.Context()
 	if channel == "sms" && s.cfg.OTPProvider == "off" {
 		return fail(http.StatusServiceUnavailable, "PHONE_SIGNIN_OFF", "Phone sign-in is not available. Sign in with your email.")
@@ -112,7 +122,6 @@ func (s *Server) requestOTP(w http.ResponseWriter, r *http.Request) error {
 		slog.Error("sending the sign-in code failed", "channel", channel, "err", err)
 		return fail(http.StatusBadGateway, codeSendFailed, "We could not send the code. Try again in a minute.")
 	}
-	respond(w, http.StatusOK, httpx.NowMeta())
 	return nil
 }
 
@@ -229,6 +238,11 @@ func (s *Server) verifyOTP(w http.ResponseWriter, r *http.Request) error {
 // checkOTP verifies a sign-in code against the newest live challenge for the identity and spends it. Every attempt counts, so a
 // code cannot be guessed. A wrong code returns *wrongCode: the caller records the failed attempt outside its transaction.
 func (s *Server) checkOTP(ctx context.Context, tx pgx.Tx, id identity, code string) error {
+	return s.checkOTPMode(ctx, tx, id, code, true)
+}
+
+// checkOTPMode is checkOTP; with spend false a right code is only confirmed, not used up (linking an account asks once more before it merges two accounts).
+func (s *Server) checkOTPMode(ctx context.Context, tx pgx.Tx, id identity, code string, spend bool) error {
 	var cid string
 	var hash []byte
 	var attempts, maxAttempts int
@@ -243,6 +257,9 @@ func (s *Server) checkOTP(ctx context.Context, tx pgx.Tx, id identity, code stri
 	}
 	if !hmac.Equal(hash, s.keys.HashSecret("otp:"+id.Value, strings.TrimSpace(code))) {
 		return &wrongCode{cid}
+	}
+	if !spend {
+		return nil
 	}
 	_, err = tx.Exec(ctx, `UPDATE otp_challenges SET consumed_at = now() WHERE id = $1`, cid)
 	return err

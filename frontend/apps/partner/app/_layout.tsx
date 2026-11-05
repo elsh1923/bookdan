@@ -17,6 +17,7 @@ import { queryClient } from '../src/api';
 import { useAuth } from '../src/auth';
 import { usePushAlerts } from '../src/notifications';
 import { UpdateBanner } from '../src/UpdateBanner';
+import { UpgradeGate } from '../src/UpgradeGate';
 import { usePrefs } from '../src/store';
 
 export default function RootLayout() {
@@ -57,6 +58,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <StatusBar style="dark" />
           <UpdateBanner />
+          <UpgradeGate />
           <View style={{ flex: 1, alignItems: 'center', backgroundColor: colors.background }}>
             <View style={{ flex: 1, width: '100%', maxWidth: 640 }}>
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background }, animation: 'slide_from_right', animationDuration: 280 }}>

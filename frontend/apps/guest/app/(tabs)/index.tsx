@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PropertyType, SearchItem } from '@bookdan/domain';
 import { addDays, todayAddis } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { EmptyState, PressableScale, Reveal, Skeleton, T, colors, gradients, radius, shadow, spacing } from '@bookdan/ui';
+import { Chip, EmptyState, PressableScale, Reveal, Skeleton, T, colors, gradients, radius, shadow, spacing } from '@bookdan/ui';
 import { CurrencyChip } from '../../src/CurrencyChip';
 import { StayCard } from '../../src/StayCard';
 import { useAllProperties } from '../../src/queries';
@@ -37,28 +37,8 @@ const CATEGORY_ICON: Record<Category, keyof typeof Ionicons.glyphMap> = {
   resort: 'sunny-outline',
 };
 
-function Pill({ label, icon, selected, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; selected: boolean; onPress: () => void }) {
-  return (
-    <PressableScale
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      scaleTo={0.94}
-      style={{
-        minHeight: 40, borderRadius: radius.pill, overflow: 'hidden', justifyContent: 'center',
-        borderWidth: 1, borderColor: selected ? 'transparent' : colors.line,
-        backgroundColor: selected ? 'transparent' : colors.surface,
-      }}
-    >
-      {selected ? (
-        <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-      ) : null}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md }}>
-        <Ionicons name={icon} size={15} color={selected ? '#FFFFFF' : colors.inkSoft} />
-        <T variant="small" color={selected ? '#FFFFFF' : colors.inkSoft}>{label}</T>
-      </View>
-    </PressableScale>
-  );
+function Pill(props: { label: string; icon: keyof typeof Ionicons.glyphMap; selected: boolean; onPress: () => void }) {
+  return <Chip {...props} />;
 }
 
 // One tappable field inside the search card.

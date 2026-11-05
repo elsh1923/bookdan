@@ -11,6 +11,7 @@ import {
   idLast4,
   priceStay,
   todayAddis,
+  type AlertKind,
   type CheckinState,
   type IdType,
   type NewSupportTicket,
@@ -22,6 +23,7 @@ import { createMockAuth } from './mockAuth';
 import { ApiError, type PartnerApi, type PushRegistration } from './types';
 
 const HOTEL = { id: 'p-addis-1', name: 'Meskel Square Palace Hotel' };
+let mockMutedKinds: AlertKind[] = []; // the demo person's alert choices
 const ANSWER_WINDOW_MS = 15 * 60_000; // the hotel has 15 minutes after the guest pays
 const ROOMS: [string, number][] = [['Standard Double', 3200], ['Deluxe King', 4800], ['Family Suite', 7200]];
 const TOTAL_ROOMS: Record<string, number> = { 'Standard Double': 5, 'Deluxe King': 2, 'Family Suite': 1 };
@@ -302,6 +304,16 @@ export function createMockPartnerApi(opts: MockPartnerOptions = {}): PartnerApi 
         online_gross_santim: 0, online_commission_santim: 0, online_vat_santim: 0, online_hotel_share_santim: 0, pay_at_hotel_collected_santim: 0,
         pay_at_hotel_commission_santim: 0, pay_at_hotel_vat_santim: 0, paid_santim: 0, received_santim: 0, lines: [], payouts: [], receipts: [],
       }];
+    },
+
+    // Alert choices (simulated, in memory): the demo person is an owner.
+    async getAlertPreferences() {
+      await gate();
+      return [{ property_id: HOTEL.id, hotel: HOTEL.name, role: 'owner', alerts_on: true, muted_kinds: [...mockMutedKinds], available_kinds: ['changes', 'disputes', 'reviews'] }];
+    },
+    async setAlertPreferences(_propertyId, muted) {
+      await gate();
+      mockMutedKinds = [...new Set(muted)];
     },
 
     // Reviews (simulated): none in the demo.

@@ -42,10 +42,14 @@
     for (var i = 2; i < arguments.length; i++) add(el, arguments[i]);
     return el;
   }
-  function add(el, c) {
-    if (c === undefined || c === null || c === false) return;
-    if (Array.isArray(c)) c.forEach(function (x) { add(el, x); });
-    else el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+  // add(el, a, b, ...) appends every child it is given (a list, a text, an element); nothing, null and false are skipped.
+  function add(el) {
+    for (var i = 1; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c === undefined || c === null || c === false) continue;
+      if (Array.isArray(c)) c.forEach(function (x) { add(el, x); });
+      else el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    }
   }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   function msg(kind, text) { return h('div', { class: 'msg ' + kind, role: kind === 'err' ? 'alert' : 'status' }, text); }
@@ -498,7 +502,8 @@
             if (!isNaN(p) && p * 100 !== r.price_santim) return call('PUT', '/partner/hotels/' + hotel.id + '/rooms/' + r.id + '/price', { price_santim: p * 100 });
           }).then(function () { reload(); }, function (err) { btn.disabled = false; add(out, msg('err', r.name + ': ' + err.message)); });
         } }, 'Save');
-        add(body, h('tr', {}, h('td', {}, name), h('td', {}, cap), h('td', {}, total), h('td', {}, feat), h('td', {}, price), h('td', {}, bf), h('td', {}, nr), h('td', {}, btn, ' ', pbtn)));
+var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove "' + r.name + '"? Only a room that has never been booked can be removed.')) call('DELETE', '/partner/hotels/' + hotel.id + '/rooms/' + r.id).then(reload, function (err) { add(out, msg('err', r.name + ': ' + err.message)); }); } }, 'Remove');
+        add(body, h('tr', {}, h('td', {}, name), h('td', {}, cap), h('td', {}, total), h('td', {}, feat), h('td', {}, price), h('td', {}, bf), h('td', {}, nr), h('td', {}, btn, ' ', pbtn, ' ', del)));
         add(body, photosRow);
       });
       add(table, body);
@@ -619,6 +624,12 @@
   }
 
   // Booking alerts: who is told when a request arrives, and when. Owners and platform admins both manage this.
+  // The optional alerts a person switched off for themselves in the hotel app (new booking requests cannot be switched off).
+  function mutedText(p) {
+    var NAMES = { changes: 'cancellations and date changes', disputes: 'disputes', reviews: 'reviews' };
+    var off = (p.muted_kinds || []).map(function (k) { return NAMES[k] || k; });
+    return off.length ? h('span', { class: 'muted', style: 'font-size:13px' }, 'Off: ' + off.join(', ')) : h('span', { class: 'muted', style: 'font-size:13px' }, 'All on');
+  }
   function alertsPanel(hotel, reload) {
     var wrap = h('div', {});
     add(wrap, h('p', { class: 'soft' }, 'When a guest books, the people on duty are alerted on their phones at the same time and the first to answer wins. Five minutes before the request runs out, everyone gets a reminder and the owners get an email.'));
@@ -635,7 +646,7 @@
     add(wrap, h('h3', { style: 'margin-top:24px' }, 'People and shifts'));
     add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, 'Shifts use Addis Ababa time. Leave both times empty for always on duty. A shift can pass midnight (22:00 to 06:00). Owners are still alerted outside their shift when nobody else answers; switch their alerts off to stop that.'));
     if (!hotel.staff.length) { add(wrap, h('p', {}, 'Nobody works for this hotel yet, so booking requests will not reach anyone.')); return wrap; }
-    var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Phone'), h('th', {}, 'Alerts'), h('th', {}, 'From'), h('th', {}, 'Until'), h('th', {}))));
+    var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Phone'), h('th', {}, 'Alerts'), h('th', {}, 'From'), h('th', {}, 'Until'), h('th', {}, 'Optional alerts'), h('th', {}))));
     var body = h('tbody', {});
     hotel.staff.forEach(function (p) {
       var on = h('input', { type: 'checkbox' }); on.checked = p.alerts_on;
@@ -649,7 +660,7 @@
       } }, 'Save');
       add(body, h('tr', {}, h('td', {}, p.contact + (p.role === 'owner' ? ' (owner)' : '')),
         h('td', {}, p.reachable ? h('span', { class: 'chip active' }, 'Signed in') : h('span', { class: 'chip draft' }, 'No phone')),
-        h('td', {}, on), h('td', {}, from), h('td', {}, to), h('td', {}, btn, ' ', note)));
+        h('td', {}, on), h('td', {}, from), h('td', {}, to), h('td', {}, mutedText(p)), h('td', {}, btn, ' ', note)));
     });
     add(table, body); add(wrap, h('div', { style: 'overflow-x:auto' }, table));
     add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, '"No phone" means the person has not signed in to the hotel app on a phone that allows notifications, so they cannot be alerted.'));

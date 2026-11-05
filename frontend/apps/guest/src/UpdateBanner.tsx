@@ -42,7 +42,7 @@ export function UpdateBanner() {
         onPress={() => Updates.reloadAsync()}
         style={{
           flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 52, paddingHorizontal: spacing.md,
-          borderRadius: radius.md, backgroundColor: colors.ink,
+          borderRadius: radius.md, backgroundColor: colors.fill, borderWidth: 1, borderColor: colors.line,
           shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 8,
         }}
       >

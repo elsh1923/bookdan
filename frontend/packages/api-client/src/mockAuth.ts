@@ -39,6 +39,9 @@ export function createMockAuth(opts: { accessTtlMs?: number; gate: () => Promise
     async logout() {
       // nothing to end on the mock server
     },
+    async getAppConfig() {
+      return { app: 'guest', min_version: '', download_url: '' }; // the mock never asks anyone to update
+    },
     async refresh(refreshToken) {
       await opts.gate();
       const m = refreshToken.match(/^ref_(\d+)_(.+)$/);

@@ -1,4 +1,7 @@
 import {
+  MyIdentitiesSchema,
+  AlertPrefsSchema,
+  AppConfigSchema,
   BookingSchema,
   DateChangeQuoteSchema,
   CheckinLookupSchema,
@@ -39,6 +42,8 @@ export interface HttpOptions {
   /** A stable id for this install, or a function that finds one. At least 8 characters. */
   deviceId: string | (() => Promise<string>);
   platform: 'android' | 'ios' | 'web';
+  /** This build's version (like 0.2.0), sent as X-App-Version so the server can ask an old build to update. */
+  appVersion?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }
@@ -71,6 +76,7 @@ function createCore(o: HttpOptions) {
           'X-App': o.app,
           'X-Device-Id': deviceId,
           'X-Platform': o.platform,
+          ...(o.appVersion ? { 'X-App-Version': o.appVersion } : {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...headers,
         },
@@ -122,6 +128,9 @@ function createCore(o: HttpOptions) {
     },
     async logout(refreshToken) {
       await request('POST', '/auth/logout', null, { refresh_token: refreshToken });
+    },
+    async getAppConfig() {
+      return request('GET', '/app-config?app=' + o.app, AppConfigSchema);
     },
   };
   return { request, auth };
@@ -185,6 +194,11 @@ export function createHttpApi(options: HttpOptions): Api {
     },
     getProfile: async () => (await request('GET', '/me/profile', ProfileEnvelope)).profile,
     getLoyalty: () => request('GET', '/me/loyalty', LoyaltySchema),
+    getIdentities: () => request('GET', '/me/identities', MyIdentitiesSchema),
+    sendLinkCode: async (identity) => {
+      await request('POST', '/me/identities/code', null, { type: identity.type, value: identity.value }, {}, 30_000);
+    },
+    confirmLink: (identity, code, merge) => request('POST', '/me/identities/confirm', MyIdentitiesSchema, { type: identity.type, value: identity.value, code, merge }),
     saveProfile: async (input) => {
       const r = await request('PUT', '/me/profile', ProfileEnvelope, input);
       if (!r.profile) throw new ApiError('SERVER', 'The server did not return the saved profile');
@@ -257,6 +271,10 @@ export function createHttpPartnerApi(options: HttpOptions): PartnerApi {
       if (month) q.set('month', month);
       if (propertyId) q.set('property_id', propertyId);
       return (await request('GET', `/partner/statements${q.size ? `?${q}` : ''}`, StatementListSchema)).statements;
+    },
+    getAlertPreferences: async () => (await request('GET', '/partner/alert-preferences', AlertPrefsSchema)).hotels,
+    setAlertPreferences: async (id, muted) => {
+      await request('PUT', `/partner/alert-preferences/${encodeURIComponent(id)}`, null, { muted_kinds: muted });
     },
     listReviews: async () => (await request('GET', '/partner/reviews', PartnerReviewListSchema)).reviews,
     replyToReview: async (id, text) => {

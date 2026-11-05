@@ -20,6 +20,11 @@ export function useEarnings() {
   });
 }
 
+/** The signed-in person's optional alert choices, per hotel. */
+export function useAlertPrefs() {
+  return useQuery({ queryKey: ['alert-prefs'], queryFn: () => api.getAlertPreferences(), staleTime: 60_000 });
+}
+
 /** Translation key for why an answer (accept or decline) failed. */
 export function answerErrorKey(e: unknown): string {
   if (e instanceof ApiError) {

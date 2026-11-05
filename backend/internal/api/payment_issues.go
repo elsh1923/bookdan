@@ -39,7 +39,7 @@ func (s *Server) raisePaymentIssue(ctx context.Context, paymentID, bookingID, ki
 		"Open the admin page, Payment issues, to see it and mark it resolved. Decide whether to refund the guest or ask for the difference.",
 		code, guest, hotel, describeMoney(details["asked_santim"], details["asked_currency"]), describeMoney(details["paid_santim"], details["paid_currency"]))
 	for _, to := range s.supportRecipients() {
-		if err := s.p.Mail.SendMail(ctx, to, subject, text, ""); err != nil {
+		if err := s.QueueMail(ctx, to, subject, text, ""); err != nil {
 			slog.Error("could not email a payment issue", "to", to, "err", err)
 		}
 	}

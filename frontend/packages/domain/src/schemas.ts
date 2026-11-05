@@ -400,6 +400,20 @@ export const RatesSchema = z.object({
 });
 export type Rates = z.infer<typeof RatesSchema>;
 
+/** What the server tells an app when it opens: the oldest build it still serves (empty = any) and where to download a newer one. */
+export const AppConfigSchema = z.object({ app: z.string(), min_version: z.string(), download_url: z.string() });
+export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+/** The sign-in methods on a guest's account (one email and one phone at most). phone_available is false when the server cannot text a code (email-only launch). */
+export const MyIdentitiesSchema = z.object({
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  phone_available: z.boolean(),
+  /** Set on the answer to confirming a code: true when another account of the same person was merged into this one. */
+  merged: z.boolean().optional(),
+});
+export type MyIdentities = z.infer<typeof MyIdentitiesSchema>;
+
 /** The guest's member level: the tier held (null before the first finished stay), hotels stayed at, and what is next. */
 export const LoyaltySchema = z.object({
   tier: z.string().nullable(),

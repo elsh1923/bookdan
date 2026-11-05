@@ -8,8 +8,9 @@ import { b64urlDecode, b64urlEncode, decodeVoucherPayload, encodeVoucherToken, n
 import { DateChangeQuoteSchema, VoucherSchema } from './schemas.ts';
 import { DISPLAY_CURRENCIES, DISPLAY_CURRENCY_CODES, formatDisplayAmount, isDisplayCurrency } from './currencies.ts';
 import { normalizeEmail } from './identity.ts';
+import { isOlderVersion, parseVersion } from './version.ts';
 import { PartnerBookingSchema, DECLINE_REASONS, isAwaitingAnswer, sortInbox } from './partner.ts';
-import { alertReadiness, parseBookingAlert, parseBookingUpdate, parseSupportAnswer } from './alerts.ts';
+import { alertReadiness, isReviewAlert, parseBookingAlert, parseBookingUpdate, parseSupportAnswer } from './alerts.ts';
 import { BookingGuestSchema, GuestProfileInputSchema, GuestProfileSchema, idLast4, isProfileComplete, maskId, normalizeIdNumber } from './guestIdentity.ts';
 import { isPaymentInFlight, isStillChanging, shouldResumeOnLaunch } from './booking.ts';
 import { formatCountdown, normalizeEthiopianPhone, priceStay } from './pricing.ts';
@@ -363,4 +364,32 @@ test('display currencies: a list of thirty, the popular nine first, and amounts 
   assert.equal(formatDisplayAmount(124000, 'JPY'), 'JPY 1,240'); // written without a fraction
   assert.equal(formatDisplayAmount(5, 'AED'), 'AED 0.05');
   assert.equal(formatDisplayAmount(-1250, 'USD'), '-$12.50');
+});
+
+test('an app older than the minimum version must update, anything unclear never locks anyone out', () => {
+  assert.deepEqual(parseVersion('1.4.2'), [1, 4, 2]);
+  assert.deepEqual(parseVersion('v1.4'), [1, 4, 0]);
+  assert.deepEqual(parseVersion('2.0.0-beta.1'), [2, 0, 0]);
+  assert.equal(parseVersion(''), null);
+  assert.equal(parseVersion('1.2.3.4'), null);
+  assert.equal(parseVersion('banana'), null);
+  assert.equal(isOlderVersion('0.2.0', '1.0.0'), true);
+  assert.equal(isOlderVersion('1.1.9', '1.2.0'), true);
+  assert.equal(isOlderVersion('1.2.0', '1.2.0'), false);
+  assert.equal(isOlderVersion('1.10.0', '1.9.0'), false); // numbers, not text
+  assert.equal(isOlderVersion('0.2.0', ''), false); // no minimum
+  assert.equal(isOlderVersion('', '1.0.0'), false); // a build that does not know its version
+  assert.equal(isOlderVersion('x', '1.0.0'), false);
+  assert.equal(isOlderVersion('1.0.0', 'x'), false);
+});
+
+test('every booking alert the server sends opens its booking, and a review alert opens the reviews', () => {
+  for (const type of ['new_booking', 'booking_cancelled', 'booking_dates_changed', 'booking_dispute']) {
+    assert.deepEqual(parseBookingAlert({ type, booking_id: 'b-1' }), { type, booking_id: 'b-1' });
+  }
+  assert.equal(parseBookingAlert({ type: 'new_review', booking_id: 'b-1' }), null);
+  assert.equal(parseBookingAlert({ type: 'new_booking' }), null);
+  assert.equal(isReviewAlert({ type: 'new_review', booking_id: 'b-1' }), true);
+  assert.equal(isReviewAlert({ type: 'new_booking' }), false);
+  assert.equal(isReviewAlert(null), false);
 });

@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
@@ -7,6 +8,7 @@ import { todayAddis } from '@bookdan/domain';
 import { splitBookings } from '../../src/bookingHistory';
 import { useTranslation } from '@bookdan/i18n';
 import { Chip, EmptyState, PressableScale, Reveal, Skeleton, T, colors, radius, shadow, spacing } from '@bookdan/ui';
+import { SectionTabs } from '../../src/SectionTabs';
 import { useAuth } from '../../src/auth';
 import { priceExact as price, shortDate } from '../../src/format';
 import { useBookings } from '../../src/queries';
@@ -15,6 +17,12 @@ import { pruneVouchers } from '../../src/voucherStore';
 import { useDisplay } from '../../src/display';
 
 type Tab = 'upcoming' | 'past' | 'cancelled' | 'failed';
+const TAB_ICON: Record<Tab, keyof typeof Ionicons.glyphMap> = {
+  upcoming: 'calendar-outline',
+  past: 'checkmark-done-outline',
+  cancelled: 'close-circle-outline',
+  failed: 'alert-circle-outline',
+};
 
 // The guest's bookings in four tabs: upcoming, completed, cancelled and failed.
 export default function Bookings() {
@@ -79,18 +87,11 @@ export default function Bookings() {
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} tintColor={colors.primary} />}
           ListHeaderComponent={
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.line, marginBottom: spacing.md }}>
-              {tabs.map((x) => {
-                const selected = tab === x.key;
-                return (
-                  <Pressable key={x.key} accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => setTab(x.key)} style={{ paddingTop: spacing.sm, paddingBottom: spacing.sm }}>
-                    <T variant="h3" color={selected ? colors.ink : colors.muted} style={{ fontWeight: selected ? '700' : '500' }}>{`${x.label}  ${x.count}`}</T>
-                    {/* The underline shows the open tab. */}
-                    <View style={{ height: 3, borderRadius: 2, marginTop: spacing.xs, backgroundColor: selected ? colors.primary : 'transparent' }} />
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+            <SectionTabs
+              value={tab}
+              onChange={setTab}
+              tabs={tabs.map((x) => ({ key: x.key, label: `${x.label} ${x.count}`, icon: TAB_ICON[x.key] }))}
+            />
           }
           ListEmptyComponent={
             <EmptyState icon="🎫" title={emptyText[tab].title} body={emptyText[tab].body} actionLabel={tab === 'upcoming' ? t('bookings.find') : undefined} onAction={tab === 'upcoming' ? () => router.navigate('/') : undefined} />

@@ -204,6 +204,8 @@ type staffOut struct {
 	ShiftStart *string `json:"shift_start"`
 	ShiftEnd   *string `json:"shift_end"`
 	Reachable  bool    `json:"reachable"`
+	// Muted are the optional alerts the person chose not to get (changes, disputes, reviews).
+	Muted []string `json:"muted_kinds"`
 }
 
 type businessOut struct {
@@ -330,7 +332,7 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 
 	sr, err := s.pool.Query(ctx, `SELECT u.id, coalesce(u.email, u.phone), ps.role, ps.invited_at, ps.joined_at, ps.alerts_on,
 			to_char(ps.shift_start, 'HH24:MI'), to_char(ps.shift_end, 'HH24:MI'),
-			EXISTS (SELECT 1 FROM devices d WHERE d.user_id = u.id AND d.app = 'partner' AND d.push_token IS NOT NULL AND d.revoked_at IS NULL)
+			EXISTS (SELECT 1 FROM devices d WHERE d.user_id = u.id AND d.app = 'partner' AND d.push_token IS NOT NULL AND d.revoked_at IS NULL), ps.muted_kinds
 		FROM property_staff ps JOIN users u ON u.id = ps.user_id
 		WHERE ps.property_id = $1 ORDER BY ps.role DESC, ps.created_at`, id)
 	if err != nil {
@@ -342,7 +344,7 @@ func (s *Server) adminGetHotel(w http.ResponseWriter, r *http.Request) error {
 		var so staffOut
 		var invited time.Time
 		var joined *time.Time
-		if err := sr.Scan(&so.UserID, &so.Contact, &so.Role, &invited, &joined, &so.AlertsOn, &so.ShiftStart, &so.ShiftEnd, &so.Reachable); err != nil {
+		if err := sr.Scan(&so.UserID, &so.Contact, &so.Role, &invited, &joined, &so.AlertsOn, &so.ShiftStart, &so.ShiftEnd, &so.Reachable, &so.Muted); err != nil {
 			return err
 		}
 		so.InvitedAt, so.Status = invited.UTC().Format(time.RFC3339), "invited"

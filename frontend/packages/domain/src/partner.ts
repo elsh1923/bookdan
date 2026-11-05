@@ -218,6 +218,28 @@ export const PartnerReviewSchema = z.object({
 export const PartnerReviewListSchema = z.object({ reviews: z.array(PartnerReviewSchema) });
 export type PartnerReview = z.infer<typeof PartnerReviewSchema>;
 
+/**
+ * The optional alerts a person at a hotel can choose about: guests cancelling or moving their dates, disputes, and (owners) new reviews. New booking requests are not
+ * on the list: they always reach the people on duty.
+ */
+export const ALERT_KINDS = ['changes', 'disputes', 'reviews'] as const;
+export type AlertKind = (typeof ALERT_KINDS)[number];
+export const AlertPrefsSchema = z.object({
+  hotels: z.array(z.object({
+    property_id: z.string(),
+    hotel: z.string(),
+    role: z.string(),
+    /** The person's main alerts switch and shift (set by the hotel's owner). */
+    alerts_on: z.boolean(),
+    /** The optional kinds this person switched off. */
+    muted_kinds: z.array(z.string()),
+    /** The optional kinds this person can choose about at this hotel. */
+    available_kinds: z.array(z.string()),
+  })),
+  server_time: z.string(),
+});
+export type HotelAlertPrefs = z.infer<typeof AlertPrefsSchema>['hotels'][number];
+
 /** One month's statement for a hotel: the stays that ended in it, the payouts and receipts, and the balance at the start and the end. */
 export const StatementLineSchema = z.object({
   date: z.string(),

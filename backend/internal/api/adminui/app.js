@@ -8,7 +8,7 @@
   var TYPES = [['hotel', 'Hotel'], ['guesthouse', 'Guesthouse'], ['lodge', 'Lodge'], ['resort', 'Resort']];
   var STATUSES = [['draft', 'Draft (not shown to guests)'], ['active', 'Published'], ['hidden', 'Hidden']];
 
-  var state = { token: null, role: null, contact: '', adminRole: '', can: {}, mfa: false, hasAccount: false, mustChange: false, config: { password: false, owners: false } };
+  var state = { token: null, role: null, contact: '', adminRole: '', can: {}, mfa: false, hasAccount: false, mustChange: false, mustSetupMfa: false, recoveryLeft: 0, config: { password: false, owners: false } };
   try { state.token = sessionStorage.getItem('admin-token'); state.role = sessionStorage.getItem('admin-role'); } catch (e) { /* private mode */ }
   var app = document.getElementById('app');
 
@@ -28,10 +28,14 @@
     for (var i = 2; i < arguments.length; i++) add(el, arguments[i]);
     return el;
   }
-  function add(el, c) {
-    if (c === undefined || c === null || c === false) return;
-    if (Array.isArray(c)) c.forEach(function (x) { add(el, x); });
-    else el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+  // add(el, a, b, ...) appends every child it is given (a list, a text, an element); nothing, null and false are skipped.
+  function add(el) {
+    for (var i = 1; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c === undefined || c === null || c === false) continue;
+      if (Array.isArray(c)) c.forEach(function (x) { add(el, x); });
+      else el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    }
   }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   function msg(kind, text) { return h('div', { class: 'msg ' + kind, role: kind === 'err' ? 'alert' : 'status' }, text); }
@@ -62,13 +66,17 @@
   function signedIn(res) {
     state.token = res.token; state.role = res.role;
     try { sessionStorage.setItem('admin-token', res.token); sessionStorage.setItem('admin-role', res.role); } catch (e) { /* ignore */ }
-    loadMe().then(function () { go('#/'); });
+    loadMe().then(function () {
+      go('#/');
+      if (res.used_recovery_code) alert('You signed in with a recovery code. ' + res.recovery_codes_left + ' left. Open My account to make a new set.');
+    });
   }
   // loadMe reads who is signed in and what their role may do, so the page shows the right tabs.
   function loadMe() {
     return call('GET', '/admin/me').then(function (me) {
       state.contact = me.contact; state.role = me.role; state.adminRole = me.admin_role || ''; state.can = me.can || {};
       state.mfa = !!me.mfa; state.hasAccount = !!me.has_account; state.mustChange = !!me.must_change_password;
+      state.mustSetupMfa = !!me.must_setup_mfa; state.recoveryLeft = me.recovery_codes_left || 0;
     }, function () { /* signed out by call() */ });
   }
   function can(what) { return state.role === 'admin' && !!state.can[what]; }
@@ -93,8 +101,8 @@
       var email = h('input', { type: 'email', autocomplete: 'username', required: true });
       var pass = h('input', { type: 'password', autocomplete: 'current-password', required: true });
       var btn = h('button', { type: 'submit' }, 'Sign in');
-      var code = h('input', { type: 'text', inputmode: 'numeric', maxlength: '6', placeholder: '6-digit code', autocomplete: 'one-time-code' });
-      var codeField = h('div', { class: 'field', style: 'display:none' }, h('label', {}, 'Code from your authenticator app'), code);
+      var code = h('input', { type: 'text', maxlength: '14', placeholder: '6-digit code, or a recovery code', autocomplete: 'one-time-code' });
+      var codeField = h('div', { class: 'field', style: 'display:none' }, h('label', {}, 'Code from your authenticator app, or one of your recovery codes'), code);
       var note = h('div', {});
       return h('form', { onsubmit: function (e) {
         e.preventDefault(); btn.disabled = true; clear(note);
@@ -136,7 +144,7 @@
     if (state.role !== 'admin') return [['', [['Hotels', '#/', null]]]];
     return [
       ['Hotels', [['All hotels', '#/', null], ['Add a hotel', '#/new', 'hotels_write'], ['Applications', '#/applications', 'applications'], ['Hotel changes', '#/activity', 'admins']]],
-      ['Guests', [['Support', '#/support', 'support'], ['Reviews', '#/reviews', 'reviews'], ['Payment issues', '#/issues', 'finance']]],
+      ['Guests', [['Support', '#/support', 'support'], ['Users', '#/users', 'users'], ['Reviews', '#/reviews', 'reviews'], ['Payment issues', '#/issues', 'finance']]],
       ['Money', [['Payouts', '#/payouts', 'finance'], ['Coupons', '#/coupons', null], ['Member tiers', '#/loyalty', null], ['Rates', '#/rates', null]]],
       ['Insights', [['Analytics', '#/analytics', null], ['Calls', '#/calls', null]]],
       ['Settings', [['Admins', '#/admins', 'admins'], ['My account', '#/account', null]]]
@@ -154,7 +162,7 @@
     var nav = h('nav', { class: 'side' });
     navGroups().forEach(function (g) {
       var links = g[1].filter(function (l) { return !l[2] || can(l[2]); });
-      if (!links.length || (state.mustChange && g[0] !== 'Settings')) return;
+      if (!links.length || ((state.mustChange || state.mustSetupMfa) && g[0] !== 'Settings')) return;
       if (g[0]) add(nav, h('h4', {}, g[0]));
       links.forEach(function (l) { add(nav, h('a', { href: l[1], class: l[1] === active ? 'on' : '' }, l[0])); });
     });
@@ -466,6 +474,12 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
   }
 
   // Booking alerts: who is told when a request arrives, and when. Owners and platform admins both manage this.
+  // The optional alerts a person switched off for themselves in the hotel app (new booking requests cannot be switched off).
+  function mutedText(p) {
+    var NAMES = { changes: 'cancellations and date changes', disputes: 'disputes', reviews: 'reviews' };
+    var off = (p.muted_kinds || []).map(function (k) { return NAMES[k] || k; });
+    return off.length ? h('span', { class: 'muted', style: 'font-size:13px' }, 'Off: ' + off.join(', ')) : h('span', { class: 'muted', style: 'font-size:13px' }, 'All on');
+  }
   function alertsPanel(hotel, reload) {
     var wrap = h('div', {});
     add(wrap, h('p', { class: 'soft' }, 'When a guest books, the people on duty are alerted on their phones at the same time and the first to answer wins. Five minutes before the request runs out, everyone gets a reminder and the owners get an email.'));
@@ -482,7 +496,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     add(wrap, h('h3', { style: 'margin-top:24px' }, 'People and shifts'));
     add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, 'Shifts use Addis Ababa time. Leave both times empty for always on duty. A shift can pass midnight (22:00 to 06:00). Owners are still alerted outside their shift when nobody else answers; switch their alerts off to stop that.'));
     if (!hotel.staff.length) { add(wrap, h('p', {}, 'Nobody works for this hotel yet, so booking requests will not reach anyone.')); return wrap; }
-    var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Phone'), h('th', {}, 'Alerts'), h('th', {}, 'From'), h('th', {}, 'Until'), h('th', {}))));
+    var table = h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Phone'), h('th', {}, 'Alerts'), h('th', {}, 'From'), h('th', {}, 'Until'), h('th', {}, 'Optional alerts'), h('th', {}))));
     var body = h('tbody', {});
     hotel.staff.forEach(function (p) {
       var on = h('input', { type: 'checkbox' }); on.checked = p.alerts_on;
@@ -496,7 +510,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       } }, 'Save');
       add(body, h('tr', {}, h('td', {}, p.contact + (p.role === 'owner' ? ' (owner)' : '')),
         h('td', {}, p.reachable ? h('span', { class: 'chip active' }, 'Signed in') : h('span', { class: 'chip draft' }, 'No phone')),
-        h('td', {}, on), h('td', {}, from), h('td', {}, to), h('td', {}, btn, ' ', note)));
+        h('td', {}, on), h('td', {}, from), h('td', {}, to), h('td', {}, mutedText(p)), h('td', {}, btn, ' ', note)));
     });
     add(table, body); add(wrap, h('div', { style: 'overflow-x:auto' }, table));
     add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, '"No phone" means the person has not signed in to the hotel app on a phone that allows notifications, so they cannot be alerted.'));
@@ -993,6 +1007,15 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
   // ---- my account (every platform admin): my password and the authenticator app
   function accountView(forced) {
     var holder = h('div', {});
+    var freshCodes = null; // recovery codes just made: shown once, then gone
+    // The recovery codes, to copy or print now: only a hash of each is kept, so they cannot be shown again.
+    function codesBox(codes) {
+      var text = codes.join('\n');
+      return h('div', { class: 'msg ok', role: 'status' }, h('strong', {}, 'Your recovery codes'),
+        h('p', {}, 'Keep these somewhere safe, apart from your phone. If you lose the phone, each one signs you in once instead of the 6-digit code. They are shown only now.'),
+        h('pre', { style: 'font:600 16px ui-monospace,Consolas,monospace;line-height:1.8;margin:8px 0;user-select:all' }, text),
+        h('button', { class: 'secondary', onclick: function () { if (navigator.clipboard) navigator.clipboard.writeText(text); } }, 'Copy'));
+    }
     function paint() {
       clear(holder);
       if (!state.hasAccount) {
@@ -1003,7 +1026,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       var cur = h('input', { type: 'password', autocomplete: 'current-password' });
       var nw = h('input', { type: 'password', autocomplete: 'new-password' });
       var out = h('div', {});
-      add(holder, h('div', { class: 'card' }, h('h3', {}, forced ? 'Choose your own password' : 'Change my password'),
+      if (forced !== 'mfa') add(holder, h('div', { class: 'card' }, h('h3', {}, forced ? 'Choose your own password' : 'Change my password'),
         forced ? h('p', { class: 'soft' }, 'The password you were given was only temporary. Choose one that only you know: at least 12 characters, not your email name.') : null,
         h('div', { class: 'field' }, h('label', {}, 'Current password'), cur),
         h('div', { class: 'field' }, h('label', {}, 'New password'), nw),
@@ -1013,9 +1036,10 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
             signedIn(res);
           }, function (err) { add(out, msg('err', err.message)); });
         } }, 'Save password'), out));
-      if (forced) return;
+      if (forced === true) return;
       var mfaOut = h('div', {});
       var box = h('div', { class: 'card' }, h('h3', {}, 'Authenticator app (second step)'));
+      if (forced === 'mfa') add(box, h('div', { class: 'msg warn' }, 'BookDan requires the authenticator app for every admin. Set it up to continue.'));
       add(box, h('p', { class: 'soft' }, state.mfa
         ? 'On. Signing in needs the 6-digit code from your authenticator app as well as the password.'
         : 'Off. Add an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…) so a stolen password is not enough to get in.'));
@@ -1025,8 +1049,14 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         add(box, h('div', { class: 'field' }, h('label', {}, 'Password'), pw), h('div', { class: 'field' }, h('label', {}, 'A current code (wait for a new one if you just signed in)'), code),
           h('button', { class: 'secondary', onclick: function () {
             clear(mfaOut);
-            call('POST', '/admin/me/mfa/disable', { password: pw.value, code: code.value }).then(function () { state.mfa = false; paint(); }, function (err) { add(mfaOut, msg('err', err.message)); });
+            call('POST', '/admin/me/mfa/disable', { password: pw.value, code: code.value }).then(function () { state.mfa = false; freshCodes = null; paint(); }, function (err) { add(mfaOut, msg('err', err.message)); });
           } }, 'Turn it off'), mfaOut);
+        add(box, h('h4', { style: 'margin:20px 0 4px' }, 'Recovery codes'),
+          h('p', { class: 'soft' }, state.recoveryLeft + ' unused. Making new ones replaces the old set. You need your password and a current code.'),
+          h('button', { class: 'secondary', onclick: function () {
+            clear(mfaOut);
+            call('POST', '/admin/me/mfa/recovery-codes', { password: pw.value, code: code.value }).then(function (res) { freshCodes = res.recovery_codes; state.recoveryLeft = res.recovery_codes.length; paint(); }, function (err) { add(mfaOut, msg('err', err.message)); });
+          } }, 'Make new recovery codes'));
       } else {
         add(box, h('button', { onclick: function () {
           clear(mfaOut);
@@ -1037,15 +1067,19 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
               h('p', {}, h('code', { style: 'font-size:16px;word-break:break-all' }, res.secret)),
               h('div', { class: 'field' }, h('label', {}, 'Then type the 6-digit code the app shows'), code2),
               h('button', { onclick: function () {
-                call('POST', '/admin/me/mfa/enable', { code: code2.value }).then(function () { state.mfa = true; paint(); }, function (err) { add(mfaOut, msg('err', err.message)); });
+                call('POST', '/admin/me/mfa/enable', { code: code2.value }).then(function (res2) { state.mfa = true; freshCodes = res2.recovery_codes; state.recoveryLeft = freshCodes.length; paint(); }, function (err) { add(mfaOut, msg('err', err.message)); });
               } }, 'Confirm and turn on'));
           }, function (err) { add(mfaOut, msg('err', err.message)); });
         } }, 'Set up'), mfaOut);
       }
+      if (freshCodes) {
+        add(box, codesBox(freshCodes));
+        if (forced === 'mfa') add(box, h('button', { onclick: function () { state.mustSetupMfa = false; go('#/'); } }, 'I saved them: continue'));
+      }
       add(holder, box);
     }
     paint();
-    return shell(h('div', {}, forced ? null : h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'My account'), holder));
+    return shell(h('div', {}, forced === true || forced === 'mfa' ? null : h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'My account'), holder));
   }
 
   // ---- admins (super admin): who can use this page, and what they may do
@@ -1100,6 +1134,65 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Admins'),
       h('p', { class: 'soft' }, 'Everyone who works at BookDan has their own sign-in. Super admins can do everything; Support answers guests and hotels, settles disputes and removes abusive reviews; Finance handles payouts, statements, payment issues and exchange rates. A disabled admin is signed out at once, and five wrong passwords lock an account for 15 minutes.'),
       notice, create, holder));
+  }
+
+  // ---- users (support and super admins): look a person up, suspend or reinstate them, sign them out everywhere
+  function usersView() {
+    var holder = h('div', {}, h('p', { class: 'muted' }, 'Type part of an email, phone number or name to find a person.'));
+    var words = h('input', { type: 'search', placeholder: 'Email, phone or name' });
+    var status = h('select', {}, h('option', { value: '' }, 'Any status'), h('option', { value: 'active' }, 'Active'), h('option', { value: 'suspended' }, 'Suspended'));
+    var role = h('select', {}, h('option', { value: '' }, 'Everyone'), h('option', { value: 'guest' }, 'Guests'), h('option', { value: 'owner' }, 'Hotel owners'), h('option', { value: 'receptionist' }, 'Receptionists'));
+    var table = null, body = null, more = null;
+    function query(cursor) {
+      return '/admin/users?q=' + encodeURIComponent(words.value.trim()) + '&status=' + status.value + '&role=' + role.value + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+    }
+    function ago(iso) { return iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Never'; }
+    function act(path, body_) { return call('POST', '/admin/users/' + path, body_).then(function () { search(); }, function (e) { alert(e.message); }); }
+    function row(u) {
+      var chip = u.deleted ? h('span', { class: 'chip hidden' }, 'Deleted') : u.status === 'suspended' ? h('span', { class: 'chip draft' }, 'Suspended') : h('span', { class: 'chip active' }, 'Active');
+      var who = u.email || u.phone || '(no contact)';
+      var actions = h('span', {});
+      if (u.role !== 'admin' && !u.deleted) {
+        if (u.status === 'suspended') add(actions, h('button', { class: 'secondary', onclick: function () { if (confirm('Let ' + who + ' sign in again?')) act(u.id + '/reinstate'); } }, 'Reinstate'));
+        else {
+          add(actions, h('button', { class: 'danger', onclick: function () {
+            var why = prompt('Why is ' + who + ' being suspended? (kept in the audit log)' + (u.hotels ? '\n\nThey work for: ' + u.hotels + '. They will stop getting booking alerts.' : ''));
+            if (why && why.trim()) act(u.id + '/suspend', { reason: why.trim() });
+          } }, 'Suspend'));
+          add(actions, ' ');
+          add(actions, h('button', { class: 'ghost', onclick: function () { if (confirm('Sign ' + who + ' out of every phone and browser? They can sign in again.')) act(u.id + '/sign-out'); } }, 'Sign out everywhere'));
+        }
+      }
+      var roleName = { guest: 'Guest', owner: 'Hotel owner', receptionist: 'Receptionist', admin: 'BookDan admin' }[u.role] || u.role;
+      return h('tr', {},
+        h('td', {}, h('strong', {}, who), u.phone && u.email ? h('div', { class: 'muted', style: 'font-size:12px' }, u.phone) : null, u.name ? h('div', { class: 'muted', style: 'font-size:12px' }, u.name) : null),
+        h('td', {}, roleName, u.hotels ? h('div', { class: 'muted', style: 'font-size:12px' }, u.hotels) : null),
+        h('td', {}, chip, u.suspended_reason ? h('div', { class: 'muted', style: 'font-size:12px;max-width:240px' }, u.suspended_reason) : null),
+        h('td', {}, String(u.bookings), h('div', { class: 'muted', style: 'font-size:12px' }, u.signed_in_devices + ' signed in')),
+        h('td', {}, ago(u.created_at), h('div', { class: 'muted', style: 'font-size:12px' }, 'Seen ' + ago(u.last_seen_at))),
+        h('td', {}, actions));
+    }
+    function fill(res, append) {
+      if (!append) {
+        clear(holder);
+        if (!res.items.length) { add(holder, h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Nobody matches.'))); return; }
+        table = h('table', {}, h('thead', {}, h('tr', {}, ['Person', 'Role', 'Status', 'Bookings', 'Joined', ''].map(function (t) { return h('th', {}, t); }))));
+        body = h('tbody', {});
+        add(table, body);
+        more = h('div', { class: 'row', style: 'margin-top:12px' });
+        add(holder, h('div', { class: 'card', style: 'overflow-x:auto' }, table, more));
+      }
+      res.items.forEach(function (u) { add(body, row(u)); });
+      clear(more);
+      if (res.next_cursor) add(more, h('button', { class: 'secondary', onclick: function () { call('GET', query(res.next_cursor)).then(function (r) { fill(r, true); }, function (e) { alert(e.message); }); } }, 'Show more'));
+    }
+    function search() {
+      call('GET', query()).then(function (res) { fill(res, false); }, function (err) { clear(holder); add(holder, msg('err', err.message)); });
+    }
+    var go_ = h('form', { class: 'row', onsubmit: function (e) { e.preventDefault(); search(); } }, h('div', { style: 'flex:1;min-width:220px' }, words), status, role, h('button', { type: 'submit' }, 'Search'));
+    return shell(h('div', {}, h('button', { class: 'ghost', onclick: function () { go('#/'); } }, '← All hotels'), h('h1', {}, 'Users'),
+      h('p', { class: 'soft' }, 'A suspended person cannot sign in, and every phone they use is signed out at once. Their bookings and money records stay as they were. Other BookDan admins are managed on the Admins page.'),
+      h('div', { class: 'card' }, go_), holder));
   }
 
   // ---- reviews (platform admin): take down an abusive review, bring it back
@@ -1264,6 +1357,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     clear(app);
     if (!state.token) { add(app, loginView()); return; }
     if (state.mustChange) { add(app, accountView(true)); return; }
+    if (state.mustSetupMfa) { add(app, accountView('mfa')); return; }
     var m = location.hash.match(/^#\/hotel\/([0-9a-f-]{36})$/);
     if (m) add(app, hotelView(m[1], 'details'));
     else if (location.hash === '#/new' && can('hotels_write')) add(app, newView());
@@ -1275,6 +1369,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     else if (location.hash === '#/rates' && state.role === 'admin') add(app, ratesView());
     else if (location.hash === '#/activity' && can('admins')) add(app, activityView());
     else if (location.hash === '#/calls' && state.role === 'admin') add(app, callsView());
+    else if (location.hash === '#/users' && can('users')) add(app, usersView());
     else if (location.hash === '#/reviews' && can('reviews')) add(app, reviewsView());
     else if (location.hash === '#/analytics' && state.role === 'admin') add(app, analyticsView());
     else if (location.hash === '#/applications' && can('applications')) add(app, applicationsView());

@@ -229,7 +229,7 @@ func (s *Server) mailSupportAbout(ctx context.Context, bookingID, headline, extr
 	_ = s.pool.QueryRow(ctx, `SELECT b.code, b.guest_name, p.name FROM bookings b JOIN properties p ON p.id = b.property_id WHERE b.id = $1`, bookingID).Scan(&code, &guest, &hotel)
 	text := fmt.Sprintf("%s\n\nBooking: %s\nGuest: %s\nHotel: %s\n%s\n\nOpen the admin page to follow it up.", headline, code, guest, hotel, extra)
 	for _, to := range s.supportRecipients() {
-		if err := s.p.Mail.SendMail(ctx, to, headline+": "+code, text, ""); err != nil {
+		if err := s.QueueMail(ctx, to, headline+": "+code, text, ""); err != nil {
 			slog.Error("support mail about a booking", "to", to, "err", err)
 		}
 	}
@@ -327,7 +327,7 @@ func (s *Server) alertHotel(ctx context.Context, bookingID, title, body, typ str
 		slog.Error("alert hotel", "type", typ, "err", err)
 		return
 	}
-	wave := append(firstWave(q.people, q.mode), escalationWave(q.people)...)
+	wave := unmuted(append(firstWave(q.people, q.mode), escalationWave(q.people)...), alertKindOf(typ))
 	if len(wave) > 0 {
 		s.push(ctx, tokensOf(wave), title, body, s.alertData(q, typ))
 	}

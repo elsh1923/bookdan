@@ -83,11 +83,13 @@ type Server struct {
 	now     func() time.Time
 	// adminLimit slows down guessing of the admin password.
 	adminLimit loginLimiter
+	// instance names this server process, so a lease in the database can say which server holds it (see leases.go).
+	instance string
 }
 
 // New builds the API. It checks once whether PostGIS is installed.
 func New(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, keys *Keys, p Providers) (*Server, error) {
-	s := &Server{cfg: cfg, pool: pool, keys: keys, p: p, now: time.Now}
+	s := &Server{cfg: cfg, pool: pool, keys: keys, p: p, now: time.Now, instance: newUUID()}
 	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis')`).Scan(&s.postgis); err != nil {
 		return nil, err
 	}
@@ -96,7 +98,9 @@ func New(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, keys *Keys,
 
 // Routes registers every /v1 endpoint that this package serves on r.
 func (s *Server) Routes(root chi.Router) {
+	root.Get("/app-config", s.h(s.appConfig))
 	root.Group(func(r chi.Router) {
+		r.Use(s.versionGate)
 		s.adminRoutes(r)
 
 		r.Post("/auth/otp/request", s.h(s.requestOTP))
@@ -134,6 +138,9 @@ func (s *Server) Routes(root chi.Router) {
 			r.Delete("/me/profile", s.h(s.deleteProfile))
 			r.Delete("/me/account", s.h(s.deleteAccount))
 			r.Get("/me/export", s.h(s.exportAccount))
+			r.Get("/me/identities", s.h(s.myIdentities))
+			r.Post("/me/identities/code", s.h(s.linkCode))
+			r.Post("/me/identities/confirm", s.h(s.linkConfirm))
 			r.Get("/me/saved", s.h(s.listSaved))
 			r.Post("/me/saved/sync", s.h(s.syncSaved))
 			r.Put("/me/saved/{propertyId}", s.h(s.saveProperty))
@@ -148,6 +155,8 @@ func (s *Server) Routes(root chi.Router) {
 		r.Route("/partner", func(r chi.Router) {
 			r.Use(s.authenticate("partner"))
 			r.Put("/devices/push-token", s.h(s.registerPushToken("partner")))
+			r.Get("/alert-preferences", s.h(s.partnerAlertPrefs))
+			r.Put("/alert-preferences/{id}", s.h(s.partnerSetAlertPrefs))
 
 			// The hotel portal (/hotel): owners edit their own hotel, rooms, prices, photos and team. The handlers are the admin page's, which check that the
 			// signed-in person owns the hotel; they never let an owner change a hotel's status or verification, edit business details or reveal payout accounts.
@@ -156,6 +165,7 @@ func (s *Server) Routes(root chi.Router) {
 			r.Put("/hotels/{id}", s.h(s.adminUpdateHotel))
 			r.Post("/hotels/{id}/rooms", s.h(s.adminCreateRoom))
 			r.Put("/hotels/{id}/rooms/{room}", s.h(s.adminUpdateRoom))
+			r.Delete("/hotels/{id}/rooms/{room}", s.h(s.adminDeleteRoom))
 			r.Put("/hotels/{id}/rooms/{room}/price", s.h(s.adminSetPrice))
 			r.Post("/hotels/{id}/photos", s.h(s.adminUploadPhoto))
 			r.Post("/hotels/{id}/rooms/{room}/photos", s.h(s.adminUploadRoomPhoto))

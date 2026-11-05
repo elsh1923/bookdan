@@ -45,7 +45,7 @@ type payLeft struct {
 func lockRefundable(ctx context.Context, tx pgx.Tx, bookingID string) (refundable, error) {
 	var r refundable
 	rows, err := tx.Query(ctx, `SELECT p.id, p.currency, p.amount_santim, p.amount_santim - coalesce((SELECT sum(x.amount_santim) FROM partial_refunds x WHERE x.payment_id = p.id), 0)::bigint
-		FROM payments p WHERE p.booking_id = $1 AND p.status = 'succeeded' ORDER BY (p.kind = 'booking') DESC, p.created_at FOR UPDATE OF p`, bookingID)
+		FROM payments p WHERE p.booking_id = $1 AND p.status = 'succeeded' AND p.refund_started_at IS NULL ORDER BY (p.kind = 'booking') DESC, p.created_at FOR UPDATE OF p`, bookingID)
 	if err != nil {
 		return r, err
 	}
@@ -188,9 +188,10 @@ func (s *Server) partialRefund(ctx context.Context, tx pgx.Tx, bookingID string,
 	return reverseShareOfConfirmed(ctx, tx, bookingID, rf.PaymentID, rf.Currency, "partial refund (hotel pays): "+strings.TrimSpace(reason), amount, rf.Paid)
 }
 
-// runPartialRefunds sends the owed partial refunds to the gateway, one by one, and records each in the ledger once the gateway accepts it.
-func (s *Server) runPartialRefunds(ctx context.Context) {
-	rows, err := s.pool.Query(ctx, `SELECT id FROM partial_refunds WHERE status = 'owed' ORDER BY created_at LIMIT 50`)
+// payPartialRefunds sends the owed partial refunds to the gateway, one by one, and records each in the ledger once the gateway accepts it. Like a full refund it is
+// claimed first, sent with nothing held, then recorded (see runRefunds).
+func (s *Server) payPartialRefunds(ctx context.Context, limit int) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM partial_refunds WHERE status = 'owed' AND (claimed_until IS NULL OR claimed_until < now()) ORDER BY created_at LIMIT $1`, limit)
 	if err != nil {
 		slog.Error("partial refunds: list", "err", err)
 		return
@@ -204,30 +205,65 @@ func (s *Server) runPartialRefunds(ctx context.Context) {
 	}
 	rows.Close()
 	for _, id := range ids {
-		err := s.tx(ctx, func(tx pgx.Tx) error {
-			var ref, cur, bookingID, paymentID string
-			var amount int64
-			err := tx.QueryRow(ctx, `SELECT p.provider_ref, p.currency, r.booking_id, r.payment_id, r.amount_santim FROM partial_refunds r JOIN payments p ON p.id = r.payment_id
-				WHERE r.id = $1 AND r.status = 'owed' FOR UPDATE OF r SKIP LOCKED`, id).Scan(&ref, &cur, &bookingID, &paymentID, &amount)
-			if err == pgx.ErrNoRows {
-				return nil // someone else is paying it, or it is done
-			}
-			if err != nil {
-				return err
-			}
-			if err := s.p.Gateway.Refund(ctx, ref, id, amount, cur); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `UPDATE partial_refunds SET status = 'paid', paid_at = now() WHERE id = $1`, id); err != nil {
-				return err
-			}
-			return ledger(ctx, tx, bookingID, paymentID, "refund", "refund paid to the guest (partial)", cur,
-				entry{"refunds_payable", amount}, entry{"gateway_clearing", -amount})
-		})
-		if err != nil {
-			slog.Error("partial refund failed, will retry", "refund", id, "err", err)
-			ops.Report("refund-failed", "A refund could not be paid", "Partial refund "+id+": "+err.Error()+"\nIt is tried again every 20 seconds. If it keeps failing, refund the guest by hand.")
+		s.refundPartial(ctx, id)
+	}
+}
+
+func (s *Server) refundPartial(ctx context.Context, id string) {
+	ctx = context.WithoutCancel(ctx)
+	var ref, cur, bookingID, paymentID string
+	var amount int64
+	var attempts int
+	claimed := false
+	err := s.tx(ctx, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `SELECT p.provider_ref, p.currency, r.booking_id, r.payment_id, r.amount_santim, r.attempts FROM partial_refunds r JOIN payments p ON p.id = r.payment_id
+			WHERE r.id = $1 AND r.status = 'owed' AND (r.claimed_until IS NULL OR r.claimed_until < now()) FOR UPDATE OF r SKIP LOCKED`, id).Scan(&ref, &cur, &bookingID, &paymentID, &amount, &attempts)
+		if err == pgx.ErrNoRows {
+			return nil // someone else is paying it, or it is done
 		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE partial_refunds SET claimed_until = now() + $2::interval, attempts = attempts + 1 WHERE id = $1`, id, fmt.Sprintf("%d seconds", int(refundClaim.Seconds()))); err != nil {
+			return err
+		}
+		attempts++
+		claimed = true
+		return nil
+	})
+	if err != nil {
+		slog.Error("partial refund: claim", "refund", id, "err", err)
+		return
+	}
+	if !claimed {
+		return
+	}
+	gwCtx, cancel := context.WithTimeout(ctx, refundTimeout)
+	err = s.p.Gateway.Refund(gwCtx, ref, id, amount, cur)
+	cancel()
+	if err != nil {
+		if _, e := s.pool.Exec(ctx, `UPDATE partial_refunds SET claimed_until = now() + $2::interval, last_error = $3 WHERE id = $1`,
+			id, fmt.Sprintf("%d seconds", int(refundPause(attempts).Seconds())), err.Error()); e != nil {
+			slog.Error("partial refund: schedule retry", "refund", id, "err", e)
+		}
+		slog.Error("partial refund failed, will retry", "refund", id, "attempt", attempts, "err", err)
+		ops.Report("refund-failed", "A refund could not be paid", "Partial refund "+id+": "+err.Error()+"\nIt is tried again every few minutes. If it keeps failing, refund the guest by hand.")
+		return
+	}
+	err = s.tx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE partial_refunds SET status = 'paid', paid_at = now(), claimed_until = NULL, last_error = NULL WHERE id = $1 AND status = 'owed'`, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		return ledger(ctx, tx, bookingID, paymentID, "refund", "refund paid to the guest (partial)", cur,
+			entry{"refunds_payable", amount}, entry{"gateway_clearing", -amount})
+	})
+	if err != nil {
+		slog.Error("partial refund paid but not recorded, will finish on the next pass", "refund", id, "err", err)
+		ops.Report("refund-not-recorded", "A refund was paid but not recorded", "Partial refund "+id+": "+err.Error()+"\nThe next pass finishes the record. No action is needed unless this repeats.")
 	}
 }
 

@@ -38,6 +38,8 @@ type recipient struct {
 	token    string
 	alertsOn bool
 	onDuty   bool
+	// muted are the optional alert kinds this person chose not to get (see alertprefs.go).
+	muted []string
 }
 
 func isOwner(r recipient) bool { return r.role == "owner" }
@@ -130,7 +132,7 @@ func (s *Server) loadRequest(ctx context.Context, bookingID string) (request, er
 		WHERE b.id = $1`, bookingID).Scan(&q.guest, &q.code, &q.hotel, &q.mode, &q.businessEmail); err != nil {
 		return q, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT ps.role, coalesce(u.email, ''), coalesce(d.push_token, ''), ps.alerts_on, `+onDutySQL+`
+	rows, err := s.pool.Query(ctx, `SELECT ps.role, coalesce(u.email, ''), coalesce(d.push_token, ''), ps.alerts_on, ps.muted_kinds, `+onDutySQL+`
 		FROM bookings b JOIN property_staff ps ON ps.property_id = b.property_id JOIN users u ON u.id = ps.user_id
 		LEFT JOIN devices d ON d.user_id = ps.user_id AND d.app = 'partner' AND d.push_token IS NOT NULL AND d.revoked_at IS NULL
 		WHERE b.id = $1`, bookingID)
@@ -140,7 +142,7 @@ func (s *Server) loadRequest(ctx context.Context, bookingID string) (request, er
 	defer rows.Close()
 	for rows.Next() {
 		var r recipient
-		if err := rows.Scan(&r.role, &r.email, &r.token, &r.alertsOn, &r.onDuty); err != nil {
+		if err := rows.Scan(&r.role, &r.email, &r.token, &r.alertsOn, &r.muted, &r.onDuty); err != nil {
 			return q, err
 		}
 		q.people = append(q.people, r)

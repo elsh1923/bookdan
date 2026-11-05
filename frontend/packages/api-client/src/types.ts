@@ -1,5 +1,9 @@
 import type {
+  MyIdentities,
+  AlertKind,
+  AppConfig,
   Amenity,
+  HotelAlertPrefs,
   Booking,
   DateChangeQuote,
   CheckinLookup,
@@ -98,6 +102,8 @@ export interface AuthApi {
   refresh(refreshToken: string): Promise<Tokens>;
   /** Ends the session on the server (all its refresh tokens, and alerts to this phone). Best effort: the app signs out locally anyway. */
   logout(refreshToken: string): Promise<void>;
+  /** The oldest app version the server still serves, and where to get a newer one. Public: works signed out. */
+  getAppConfig(): Promise<AppConfig>;
 }
 
 /**
@@ -144,6 +150,15 @@ export interface Api extends AuthApi {
   getProfile(): Promise<GuestProfile | null>;
   /** The guest's member level and how far to the next one. */
   getLoyalty(): Promise<Loyalty>;
+  /** The sign-in methods on this account. */
+  getIdentities(): Promise<MyIdentities>;
+  /** Sends a code to an email or phone the guest wants to add as a second way to sign in. */
+  sendLinkCode(identity: Identity): Promise<void>;
+  /**
+   * Adds that sign-in method to this account with the code. When it already belongs to another guest account this fails with IDENTITY_IN_USE (the message says what
+   * would be merged) until the guest agrees: call again with merge true and the same code.
+   */
+  confirmLink(identity: Identity, code: string, merge: boolean): Promise<MyIdentities>;
   /** Saves the guest's name, ID and nationality. Fails with INVALID_ID for a number that cannot be an ID. */
   saveProfile(input: GuestProfileInput): Promise<GuestProfile>;
   /** Removes the guest's saved ID details. */
@@ -267,6 +282,10 @@ export interface PartnerApi extends AuthApi {
   replyToReview(reviewId: string, text: string): Promise<void>;
   /** Takes the hotel's reply away. Owners only. */
   removeReviewReply(reviewId: string): Promise<void>;
+  /** The optional alerts the signed-in person wants, one entry per hotel they work for. New booking requests cannot be switched off. */
+  getAlertPreferences(): Promise<HotelAlertPrefs[]>;
+  /** Saves which optional alerts the signed-in person does NOT want at one hotel. */
+  setAlertPreferences(propertyId: string, muted: AlertKind[]): Promise<void>;
   /** The server's public key for checking voucher QR codes (cached by the app so check-in can work offline). Public. */
   getVoucherKey(): Promise<{ kid: string; public_key: string }>;
   /** Sends check-ins that were made offline (POST /partner/checkin/sync). One answer per item, in order. */

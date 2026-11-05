@@ -53,19 +53,9 @@ function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () =
   );
 }
 
-/** A filter pill with a small icon in front of its label (sort and filters), in the same style as the other chips. */
-function IconChip({ icon, label, selected, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={{ minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: selected ? colors.primary : colors.line, backgroundColor: selected ? colors.primarySoft : colors.surface }}
-    >
-      <Ionicons name={icon} size={16} color={selected ? colors.primaryInk : colors.inkSoft} />
-      <T variant="small" color={selected ? colors.primaryInk : colors.ink}>{label}</T>
-    </Pressable>
-  );
+/** A filter pill with an icon in front of its label (sort and filters): the shared Chip, with its icon. */
+function IconChip(props: { icon: keyof typeof Ionicons.glyphMap; label: string; selected: boolean; onPress: () => void }) {
+  return <Chip {...props} />;
 }
 
 function SortSheet({ visible, value, near, onClose, onPick }: { visible: boolean; value: SearchSort; near: boolean; onClose: () => void; onPick: (s: SearchSort) => void }) {

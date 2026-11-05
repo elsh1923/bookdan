@@ -184,6 +184,7 @@ func (s *Server) alertHotelOfCancellation(ctx context.Context, bookingID string)
 	if escalated {
 		wave = append(wave, escalationWave(q.people)...)
 	}
+	wave = unmuted(wave, kindChanges)
 	if len(wave) > 0 {
 		s.push(ctx, tokensOf(wave), "Booking cancelled", q.guest+" · "+q.code+" was cancelled by the guest", s.alertData(q, "booking_cancelled"))
 	}
@@ -250,6 +251,7 @@ func (s *Server) submitReview(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.alertHotelOfReview(ctx, id, in.Rating)
 	b, err := s.loadBooking(ctx, s.pool, id, uid)
 	if err != nil {
 		return err

@@ -23,7 +23,7 @@ const raw: Api = isMockApi
         save: (json) => AsyncStorage.setItem('mock-server-state', json),
       },
     })
-  : createHttpApi({ baseUrl: apiUrl, app: 'guest', deviceId: getDeviceId, platform: Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web' });
+  : createHttpApi({ baseUrl: apiUrl, app: 'guest', deviceId: getDeviceId, platform: Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web', appVersion: Constants.expoConfig?.version });
 
 // Silent session refresh is shared with the partner app.
 const session = createSessionManager(raw);
@@ -35,6 +35,9 @@ export const api: Api = {
   ...raw,
   getProfile: withRefresh(raw.getProfile),
   getLoyalty: withRefresh(raw.getLoyalty),
+  getIdentities: withRefresh(raw.getIdentities),
+  sendLinkCode: withRefresh(raw.sendLinkCode),
+  confirmLink: withRefresh(raw.confirmLink),
   saveProfile: withRefresh(raw.saveProfile),
   deleteProfile: withRefresh(raw.deleteProfile),
   deleteAccount: withRefresh(raw.deleteAccount),

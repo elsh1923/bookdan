@@ -711,6 +711,7 @@ func (s *Server) alertHotelOfDateChange(ctx context.Context, bookingID string) {
 	if escalated {
 		wave = append(wave, escalationWave(q.people)...)
 	}
+	wave = unmuted(wave, kindChanges)
 	if len(wave) > 0 {
 		s.push(ctx, tokensOf(wave), "Booking dates changed", fmt.Sprintf("%s · %s now %s to %s", q.guest, q.code, pgDate(in), pgDate(out)), s.alertData(q, "booking_dates_changed"))
 	}

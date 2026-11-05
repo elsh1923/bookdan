@@ -67,8 +67,8 @@ func (s *Server) sendMail(ctx context.Context, to string, c emailContent) {
 		slog.Info("email (not sent: demo address or no email provider)", "to", to, "subject", c.subject)
 		return
 	}
-	if err := s.p.Mail.SendMail(ctx, to, c.subject, c.text, c.html); err != nil {
-		slog.Error("sending an email failed", "subject", c.subject, "err", err)
+	if err := s.QueueMail(ctx, to, c.subject, c.text, c.html); err != nil {
+		slog.Error("queueing an email failed", "subject", c.subject, "err", err)
 	}
 }
 

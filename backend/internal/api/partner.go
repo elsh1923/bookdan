@@ -451,29 +451,36 @@ func (s *Server) sweep(ctx context.Context) {
 		slog.Error("sweep failed", "err", err)
 		return
 	}
-	s.runRefunds(ctx)
+	s.sweepRefunds(ctx)
 	for _, id := range timedOut {
 		s.notifyGuest(ctx, id, "no_response")
 	}
+	s.DrainOutbox(ctx)
 }
 
 // Sweep runs one pass (also used by tests).
 func (s *Server) Sweep(ctx context.Context) { s.sweep(ctx) }
 
-// RunWorkers sweeps every 20 seconds until ctx ends.
+// RunWorkers sweeps every 20 seconds until ctx ends. With several servers only the one that holds the sweeper lease works; the others stand by and take
+// over within a minute if it stops (see leases.go).
 func (s *Server) RunWorkers(ctx context.Context) {
 	t := time.NewTicker(20 * time.Second)
 	defer t.Stop()
 	lastDay := ""
 	for {
-		s.sweep(ctx)
-		// The daily jobs run when the Addis Ababa date changes, and once when the server starts.
-		if today := s.addisToday(); today != lastDay {
-			lastDay = today
-			s.RunMaintenance(ctx)
+		if s.HoldLease(ctx, "sweeper", leaseTTL) {
+			s.sweep(ctx)
+			// The daily jobs run when the Addis Ababa date changes, and once when the first server starts that day: whichever server claims the day runs them.
+			if today := s.addisToday(); today != lastDay {
+				lastDay = today
+				if s.ClaimDay(ctx, "maintenance", today) {
+					s.RunMaintenance(ctx)
+				}
+			}
 		}
 		select {
 		case <-ctx.Done():
+			s.ReleaseLease(context.Background(), "sweeper")
 			return
 		case <-t.C:
 		}

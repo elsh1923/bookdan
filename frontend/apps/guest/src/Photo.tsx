@@ -34,7 +34,7 @@ export function Photo({
 }) {
   if (!uri) {
     return (
-      <View style={[{ backgroundColor: accent ?? colors.charcoal, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, style]}>
+      <View style={[{ backgroundColor: accent ?? colors.fill, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, style]}>
         <Lattice />
         {showInitial ? <T style={{ fontSize: 44, lineHeight: 56, color: 'rgba(255,255,255,0.9)' }}>{name.charAt(0)}</T> : null}
         {Array.from({ length: 12 }, (_, i) => (

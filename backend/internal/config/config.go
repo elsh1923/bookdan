@@ -67,6 +67,14 @@ type Config struct {
 	AdminOwners   bool
 	// PartnerAppURL is where hotel staff download the BookDan Partner app (a link to the APK today, the Play Store later). It goes in invitation emails.
 	PartnerAppURL string
+	// MinAppVersionGuest and MinAppVersionPartner are the oldest app versions (like 0.3.0) the server still serves. A build older than this is told to update (426,
+	// UPGRADE_REQUIRED) and the app shows an update screen. Empty = every version is served. Builds that do not send their version are never refused.
+	// GuestAppURL is where guests download the new build (PartnerAppURL is the hotel app's link).
+	// AdminRequireMFA makes every admin account set up the authenticator app: until they do, the admin page lets them do nothing else. Off by default.
+	AdminRequireMFA      bool
+	MinAppVersionGuest   string
+	MinAppVersionPartner string
+	GuestAppURL          string
 	// IDRetentionDays is how many days after check-out a hotel keeps the full ID number of a guest before it is erased (the type and the last
 	// four characters stay). 0 = never erased. How long the law requires is the owner's decision (docs/design.md, DECISION 5).
 	IDRetentionDays int
@@ -127,6 +135,10 @@ func Load() Config {
 		AdminPassword:        get("ADMIN_PASSWORD", ""),
 		AdminOwners:          get("ADMIN_OWNERS", "false") == "true",
 		PartnerAppURL:        get("PARTNER_APP_URL", ""),
+		AdminRequireMFA:      get("ADMIN_REQUIRE_MFA", "false") == "true",
+		MinAppVersionGuest:   get("MIN_APP_VERSION_GUEST", ""),
+		MinAppVersionPartner: get("MIN_APP_VERSION_PARTNER", ""),
+		GuestAppURL:          get("GUEST_APP_URL", ""),
 		IDRetentionDays:      atoi(get("ID_RETENTION_DAYS", "0")),
 		RateReadPerMin:       atoi(get("RATE_LIMIT_READ_PER_MIN", "0")),
 		OTPMaxPerIP:          atoi(get("OTP_MAX_PER_IP", "30")),

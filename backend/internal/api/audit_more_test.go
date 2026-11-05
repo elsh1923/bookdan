@@ -281,7 +281,8 @@ func TestAudit_S6_10_AFailedRefundIsRetriedUntilItGoesThrough(t *testing.T) {
 	fake.mu.Lock()
 	fake.failRefunds = false
 	fake.mu.Unlock()
-	hotel.do("GET", "/partner/bookings", nil) // the background sweep retries
+	pool.Exec(context.Background(), `UPDATE payments SET refund_claimed_until = NULL WHERE booking_id = $1`, id) // the pause before the retry is over
+	hotel.do("GET", "/partner/bookings", nil)                                                                    // the background sweep retries
 	if p := paymentStatus(t, id); p != "refunded" || refundsPaid(id) != 1 {
 		t.Errorf("S6.10: once the gateway recovers the refund goes through exactly once: payment %q, refunds paid %d", p, refundsPaid(id))
 	}
@@ -608,10 +609,11 @@ func TestAudit_PartialRefundIsRetriedAndEachRefundHasItsOwnGatewayReference(t *t
 	if owed, done := partialRows(id); owed != 1 || done != 0 || refundsPaid(id) != 0 {
 		t.Fatalf("still owed while the gateway refuses: owed %d paid %d ledger-paid %d", owed, done, refundsPaid(id))
 	}
-	// It recovers: the sweep pays it, once.
+	// It recovers: the sweep pays it, once (after the pause before a retry).
 	fake.mu.Lock()
 	fake.failRefunds = false
 	fake.mu.Unlock()
+	pool.Exec(context.Background(), `UPDATE partial_refunds SET claimed_until = NULL WHERE booking_id = $1`, id)
 	hotel.do("GET", "/partner/bookings", nil)
 	if owed, done := partialRows(id); owed != 0 || done != 1 || refundsPaid(id) != 1 {
 		t.Fatalf("paid after recovery: owed %d paid %d ledger-paid %d", owed, done, refundsPaid(id))
