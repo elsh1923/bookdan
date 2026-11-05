@@ -2,10 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { DISPLAY_CURRENCIES, type CurrencyInfo, type ShownCurrency } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
+import { ScreenHeader, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { useDisplay } from '../src/display';
 import { usePrefs } from '../src/store';
 
@@ -56,33 +55,35 @@ export default function CurrencyScreen() {
   const rows = (list: CurrencyInfo[]) => list.map((c) => <Row key={c.code} code={c.code} name={c.name} />);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }} edges={['top']}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.line }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={t('common.back')} onPress={close} hitSlop={8} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={24} color={colors.ink} />
-        </Pressable>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+      <ScreenHeader
+        compact
+        title={t('currency.title')}
+        onBack={close}
+        backLabel={t('common.back')}
+        right={(
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('currency.search')}
+            onPress={() => { setSearching((v) => !v); setNeedle(''); }}
+            hitSlop={8}
+            style={{ width: 40, height: 40, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Ionicons name={searching ? 'close' : 'search'} size={20} color="#FFFFFF" />
+          </Pressable>
+        )}
+      >
         {searching ? (
           <TextInput
             autoFocus
             value={needle}
             onChangeText={setNeedle}
             placeholder={t('currency.search')}
-            placeholderTextColor={colors.muted}
-            style={{ flex: 1, fontFamily: fonts.regular, fontSize: 16, color: colors.ink, paddingVertical: spacing.xs }}
+            placeholderTextColor="rgba(255,255,255,0.6)"
+            style={{ marginTop: spacing.sm, paddingHorizontal: spacing.md, minHeight: 44, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.12)', fontFamily: fonts.regular, fontSize: 16, color: '#FFFFFF' }}
           />
-        ) : (
-          <T variant="h2" style={{ flex: 1 }}>{t('currency.title')}</T>
-        )}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('currency.search')}
-          onPress={() => { setSearching((v) => !v); setNeedle(''); }}
-          hitSlop={8}
-          style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Ionicons name={searching ? 'close' : 'search'} size={22} color={colors.ink} />
-        </Pressable>
-      </View>
+        ) : null}
+      </ScreenHeader>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
         <View style={{ flexDirection: 'row', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.warningSoft }}>
@@ -112,6 +113,6 @@ export default function CurrencyScreen() {
         {needle.trim() && !etbMatches && popular.length + more.length === 0 ? <T color={colors.inkSoft} style={{ marginTop: spacing.lg }}>{t('currency.no_match')}</T> : null}
         <T variant="small" color={colors.muted} style={{ marginTop: spacing.xl }}>{t('currency.attribution')}</T>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

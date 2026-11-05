@@ -14,12 +14,14 @@ import { dark, gradients, radius, spacing } from './theme';
  * more underneath (a row of numbers, a search box). A screen opened from another screen uses the compact form, which has a round back button and a
  * one-line title. Use this instead of drawing a back arrow and a title by hand, so every page starts the same way.
  */
-export function ScreenHeader({ eyebrow, title, onBack, backLabel = 'Back', right, children, compact }: {
+export function ScreenHeader({ eyebrow, title, onBack, backLabel = 'Back', backIcon = 'arrow-back', right, children, compact }: {
   eyebrow?: string;
   title: string;
   onBack?: () => void;
   /** Spoken name of the back button (pass the translated word). */
   backLabel?: string;
+  /** An arrow for a screen you came forward to, a cross for one that opens over the others. */
+  backIcon?: 'arrow-back' | 'close';
   right?: ReactNode;
   children?: ReactNode;
   compact?: boolean;
@@ -49,7 +51,7 @@ export function ScreenHeader({ eyebrow, title, onBack, backLabel = 'Back', right
             hitSlop={6}
             style={{ width: 40, height: 40, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' }}
           >
-            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+            <Ionicons name={backIcon} size={22} color="#FFFFFF" />
           </Pressable>
         ) : null}
         <View style={{ flex: 1 }}>

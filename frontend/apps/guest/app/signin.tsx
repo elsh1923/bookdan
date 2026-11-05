@@ -1,12 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { ApiError } from '@bookdan/api-client';
 import { normalizeEmail, normalizeEthiopianPhone, type Identity, type IdentityType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Badge, Button, Chip, T, colors, spacing } from '@bookdan/ui';
+import { Badge, Button, Chip, ScreenHeader, T, colors, dark, spacing } from '@bookdan/ui';
 import { api, isMockApi } from '../src/api';
 import { useAuth } from '../src/auth';
 import { Field } from '../src/Field';
@@ -68,15 +66,12 @@ export default function SignIn() {
   const emailMode = (identity?.type ?? method) === 'email';
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScreenHeader title={t('auth.title')} onBack={close} backLabel={t('common.back')}>
+        <T color={dark.textSoft} style={{ marginTop: spacing.xs }}>{t(emailMode ? 'auth.subtitle_email' : 'auth.subtitle')}</T>
+      </ScreenHeader>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
-          <Pressable accessibilityLabel={t('common.back')} onPress={close} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-            <Ionicons name="arrow-back" size={24} color={colors.ink} />
-          </Pressable>
-
-          <T variant="display" style={{ marginTop: spacing.md }}>{t('auth.title')}</T>
-          <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t(emailMode ? 'auth.subtitle_email' : 'auth.subtitle')}</T>
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
 
           {identity === null ? (
             <>
@@ -148,6 +143,6 @@ export default function SignIn() {
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }

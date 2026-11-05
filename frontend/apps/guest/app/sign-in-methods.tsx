@@ -2,12 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { ApiError } from '@bookdan/api-client';
 import { normalizeEmail, normalizeEthiopianPhone, type Identity, type IdentityType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, T, colors, radius, spacing } from '@bookdan/ui';
+import { Button, ScreenHeader, T, colors, dark, radius, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
 import { Field } from '../src/Field';
 
@@ -101,14 +100,12 @@ export default function SignInMethods() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScreenHeader title={t('link.title')} onBack={close} backLabel={t('common.back')}>
+        <T color={dark.textSoft} style={{ marginTop: spacing.xs }}>{t('link.intro')}</T>
+      </ScreenHeader>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
-          <Pressable accessibilityLabel={t('common.back')} onPress={close} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-            <Ionicons name="arrow-back" size={24} color={colors.ink} />
-          </Pressable>
-          <T variant="display" style={{ marginTop: spacing.md }}>{t('link.title')}</T>
-          <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('link.intro')}</T>
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
 
           {methods.data ? (
             <>
@@ -154,6 +151,6 @@ export default function SignInMethods() {
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }

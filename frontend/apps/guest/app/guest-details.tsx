@@ -2,12 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { ApiError } from '@bookdan/api-client';
 import { ID_TYPES, maskId, normalizeIdNumber, type IdType } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, Chip, T, colors, radius, spacing } from '@bookdan/ui';
+import { Button, Chip, ScreenHeader, T, colors, dark, radius, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
 import { useAuth } from '../src/auth';
 import { Field } from '../src/Field';
@@ -88,16 +87,12 @@ export default function GuestDetails() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScreenHeader title={t('details.title')} onBack={close} backLabel={t('common.cancel')} backIcon="close">
+        <T color={dark.textSoft} style={{ marginTop: spacing.xs }}>{t('details.subtitle')}</T>
+      </ScreenHeader>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={{ paddingHorizontal: spacing.lg }}>
-          <Pressable accessibilityLabel={t('common.cancel')} onPress={close} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-            <Ionicons name="close" size={26} color={colors.ink} />
-          </Pressable>
-        </View>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-          <T variant="display">{t('details.title')}</T>
-          <T color={colors.inkSoft} style={{ marginTop: spacing.xs }}>{t('details.subtitle')}</T>
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
 
           <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.primarySoft }}>
             <Ionicons name="lock-closed-outline" size={20} color={colors.primaryInk} />
@@ -150,6 +145,6 @@ export default function GuestDetails() {
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
