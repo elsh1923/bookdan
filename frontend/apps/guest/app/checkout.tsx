@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { maskId, newIdempotencyKey, type Quote } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Animated, Button, Chip, EmptyState, FadeIn, Pop, ProgressFill, StepTransition, T, colors, radius, shadow, spacing } from '@bookdan/ui';
+import { Animated, Button, Chip, EmptyState, FadeIn, Pop, ProgressFill, ScreenHeader, StepTransition, T, colors, radius, shadow, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
 import { useAuth } from '../src/auth';
 import { usePrefs } from '../src/store';
@@ -156,25 +156,20 @@ export default function Checkout() {
   const months = i18n.t('months.short', { returnObjects: true }) as unknown as string[];
   const leave = () => (router.canGoBack() ? router.back() : router.replace('/'));
   const back = () => (step > 0 ? setStep(step - 1) : leave());
-  const header = (
-    <View style={{ paddingHorizontal: spacing.lg }}>
-      <Pressable accessibilityLabel={t('common.back')} onPress={back} style={{ width: 44, height: 44, justifyContent: 'center' }}>
-        <Ionicons name="arrow-back" size={24} color={colors.ink} />
-      </Pressable>
-    </View>
-  );
+  const stepTitle = t(step === 0 ? 'checkout.step_review_title' : step === 1 ? 'checkout.step_guest_title' : 'checkout.step_pay_title');
+  const header = <ScreenHeader compact title={stepTitle} onBack={back} backLabel={t('common.back')} />;
 
   if (quote.isPending) {
-    return <SafeAreaView style={{ flex: 1 }}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></SafeAreaView>;
+    return <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></SafeAreaView>;
   }
   if (quote.isError) {
     const soldOut = quote.error instanceof ApiError && quote.error.code === 'SOLD_OUT';
     const optionOff = quote.error instanceof ApiError && quote.error.code === 'OPTION_UNAVAILABLE';
     if (coupon && quote.error instanceof ApiError && quote.error.code === 'COUPON_INVALID') {
-      return <SafeAreaView style={{ flex: 1 }}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></SafeAreaView>;
+      return <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>{header}<View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View></SafeAreaView>;
     }
     return (
-      <SafeAreaView style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
         {header}
         {optionOff
           ? <EmptyState icon="🛏️" title={t('checkout.option_unavailable')} body="" actionLabel={t('checkout.back_to_property')} onAction={leave} />
@@ -273,12 +268,11 @@ export default function Checkout() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {header}
         <ScrollView contentContainerStyle={{ paddingBottom: FOOTER_CLEARANCE + spacing.lg }} keyboardShouldPersistTaps="handled">
           <StepTransition stepKey={step}>
-          <T variant="display" style={{ paddingHorizontal: spacing.lg }}>{t(step === 0 ? 'checkout.step_review_title' : step === 1 ? 'checkout.step_guest_title' : 'checkout.step_pay_title')}</T>
           <Stepper step={step} labels={[t('checkout.step_review'), t('checkout.step_guest'), t('checkout.step_pay')]} />
 
           {step !== 1 ? <StaySummary q={q} months={months} /> : null}

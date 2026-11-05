@@ -1,14 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { addDays, nightsBetween, todayAddis, type Suggestion } from '@bookdan/domain';
 import { useTranslation } from '@bookdan/i18n';
-import { Button, Chip, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
+import { Button, Chip, ScreenHeader, T, colors, fonts, radius, shadow, spacing } from '@bookdan/ui';
 import { api } from '../src/api';
 import { CurrencyChip } from '../src/CurrencyChip';
 import { DateRangePicker } from '../src/DateRangePicker';
@@ -168,16 +166,15 @@ export default function SearchSheet() {
   const roomsLine = `${t('common.room', { count: rooms })}, ${t('search.adults', { count: adults })} & ${t('search.children', { count: children })}`;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }} edges={['top']}>
-      {/* Title bar: back, the page name, and the BookDan mark. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface }}>
-        <Pressable accessibilityLabel={t('common.cancel')} onPress={close} hitSlop={8} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={24} color={colors.ink} />
-        </Pressable>
-        <T variant="h2" style={{ flex: 1 }}>{t('search.title')}</T>
-        <CurrencyChip />
-        <Image source={require('../assets/icon.png')} accessibilityLabel="BookDan" style={{ width: 32, height: 32, borderRadius: 8 }} />
-      </View>
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+      {/* Header: back, the page name and the currency. */}
+      <ScreenHeader
+        compact
+        title={t('search.title')}
+        onBack={close}
+        backLabel={t('common.cancel')}
+        right={<CurrencyChip onDark />}
+      />
 
       <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
         <View style={[{ backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: spacing.xs, borderWidth: 1, borderColor: colors.line }, shadow.card]}>
@@ -238,29 +235,26 @@ export default function SearchSheet() {
 
       {/* The place search: type, then pick a suggestion or search the text as it is. */}
       <Modal visible={pickPlace} animationType="slide" onRequestClose={() => setPickPlace(false)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={['top']}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.line }}>
-            <Pressable accessibilityLabel={t('common.cancel')} onPress={() => setPickPlace(false)} hitSlop={8} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="arrow-back" size={24} color={colors.ink} />
-            </Pressable>
-            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', height: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.primary, paddingHorizontal: spacing.md }}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <ScreenHeader compact title={t('search.heading')} onBack={() => setPickPlace(false)} backLabel={t('common.cancel')}>
+            <View style={{ marginTop: spacing.sm, flexDirection: 'row', alignItems: 'center', minHeight: 48, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: spacing.md }}>
               <TextInput
                 autoFocus
                 value={q}
                 onChangeText={setQ}
                 placeholder={t('search.placeholder')}
-                placeholderTextColor={colors.muted}
+                placeholderTextColor="rgba(255,255,255,0.6)"
                 returnKeyType="search"
                 onSubmitEditing={() => go(q)}
-                style={{ flex: 1, fontFamily: fonts.regular, fontSize: 16, color: colors.ink }}
+                style={{ flex: 1, fontFamily: fonts.regular, fontSize: 16, color: '#FFFFFF' }}
               />
               {q.length > 0 ? (
                 <Pressable accessibilityLabel={t('common.cancel')} onPress={() => setQ('')} hitSlop={8}>
-                  <Ionicons name="close-circle" size={20} color={colors.muted} />
+                  <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.7)" />
                 </Pressable>
               ) : null}
             </View>
-          </View>
+          </ScreenHeader>
 
           <ScrollView keyboardShouldPersistTaps="handled">
             {q.trim().length > 0 ? (
@@ -292,7 +286,7 @@ export default function SearchSheet() {
               </Pressable>
             ))}
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
 
       {/* The calendar: tap the check-in day, then the check-out day. */}
@@ -318,7 +312,7 @@ export default function SearchSheet() {
           <Button title={t('search.date_done')} onPress={() => setPickGuests(false)} style={{ marginTop: spacing.lg }} />
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -331,14 +325,9 @@ function DatesSheet({ today, start, end, onClose, onDone }: { today: string; sta
   const months = t('months.short', { returnObjects: true }) as unknown as string[];
   const hint = !s || e ? t('search.date_pick_start') : t('search.date_pick_end');
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg }}>
-        <T variant="h2">{t('search.date_title')}</T>
-        <Pressable accessibilityLabel={t('common.cancel')} onPress={onClose} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="close" size={24} color={colors.ink} />
-        </Pressable>
-      </View>
-      <T variant="small" color={long ? colors.danger : colors.inkSoft} style={{ paddingHorizontal: spacing.lg }}>{long ? t('search.date_max') : hint}</T>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScreenHeader compact title={t('search.date_title')} onBack={onClose} backLabel={t('common.cancel')} backIcon="close" />
+      <T variant="small" color={long ? colors.danger : colors.inkSoft} style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>{long ? t('search.date_max') : hint}</T>
       <View style={{ flex: 1 }}>
         <DateRangePicker start={s} end={e} today={today} onChange={(a, b) => { setS(a); setE(b); setLong(false); }} onTooLong={() => setLong(true)} />
       </View>
@@ -349,6 +338,6 @@ function DatesSheet({ today, start, end, onClose, onDone }: { today: string; sta
           onPress={() => s && e && onDone(s, e)}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
