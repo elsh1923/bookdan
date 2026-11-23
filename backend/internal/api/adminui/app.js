@@ -201,10 +201,13 @@
     var coords = h('details', { class: 'mappick-numbers' }, h('summary', {}, 'Type the numbers instead'), h('div', { class: 'grid' }, field('Latitude', latBox), field('Longitude', lngBox)));
     if (!window.L) { add(holder, coords); return holder; }
     var status = h('div', { class: 'mappick-status' });
-    var note = h('div', { class: 'hint' });
+    var note = h('div', { class: 'mappick-msg', role: 'status' });
+    // One clear message under the paste box: blue while working, green when it worked, red when it did not.
+    function say(text) { note.textContent = text; note.className = 'mappick-msg ' + (!text ? '' : /^(Looking|Finding)/.test(text) ? 'busy' : /^(Pin placed|Placed)/.test(text) ? 'good' : 'bad'); }
     var paste = h('input', { placeholder: 'Or paste a Google Maps link (short links work), or numbers like 9.0108, 38.7613' });
+    var place = h('button', { type: 'button' }, 'Place pin');
     var here = h('button', { type: 'button', class: 'secondary' }, 'Use my current location');
-    add(holder, h('div', { class: 'mappick-bar' }, here, paste), note, mapEl, status, coords);
+    add(holder, h('div', { class: 'mappick-bar' }, here), h('div', { class: 'mappick-bar' }, paste, place), note, mapEl, status, coords);
     var ADDIS = [9.0108, 38.7613];
     function valid() { var a = parseFloat(latBox.value), b = parseFloat(lngBox.value); return isNaN(a) || isNaN(b) || a < -90 || a > 90 || b < -180 || b > 180 ? null : [a, b]; }
     function showStatus() {
@@ -235,41 +238,43 @@
       map.invalidateSize(); setTimeout(function () { map.invalidateSize(); }, 300);
 
       here.addEventListener('click', function () {
-        note.textContent = '';
-        if (!navigator.geolocation) { note.textContent = 'This browser cannot share its location. Tap the map instead.'; return; }
+        say('');
+        if (!navigator.geolocation) { say('This browser cannot share its location. Tap the map instead.'); return; }
         here.disabled = true; here.textContent = 'Finding you…';
         navigator.geolocation.getCurrentPosition(function (p) {
           here.disabled = false; here.textContent = 'Use my current location';
           var ll = L.latLng(p.coords.latitude, p.coords.longitude); set(ll); put(ll, true);
-          note.textContent = 'Placed at your current location. If you are not at the hotel, tap the map or drag the pin.';
+          say('Placed at your current location. If you are not at the hotel, tap the map or drag the pin.');
         }, function () {
           here.disabled = false; here.textContent = 'Use my current location';
-          note.textContent = 'Could not get your location (you may have said no). Tap the map instead.';
+          say('Could not get your location (you may have said no). Tap the map instead.');
         }, { enableHighAccuracy: true, timeout: 15000 });
       });
       // Pasted text: "9.0108, 38.7613", or a Google Maps link containing @lat,lng, !3dLAT!4dLNG, or q=lat,lng.
       function fromText(s) {
-        var m = s.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/[?&](?:q|ll|query)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/) || s.match(/^\s*(-?\d+\.\d+)\s*[,\s]\s*(-?\d+\.\d+)\s*$/);
+        var m = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/[?&](?:q|ll|query)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/) || s.match(/^\s*(-?\d+\.\d+)\s*[,\s]\s*(-?\d+\.\d+)\s*$/);
         return m ? L.latLng(parseFloat(m[1]), parseFloat(m[2])) : null;
       }
       function pasted() {
-        var s = paste.value.trim(); if (!s) return;
+        var s = paste.value.trim(); if (!s) { say('Paste a Google Maps link first, then press Place pin.'); return; }
         var ll = fromText(s);
         if (!ll || Math.abs(ll.lat) > 90 || Math.abs(ll.lng) > 180) {
           // A short link (maps.app.goo.gl) holds no position itself: the server opens it and reads where it leads.
           if (/^https:\/\/(maps\.app\.goo\.gl|goo\.gl|(www\.)?google\.[a-z.]+|maps\.google\.com)\//i.test(s)) {
-            note.textContent = 'Looking up the link…';
-            paste.value = ''; call('POST', '/admin/geo/resolve', { url: s }).then(function (r) {
-              var found = L.latLng(r.lat, r.lng); set(found); put(found, true); note.textContent = 'Pin placed from your link. Check it is on the right building, and drag it if not.';
-            }, function (err) { note.textContent = err.message; });
+            say('Looking up the link…');
+            call('POST', '/admin/geo/resolve', { url: s }).then(function (r) {
+              var found = L.latLng(r.lat, r.lng); set(found); put(found, true); paste.value = ''; say('Pin placed from your link. Check it is on the right building, and drag it if not.');
+            }, function (err) { say(err.message); });
             return;
           }
-          note.textContent = 'Could not find a position in that text. Tap the map instead.';
+          say('Could not find a position in that text. Tap the map instead.');
           return;
         }
-        set(ll); put(ll, true); paste.value = ''; note.textContent = 'Pin placed from what you pasted.';
+        set(ll); put(ll, true); paste.value = ''; say('Pin placed from what you pasted.');
       }
       paste.addEventListener('change', pasted);
+      place.addEventListener('click', pasted);
+      paste.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pasted(); } });
       paste.addEventListener('paste', function () { setTimeout(pasted, 0); });
     }, 0);
     return holder;

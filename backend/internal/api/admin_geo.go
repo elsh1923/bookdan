@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -21,10 +22,11 @@ var mapLinkHosts = map[string]bool{
 }
 
 var mapLinkCoords = []*regexp.Regexp{
-	regexp.MustCompile(`@(-?\d+\.\d+),\s*(-?\d+\.\d+)`),
 	regexp.MustCompile(`!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)`),
 	regexp.MustCompile(`[?&](?:q|ll|query|destination)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)`),
 	regexp.MustCompile(`/place/(-?\d+\.\d+),\s*(-?\d+\.\d+)`),
+	// The @ numbers are only where the map was centred when the link was made, so they come last, after the place's own pin (!3d!4d).
+	regexp.MustCompile(`@(-?\d+\.\d+),\s*(-?\d+\.\d+)`),
 }
 
 // coordsIn finds a latitude and longitude in an address, or reports false.
@@ -44,22 +46,27 @@ func coordsIn(s string) (lat, lng float64, ok bool) {
 	return 0, 0, false
 }
 
-// mapLinkNext asks one address where it redirects to, without following it. Replaced in tests.
-var mapLinkNext = func(ctx context.Context, u string) (string, error) {
+// mapLinkNext asks one address where it redirects to, without following it, and also returns the start of the page when it does not
+// redirect (a position is sometimes written inside the page). Replaced in tests.
+var mapLinkNext = func(ctx context.Context, u string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36")
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer res.Body.Close()
-	return res.Header.Get("Location"), nil
+	if loc := res.Header.Get("Location"); loc != "" {
+		return loc, "", nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 512<<10))
+	return "", string(body), nil
 }
 
 // adminResolveMapLink turns a pasted Google Maps link (short or long) into a position.
@@ -84,8 +91,15 @@ func (s *Server) adminResolveMapLink(w http.ResponseWriter, r *http.Request) err
 		if err != nil || u.Scheme != "https" || !mapLinkHosts[strings.ToLower(u.Hostname())] {
 			return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "Paste a Google Maps link (it starts with https://maps.app.goo.gl or https://www.google.com/maps).")
 		}
-		next, err := mapLinkNext(r.Context(), cur)
-		if err != nil || next == "" {
+		next, page, err := mapLinkNext(r.Context(), cur)
+		if err != nil {
+			return fail(http.StatusBadGateway, httpx.CodeInvalidRequest, "Could not open that link from our server. Tap the map instead, or paste the longer address from your browser bar.")
+		}
+		if next == "" {
+			if lat, lng, ok := coordsIn(page); ok {
+				respond(w, http.StatusOK, map[string]float64{"lat": lat, "lng": lng})
+				return nil
+			}
 			return notFound
 		}
 		if ref, err := u.Parse(next); err == nil {
