@@ -226,6 +226,7 @@ func (s *Server) adminRoutes(r chi.Router) {
 
 		r.Get("/admin/hotels", s.h(s.adminListHotels))
 		r.Get("/admin/hotels/{id}", s.h(s.adminGetHotel))
+		r.Post("/admin/geo/resolve", s.h(s.adminResolveMapLink))
 		r.Get("/admin/coupons", s.h(s.adminCoupons))
 		r.Get("/admin/analytics", s.h(s.adminAnalytics))
 		r.Get("/admin/calls", s.h(s.adminCalls))

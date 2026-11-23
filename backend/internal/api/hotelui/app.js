@@ -373,21 +373,31 @@
     return holder;
   }
 
-  // ---- map pin: click the map or drag the pin; the two number boxes stay in step (and can still be typed)
+  // ---- map pin: tap the map, drag the pin, use the phone's location, or paste a Google Maps link. The number boxes stay in step (tucked away, still typeable).
   function locationPicker(latBox, lngBox) {
     var holder = h('div', { class: 'mappick' });
     var mapEl = h('div', { class: 'mappick-map' });
-    var coords = h('div', { class: 'grid' }, field('Latitude', latBox), field('Longitude', lngBox));
+    var coords = h('details', { class: 'mappick-numbers' }, h('summary', {}, 'Type the numbers instead'), h('div', { class: 'grid' }, field('Latitude', latBox), field('Longitude', lngBox)));
     if (!window.L) { add(holder, coords); return holder; }
-    add(holder, mapEl); add(holder, coords);
+    var status = h('div', { class: 'mappick-status' });
+    var note = h('div', { class: 'hint' });
+    var paste = h('input', { placeholder: 'Or paste a Google Maps link (short links work), or numbers like 9.0108, 38.7613' });
+    var here = h('button', { type: 'button', class: 'secondary' }, 'Use my current location');
+    add(holder, h('div', { class: 'mappick-bar' }, here, paste), note, mapEl, status, coords);
     var ADDIS = [9.0108, 38.7613];
-    function valid() { var a = parseFloat(latBox.value), b = parseFloat(lngBox.value); return isNaN(a) || isNaN(b) ? null : [a, b]; }
+    function valid() { var a = parseFloat(latBox.value), b = parseFloat(lngBox.value); return isNaN(a) || isNaN(b) || a < -90 || a > 90 || b < -180 || b > 180 ? null : [a, b]; }
+    function showStatus() {
+      var v = valid();
+      status.textContent = v ? '✓ Pin set: ' + v[0].toFixed(5) + ', ' + v[1].toFixed(5) + '. Drag the pin to adjust it.' : 'No pin yet. Tap the map where the hotel is.';
+      status.className = 'mappick-status' + (v ? ' ok' : '');
+    }
+    showStatus();
     var start = valid();
     setTimeout(function () {
       var map = L.map(mapEl).setView(start || ADDIS, start ? 16 : 12);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
       var pin = null;
-      function set(ll) { latBox.value = ll.lat.toFixed(6); lngBox.value = ll.lng.toFixed(6); }
+      function set(ll) { latBox.value = ll.lat.toFixed(6); lngBox.value = ll.lng.toFixed(6); showStatus(); }
       function put(ll, fly) {
         if (!pin) {
           pin = L.marker(ll, { draggable: true }).addTo(map);
@@ -397,9 +407,49 @@
       }
       if (start) put(start, false);
       map.on('click', function (e) { set(e.latlng); put(e.latlng, false); });
-      function typed() { var v = valid(); if (v) put(v, true); }
+      function typed() { var v = valid(); if (v) put(v, true); showStatus(); }
       latBox.addEventListener('change', typed); lngBox.addEventListener('change', typed);
-      map.invalidateSize();
+      // The map is built before the page has settled, which left it half drawn: redraw whenever its box changes size.
+      if (window.ResizeObserver) new ResizeObserver(function () { map.invalidateSize(); }).observe(mapEl);
+      map.invalidateSize(); setTimeout(function () { map.invalidateSize(); }, 300);
+
+      here.addEventListener('click', function () {
+        note.textContent = '';
+        if (!navigator.geolocation) { note.textContent = 'This browser cannot share its location. Tap the map instead.'; return; }
+        here.disabled = true; here.textContent = 'Finding you…';
+        navigator.geolocation.getCurrentPosition(function (p) {
+          here.disabled = false; here.textContent = 'Use my current location';
+          var ll = L.latLng(p.coords.latitude, p.coords.longitude); set(ll); put(ll, true);
+          note.textContent = 'Placed at your current location. If you are not at the hotel, tap the map or drag the pin.';
+        }, function () {
+          here.disabled = false; here.textContent = 'Use my current location';
+          note.textContent = 'Could not get your location (you may have said no). Tap the map instead.';
+        }, { enableHighAccuracy: true, timeout: 15000 });
+      });
+      // Pasted text: "9.0108, 38.7613", or a Google Maps link containing @lat,lng, !3dLAT!4dLNG, or q=lat,lng.
+      function fromText(s) {
+        var m = s.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/[?&](?:q|ll|query)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/) || s.match(/^\s*(-?\d+\.\d+)\s*[,\s]\s*(-?\d+\.\d+)\s*$/);
+        return m ? L.latLng(parseFloat(m[1]), parseFloat(m[2])) : null;
+      }
+      function pasted() {
+        var s = paste.value.trim(); if (!s) return;
+        var ll = fromText(s);
+        if (!ll || Math.abs(ll.lat) > 90 || Math.abs(ll.lng) > 180) {
+          // A short link (maps.app.goo.gl) holds no position itself: the server opens it and reads where it leads.
+          if (/^https:\/\/(maps\.app\.goo\.gl|goo\.gl|(www\.)?google\.[a-z.]+|maps\.google\.com)\//i.test(s)) {
+            note.textContent = 'Looking up the link…';
+            paste.value = ''; call('POST', '/admin/geo/resolve', { url: s }).then(function (r) {
+              var found = L.latLng(r.lat, r.lng); set(found); put(found, true); note.textContent = 'Pin placed from your link. Check it is on the right building, and drag it if not.';
+            }, function (err) { note.textContent = err.message; });
+            return;
+          }
+          note.textContent = 'Could not find a position in that text. Tap the map instead.';
+          return;
+        }
+        set(ll); put(ll, true); paste.value = ''; note.textContent = 'Pin placed from what you pasted.';
+      }
+      paste.addEventListener('change', pasted);
+      paste.addEventListener('paste', function () { setTimeout(pasted, 0); });
     }, 0);
     return holder;
   }
@@ -409,22 +459,22 @@
     var isNew = !hotel;
     hotel = hotel || { name: '', type: 'hotel', city: '', area: '', address: '', phone: '', description: '', lat: '', lng: '', amenities: [], house_rules: [], pay_at_hotel: false, verified: false, status: 'draft', check_in_time: '14:00', check_out_time: '12:00', description_am: '', directions: '', directions_am: '' };
     var f = {
-      name: h('input', { value: hotel.name, maxlength: '120' }),
+      name: h('input', { value: hotel.name, maxlength: '120', placeholder: 'For example: Lake View Lodge' }),
       type: select(TYPES, hotel.type),
-      city: h('input', { value: hotel.city }),
-      area: h('input', { value: hotel.area }),
-      address: h('input', { value: hotel.address }),
+      city: h('input', { value: hotel.city, placeholder: 'For example: Bahir Dar' }),
+      area: h('input', { value: hotel.area, placeholder: 'For example: Kebele 11, near the lake' }),
+      address: h('input', { value: hotel.address, placeholder: 'For example: Papyrus Road, Bahir Dar' }),
       phone: h('input', { value: hotel.phone, placeholder: '+251 11 123 4567' }),
       lat: h('input', { value: hotel.lat === '' ? '' : String(hotel.lat), inputmode: 'decimal', placeholder: '9.0108' }),
       lng: h('input', { value: hotel.lng === '' ? '' : String(hotel.lng), inputmode: 'decimal', placeholder: '38.7613' }),
-      description: h('textarea', { maxlength: '2000' }, hotel.description),
-      rules: h('textarea', { placeholder: 'One rule per line' }, (hotel.house_rules || []).join('\n')),
+      description: h('textarea', { maxlength: '2000', placeholder: 'For example: A quiet, clean lodge 5 minutes from the lake. Rooms have hot showers, free Wi-Fi and a balcony. Breakfast is served from 6:30 to 10:00. Airport pick-up on request.' }, hotel.description),
+      rules: h('textarea', { placeholder: 'One rule per line, for example:\nNo smoking in rooms\nQuiet hours after 10 pm\nGuests must show ID at check-in' }, (hotel.house_rules || []).join('\n')),
       pay: h('input', { type: 'checkbox', checked: hotel.pay_at_hotel }),
       verified: h('input', { type: 'checkbox', checked: hotel.verified }),
       status: select(STATUSES, hotel.status),
-      descAm: h('textarea', { maxlength: '2000', placeholder: 'ስለ ሆቴሉ በአማርኛ' }, hotel.description_am || ''),
+      descAm: h('textarea', { maxlength: '2000', placeholder: 'ምሳሌ፦ ከሐይቁ 5 ደቂቃ ርቀት ላይ የሚገኝ ጸጥ ያለ ንጹህ ሎጅ። ክፍሎች ሙቅ ውሃ፣ ነጻ ዋይፋይ እና በረንዳ አላቸው። ቁርስ ከ12:30 እስከ 4:00 ሰዓት ይቀርባል።' }, hotel.description_am || ''),
       directions: h('textarea', { maxlength: '600', placeholder: 'For example: Behind the blue church, next to the pharmacy' }, hotel.directions || ''),
-      directionsAm: h('textarea', { maxlength: '600', placeholder: 'እንዴት እንደሚገኝ በአማርኛ' }, hotel.directions_am || ''),
+      directionsAm: h('textarea', { maxlength: '600', placeholder: 'ምሳሌ፦ ከሰማያዊው ቤተ ክርስቲያን ጀርባ፣ ከፋርማሲው አጠገብ' }, hotel.directions_am || ''),
       checkIn: h('input', { type: 'time', value: hotel.check_in_time || '14:00' }),
       checkOut: h('input', { type: 'time', value: hotel.check_out_time || '12:00' })
     };
@@ -456,12 +506,12 @@
         field('Name', f.name), field('Type', f.type), field('City', f.city), field('Area or neighbourhood', f.area),
         field('Street address', f.address), field('Phone for guests', f.phone),
         field('Check-in from', f.checkIn, 'Shown to guests on the hotel page and in their booking (Addis Ababa time).'), field('Check-out until', f.checkOut)),
-      field('Location on the map', locationPicker(f.lat, f.lng), 'Click the map (or drag the pin) where the hotel is. Guests see this pin on the hotel page and in the map view.'),
-      field('Description', f.description),
-      field('Description in Amharic (shown to guests who use the app in Amharic)', f.descAm),
+      field('Location on the map', locationPicker(f.lat, f.lng), 'Guests see this pin on the hotel page and in the map view.'),
+      field('Description', f.description, 'Two or three short sentences guests will read first: what the place is like, what is nearby, and what is included (breakfast, Wi-Fi, parking).'),
+      field('Description in Amharic (shown to guests who use the app in Amharic)', f.descAm, 'Optional. The same text as above, written in Amharic.'),
       field('How to find us, in words', f.directions, 'Addresses here are often landmarks. Example: "Behind the blue church, next to the pharmacy". Shown on the hotel page.'),
       field('How to find us, in Amharic', f.directionsAm),
-      field('House rules', f.rules),
+      field('House rules', f.rules, 'Type each rule on its own line. Guests see these before they book.'),
       h('div', { class: 'field' }, h('label', {}, 'Features'), h('div', { class: 'checks' }, amen.map(function (a) { return h('label', { class: 'check' }, a.box, a.label); }))),
       h('div', { class: 'field' }, h('label', { class: 'check' }, f.pay, 'Guests may choose to pay at the hotel')),
       h('div', { class: 'field' }, h('label', {}, 'Status'), h('div', {}, h('span', { class: 'chip ' + hotel.status }, hotel.status === 'active' ? 'Published' : hotel.status === 'draft' ? 'Draft' : 'Hidden')), h('div', { class: 'hint' }, 'BookDan publishes and hides hotels and checks the business details. Contact BookDan from the Help page to change this.')),
