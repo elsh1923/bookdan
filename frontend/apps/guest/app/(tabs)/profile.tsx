@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, View } from 'react-native';
+import { Alert, Linking, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError } from '@bookdan/api-client';
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES, useTranslation } from '@bookdan/i18n';
 import { currencyInfo, maskId } from '@bookdan/domain';
 import { Badge, Button, Chip, PressableScale, Reveal, T, colors, radius, spacing } from '@bookdan/ui';
-import { api, isMockApi } from '../../src/api';
+import { api, isMockApi, publicSiteUrl } from '../../src/api';
 import { useAuth } from '../../src/auth';
 import { LoyaltyCard } from '../../src/LoyaltyCard';
 import { useProfile } from '../../src/queries';
@@ -111,6 +111,11 @@ export default function Profile() {
         <Ionicons name="chevron-forward" size={18} color={colors.muted} />
       </PressableScale>
       {shown !== 'ETB' ? <T variant="small" color={colors.muted} style={{ marginTop: spacing.sm }}>{t('profile.currency_note', { cur: shown })}</T> : null}
+
+      <View style={{ marginTop: spacing.xl, flexDirection: 'row', gap: spacing.lg }}>
+        <Pressable accessibilityRole="link" onPress={() => Linking.openURL(publicSiteUrl + '/privacy')}><T variant="small" color={colors.muted} style={{ textDecorationLine: 'underline' }}>{t('account.privacy_link')}</T></Pressable>
+        <Pressable accessibilityRole="link" onPress={() => Linking.openURL(publicSiteUrl + '/terms')}><T variant="small" color={colors.muted} style={{ textDecorationLine: 'underline' }}>{t('account.terms_link')}</T></Pressable>
+      </View>
 
       <View style={{ marginTop: spacing.xl }}>
         {identity ? (

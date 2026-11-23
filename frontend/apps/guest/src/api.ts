@@ -12,6 +12,7 @@ import { createHttpApi, createMockApi, createSessionManager, type Api, type Sess
 const extra = Constants.expoConfig?.extra as { apiMode?: string; apiUrl?: string } | undefined;
 const mode = process.env.EXPO_PUBLIC_API_MODE ?? extra?.apiMode ?? 'mock';
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? extra?.apiUrl ?? (Platform.OS === 'web' ? 'http://localhost:8080' : '');
+export const publicSiteUrl = apiUrl || 'https://bookdan.onrender.com';
 export const isMockApi = mode !== 'http';
 if (!isMockApi && !apiUrl) console.warn('EXPO_PUBLIC_API_MODE=http but EXPO_PUBLIC_API_URL is not set: every request will fail.');
 

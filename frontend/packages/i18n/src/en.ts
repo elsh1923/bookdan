@@ -900,6 +900,8 @@ const en = {
     outcome_withdrawn: 'Withdrawn',
   },
   account: {
+    privacy_link: 'Privacy policy',
+    terms_link: 'Terms of use',
     delete: 'Delete my account',
     delete_title: 'Delete your account?',
     delete_body: 'This closes your account and removes your saved details, ID number, phone numbers on bookings and review texts. It cannot be undone. Records of your past bookings and payments are kept, as the law and the hotels require.',

@@ -35,6 +35,8 @@ func New(cfg config.Config, db Pinger, mount func(chi.Router), mountRoot ...func
 		}
 	}
 
+	mountLegal(r, cfg)
+
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/healthz", health(cfg))
 		r.Get("/readyz", ready(db))

@@ -28,7 +28,11 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_API_MODE": "http",
+        "EXPO_PUBLIC_API_URL": "https://bookdan.onrender.com"
+      }
     }
   }
 }
