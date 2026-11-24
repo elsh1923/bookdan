@@ -205,9 +205,8 @@
     // One clear message under the paste box: blue while working, green when it worked, red when it did not.
     function say(text) { note.textContent = text; note.className = 'mappick-msg ' + (!text ? '' : /^(Looking|Finding)/.test(text) ? 'busy' : /^(Pin placed|Placed)/.test(text) ? 'good' : 'bad'); }
     var paste = h('input', { placeholder: 'Or paste a Google Maps link (short links work), or numbers like 9.0108, 38.7613' });
-    var place = h('button', { type: 'button' }, 'Place pin');
-    var here = h('button', { type: 'button', class: 'secondary' }, 'Use my current location');
-    add(holder, h('div', { class: 'mappick-bar' }, here), h('div', { class: 'mappick-bar' }, paste, place), note, mapEl, status, coords);
+        var here = h('button', { type: 'button', class: 'secondary' }, 'Use my current location');
+    add(holder, h('div', { class: 'mappick-bar' }, here), h('div', { class: 'mappick-bar' }, paste), note, mapEl, status, coords);
     var ADDIS = [9.0108, 38.7613];
     function valid() { var a = parseFloat(latBox.value), b = parseFloat(lngBox.value); return isNaN(a) || isNaN(b) || a < -90 || a > 90 || b < -180 || b > 180 ? null : [a, b]; }
     function showStatus() {
@@ -255,25 +254,28 @@
         var m = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/[?&](?:q|ll|query)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/) || s.match(/^\s*(-?\d+\.\d+)\s*[,\s]\s*(-?\d+\.\d+)\s*$/);
         return m ? L.latLng(parseFloat(m[1]), parseFloat(m[2])) : null;
       }
+      var lastPlaced = '';
       function pasted() {
-        var s = paste.value.trim(); if (!s) { say('Paste a Google Maps link first, then press Place pin.'); return; }
+        var s = paste.value.trim();
+        // Pasting already places the pin, so pressing the button afterwards must not undo that message.
+        if (!s) { if (valid()) say('Pin placed. It is on the map below; drag it to adjust.'); else say('Paste a Google Maps link in the box above.'); return; }
+        if (s === lastPlaced) { say('Pin placed. It is on the map below; drag it to adjust.'); return; }
         var ll = fromText(s);
         if (!ll || Math.abs(ll.lat) > 90 || Math.abs(ll.lng) > 180) {
           // A short link (maps.app.goo.gl) holds no position itself: the server opens it and reads where it leads.
           if (/^https:\/\/(maps\.app\.goo\.gl|goo\.gl|(www\.)?google\.[a-z.]+|maps\.google\.com)\//i.test(s)) {
             say('Looking up the link…');
             call('POST', '/admin/geo/resolve', { url: s }).then(function (r) {
-              var found = L.latLng(r.lat, r.lng); set(found); put(found, true); paste.value = ''; say('Pin placed from your link. Check it is on the right building, and drag it if not.');
+              var found = L.latLng(r.lat, r.lng); set(found); put(found, true); lastPlaced = s; say('Pin placed from your link. Check it is on the right building, and drag it if not.');
             }, function (err) { say(err.message); });
             return;
           }
           say('Could not find a position in that text. Tap the map instead.');
           return;
         }
-        set(ll); put(ll, true); paste.value = ''; say('Pin placed from what you pasted.');
+        set(ll); put(ll, true); lastPlaced = s; say('Pin placed from what you pasted.');
       }
       paste.addEventListener('change', pasted);
-      place.addEventListener('click', pasted);
       paste.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pasted(); } });
       paste.addEventListener('paste', function () { setTimeout(pasted, 0); });
     }, 0);
