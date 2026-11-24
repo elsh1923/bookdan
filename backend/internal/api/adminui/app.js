@@ -285,7 +285,7 @@
   // ---- hotel form (shared by create and edit)
   function detailsForm(hotel, onSaved) {
     var isNew = !hotel;
-    hotel = hotel || { name: '', type: 'hotel', city: '', area: '', address: '', phone: '', description: '', lat: '', lng: '', amenities: [], house_rules: [], pay_at_hotel: false, verified: false, status: 'draft', check_in_time: '14:00', check_out_time: '12:00', description_am: '', directions: '', directions_am: '' };
+    hotel = hotel || { name: '', type: 'hotel', city: '', area: '', address: '', phone: '', description: '', lat: '', lng: '', amenities: [], house_rules: [], pay_at_hotel: false, verified: true, status: 'draft', check_in_time: '14:00', check_out_time: '12:00', description_am: '', directions: '', directions_am: '' };
     var f = {
       name: h('input', { value: hotel.name, maxlength: '120', placeholder: 'For example: Lake View Lodge' }),
       type: select(TYPES, hotel.type),
