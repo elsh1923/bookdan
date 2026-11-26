@@ -385,6 +385,17 @@
   function optionalBirr(v) { var n = parseFloat(String(v).replace(/,/g, '')); return isNaN(n) || n <= 0 ? null : Math.round(n * 100); }
   function optionalPercent(v) { var n = parseFloat(v); return isNaN(n) || n <= 0 ? null : Math.round(n * 100); }
 
+  // What is wrong with the numbers typed for a room, or '' when all are fine. Without this a word such as "available" would be
+  // silently saved as "not offered". Commas and a % sign are accepted.
+  function roomProblem(price, breakfast, discount) {
+    var clean = function (v) { return String(v).replace(/[,%\s]/g, ''); };
+    var p = clean(price), b = clean(breakfast), d = clean(discount);
+    if (String(price).trim() && !(/^\d+$/.test(p) && +p >= 100 && +p <= 1000000)) return 'Price per night: type a whole number of birr between 100 and 1,000,000, for example 3200.';
+    if (String(breakfast).trim() && !(/^\d+(\.\d{1,2})?$/.test(b) && +b > 0)) return 'Breakfast per night: type its price in birr, for example 300, or leave it empty if you do not offer breakfast.';
+    if (String(discount).trim() && !(/^\d+(\.\d{1,2})?$/.test(d) && +d >= 1 && +d <= 50)) return 'Non-refundable discount: type a percent from 1 to 50, for example 10, or leave it empty.';
+    return '';
+  }
+
   function roomsPanel(hotel, reload) {
     var wrap = h('div', {});
     add(wrap, h('p', { class: 'soft' }, 'Set how many rooms of each kind you have and the price per night in birr. The price applies from today for the next two years. Bookings already made keep the price they were sold at.'));
@@ -403,9 +414,11 @@
         var pbtn = h('button', { class: 'ghost', onclick: function () { photosRow.style.display = photosRow.style.display === 'none' ? '' : 'none'; } }, 'Photos (' + (r.photos || []).length + ')');
         var btn = h('button', { class: 'secondary', onclick: function () {
           btn.disabled = true; clear(out);
+          var problem = roomProblem(price.value, bf.value, nr.value);
+          if (problem) { btn.disabled = false; add(out, msg('err', r.name + ': ' + problem)); return; }
           var info = { name: name.value, capacity: parseInt(cap.value, 10), total_rooms: parseInt(total.value, 10), amenities: feat.value.split(','), breakfast_santim: optionalBirr(bf.value), nonrefundable_bps: optionalPercent(nr.value) };
           call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + r.id, info).then(function () {
-            var p = parseInt(price.value, 10);
+            var p = parseInt(price.value.replace(/,/g, ''), 10);
             if (!isNaN(p) && p * 100 !== r.price_santim) return call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + r.id + '/price', { price_santim: p * 100 });
           }).then(function () { reload(); }, function (err) { btn.disabled = false; add(out, msg('err', r.name + ': ' + err.message)); });
         } }, 'Save');
@@ -419,17 +432,20 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     add(wrap, out);
 
     var n = h('input', { placeholder: 'e.g. Deluxe Double' }), c = h('input', { value: '2', inputmode: 'numeric' }), t = h('input', { value: '5', inputmode: 'numeric' }),
-      f = h('input', { placeholder: 'Private bathroom, TV' }), p = h('input', { inputmode: 'numeric', placeholder: 'e.g. 3200' }), nb = h('input', { inputmode: 'numeric', placeholder: 'optional' }), nn = h('input', { inputmode: 'numeric', placeholder: 'optional, e.g. 10' }), o2 = h('div', {});
+      f = h('input', { placeholder: 'Private bathroom, TV' }), p = h('input', { inputmode: 'numeric', placeholder: 'e.g. 3200' }), nb = h('input', { inputmode: 'numeric', placeholder: 'e.g. 300' }), nn = h('input', { inputmode: 'numeric', placeholder: 'e.g. 10' }), o2 = h('div', {});
     var add_ = h('button', { type: 'submit' }, 'Add room');
     add(wrap, h('h3', { style: 'margin-top:24px' }, 'Add a room type'));
     add(wrap, h('form', { onsubmit: function (e) {
       e.preventDefault(); add_.disabled = true; clear(o2);
-      var price = parseInt(p.value, 10);
+      // Checked before the room is created, so a wrong price cannot leave a half-made room behind.
+      var problem = roomProblem(p.value, nb.value, nn.value);
+      if (problem) { add_.disabled = false; add(o2, msg('err', problem)); return; }
+      var price = parseInt(p.value.replace(/,/g, ''), 10);
       call('POST', '/admin/hotels/' + hotel.id + '/rooms', { name: n.value, capacity: parseInt(c.value, 10), total_rooms: parseInt(t.value, 10), amenities: f.value.split(','), breakfast_santim: optionalBirr(nb.value), nonrefundable_bps: optionalPercent(nn.value) }).then(function (res) {
         if (!isNaN(price)) return call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + res.id + '/price', { price_santim: price * 100 });
       }).then(function () { reload(); }, function (err) { add_.disabled = false; add(o2, msg('err', err.message)); });
     } },
-      h('div', { class: 'grid' }, field('Room name', n), field('Guests per room', c), field('How many rooms', t), field('Features', f), field('Price per night (ETB)', p), field('Breakfast per night (ETB)', nb), field('Non-refundable discount (%)', nn)),
+      h('div', { class: 'grid' }, field('Room name', n), field('Guests per room', c), field('How many rooms', t), field('Features', f), field('Price per night (ETB)', p), field('Breakfast per night (ETB)', nb, 'A price in birr. Leave empty if there is no breakfast.'), field('Non-refundable discount (%)', nn, 'How much cheaper for guests who accept no refund (1 to 50). Leave empty to offer none.')),
       h('div', { class: 'field' }, add_), o2));
     return wrap;
   }
