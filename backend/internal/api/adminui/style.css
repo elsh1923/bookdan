@@ -164,7 +164,9 @@ main div>.card:nth-child(n+5),main .tile:nth-child(n+5){animation-delay:.24s}
 
 /* ---- small screens: the sidebar becomes a scrolling bar on top */
 @media (max-width:860px){
-  .layout{grid-template-columns:1fr}
+  /* minmax(0,1fr), not 1fr: otherwise a wide table or tab bar stretches the whole page past the phone screen */
+  .layout{grid-template-columns:minmax(0,1fr)}
+  aside,main{min-width:0}
   aside{position:static;height:auto;flex-direction:column;gap:10px;padding:14px 12px}
   nav.side{flex-direction:row;overflow-x:auto;gap:4px;scrollbar-width:none;padding-bottom:2px}
   nav.side h4{display:none}
@@ -174,3 +176,6 @@ main div>.card:nth-child(n+5),main .tile:nth-child(n+5){animation-delay:.24s}
   .layout main,main{padding:22px 14px 56px}
   h1{font-size:25px}.card{padding:18px}
 }
+
+/* confirmation after a save */
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2000;max-width:calc(100vw - 32px);background:#166534;color:#fff;font-weight:600;padding:12px 20px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);text-align:center}

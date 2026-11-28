@@ -121,6 +121,14 @@ func (s *Server) submitApplication(w http.ResponseWriter, r *http.Request) error
 		if err := tx.QueryRow(ctx, `SELECT count(*)::int FROM hotel_applications WHERE lower(owner_email) = $1 AND status = 'pending'`, email.Value).Scan(&waiting); err != nil {
 			return err
 		}
+		// The same hotel sent again by the same person is a repeat, not a second hotel.
+		var same bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM hotel_applications WHERE lower(owner_email) = $1 AND lower(hotel_name) = lower($2) AND status = 'pending')`, email.Value, in.HotelName).Scan(&same); err != nil {
+			return err
+		}
+		if same {
+			return fail(http.StatusConflict, "APPLICATION_WAITING", "You already sent an application for this hotel and it is waiting for a decision. We will email you.")
+		}
 		if waiting >= pendingPerEmail {
 			return fail(http.StatusConflict, "APPLICATION_WAITING", "You already have applications waiting for a decision. We will email you.")
 		}

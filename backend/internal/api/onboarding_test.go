@@ -254,6 +254,9 @@ func TestTheBusinessRecordIsValidatedEncryptedAndItsRevealLogged(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("every reveal must be logged, found %d", n)
 	}
+	if r := admin.do("GET", "/admin/activity?property_id="+id, nil); r.status != 200 || !strings.Contains(string(r.raw), "viewed the full payout account number") {
+		t.Fatalf("staff cannot see the reveal in Hotel changes: %d %s", r.status, r.raw)
+	}
 	var logged int
 	pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_log WHERE details::text LIKE '%100012345678%' OR details::text LIKE '%1000 1234 5678%'`).Scan(&logged)
 	if logged != 0 {

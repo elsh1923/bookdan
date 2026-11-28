@@ -34,6 +34,8 @@ var activityText = map[string]string{
 	"admin_alert_rules":    "changed the booking alert rules",
 	"admin_hotel_created":  "created the hotel",
 	"admin_business_saved": "saved the business details",
+	// Not a change, but looking at a bank account number is exactly what staff need to be able to check later.
+	"admin_payout_revealed": "viewed the full payout account number",
 }
 
 // adminActivity: the log of changes made to hotels, newest first. Hotels' owners change their own rooms, prices and photos straight away through the hotel portal,

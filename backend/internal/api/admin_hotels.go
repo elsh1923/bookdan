@@ -696,6 +696,9 @@ func (s *Server) adminAddStaff(w http.ResponseWriter, r *http.Request) error {
 	}
 	ident, _, err := identity{Type: typ, Value: contact}.clean()
 	if err != nil {
+		if typ == "phone" { // it may well be a mistyped email, so name both
+			return fail(http.StatusBadRequest, httpx.CodeInvalidRequest, "Enter an email address or an Ethiopian phone number")
+		}
 		return err
 	}
 	if in.Role != "owner" && in.Role != "receptionist" {
@@ -726,14 +729,22 @@ func (s *Server) adminAddStaff(w http.ResponseWriter, r *http.Request) error {
 		case role == "admin":
 			return fail(http.StatusConflict, codeInvalidState, "That person is a platform admin already")
 		}
-		// Whoever is already on this hotel keeps their role unless a platform admin changes it.
+		// "Add" never changes someone already on this hotel's team: typing an owner's email with the other role used to turn them into a
+		// receptionist without a word. To change a role, the person is removed (which asks first) and added again.
 		var existing string
 		err = tx.QueryRow(r.Context(), `SELECT role FROM property_staff WHERE property_id = $1 AND user_id = $2`, id, uid).Scan(&existing)
 		if err != nil && err != pgx.ErrNoRows {
 			return err
 		}
-		if err == nil && !isAdmin && existing == "owner" {
-			return fail(http.StatusForbidden, codeForbidden, "That person is an owner of this hotel")
+		if err == nil {
+			if !isAdmin && existing == "owner" {
+				return fail(http.StatusForbidden, codeForbidden, "That person is an owner of this hotel")
+			}
+			as := "a receptionist"
+			if existing == "owner" {
+				as = "an owner"
+			}
+			return fail(http.StatusConflict, codeInvalidState, "That person is already on this hotel's team as "+as+". To change their role, remove them first, then add them again.")
 		}
 		// A guest account that becomes hotel staff; an owner somewhere stays an owner.
 		if role == "guest" {

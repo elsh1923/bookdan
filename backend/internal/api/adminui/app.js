@@ -39,6 +39,15 @@
   }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   function msg(kind, text) { return h('div', { class: 'msg ' + kind, role: kind === 'err' ? 'alert' : 'status' }, text); }
+  // A short confirmation that stays visible although the page is redrawn right after a save.
+  function toast(text) {
+    var old = document.querySelector('.toast');
+    if (old) old.remove();
+    var el = h('div', { class: 'toast', role: 'status' }, text);
+    document.body.appendChild(el);
+    setTimeout(function () { el.remove(); }, 4000);
+  }
+  function saved(text, next) { return function (res) { toast(text); return next(res); }; }
   function birr(santim) { return santim == null ? '' : String(Math.round(santim / 100)); }
 
   // ---- server calls
@@ -329,7 +338,7 @@
         body.confirm_hide = true;
         return call('PUT', '/admin/hotels/' + hotel.id, body);
       });
-      req.then(function (res) { btn.disabled = false; if (isNew) go('#/hotel/' + res.id); else { add(out, msg('ok', 'Saved.')); onSaved && onSaved(); } },
+      req.then(function (res) { btn.disabled = false; if (isNew) { toast('Hotel created as a draft.'); go('#/hotel/' + res.id); } else { toast('Saved.'); onSaved && onSaved(); } },
         function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
     } },
       h('div', { class: 'grid' },
@@ -421,9 +430,9 @@
           call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + r.id, info).then(function () {
             var p = parseInt(price.value.replace(/,/g, ''), 10);
             if (!isNaN(p) && p * 100 !== r.price_santim) return call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + r.id + '/price', { price_santim: p * 100 });
-          }).then(function () { reload(); }, function (err) { btn.disabled = false; add(out, msg('err', r.name + ': ' + err.message)); });
+          }).then(function () { toast('Saved.'); reload(); }, function (err) { btn.disabled = false; add(out, msg('err', r.name + ': ' + err.message)); });
         } }, 'Save');
-var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove "' + r.name + '"? Only a room that has never been booked can be removed.')) call('DELETE', '/admin/hotels/' + hotel.id + '/rooms/' + r.id).then(reload, function (err) { add(out, msg('err', r.name + ': ' + err.message)); }); } }, 'Remove');
+var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove "' + r.name + '"? Only a room that has never been booked can be removed.')) call('DELETE', '/admin/hotels/' + hotel.id + '/rooms/' + r.id).then(saved('Room removed.', reload), function (err) { add(out, msg('err', r.name + ': ' + err.message)); }); } }, 'Remove');
         add(body, h('tr', {}, h('td', {}, name), h('td', {}, cap), h('td', {}, total), h('td', {}, feat), h('td', {}, price), h('td', {}, bf), h('td', {}, nr), h('td', {}, btn, ' ', pbtn, ' ', del)));
         add(body, photosRow);
       });
@@ -444,7 +453,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       var price = parseInt(p.value.replace(/,/g, ''), 10);
       call('POST', '/admin/hotels/' + hotel.id + '/rooms', { name: n.value, capacity: parseInt(c.value, 10), total_rooms: parseInt(t.value, 10), amenities: f.value.split(','), breakfast_santim: optionalBirr(nb.value), nonrefundable_bps: optionalPercent(nn.value) }).then(function (res) {
         if (!isNaN(price)) return call('PUT', '/admin/hotels/' + hotel.id + '/rooms/' + res.id + '/price', { price_santim: price * 100 });
-      }).then(function () { reload(); }, function (err) { add_.disabled = false; add(o2, msg('err', err.message)); });
+      }).then(function () { toast('Saved.'); reload(); }, function (err) { add_.disabled = false; add(o2, msg('err', err.message)); });
     } },
       h('div', { class: 'grid' }, field('Room name', n), field('Guests per room', c), field('How many rooms', t), field('Features', f), field('Price per night (ETB)', p), field('Breakfast per night (ETB)', nb, 'A price in birr. Leave empty if there is no breakfast.'), field('Non-refundable discount (%)', nn, 'How much cheaper for guests who accept no refund (1 to 50). Leave empty to offer none.')),
       h('div', { class: 'field' }, add_), o2));
@@ -463,7 +472,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       btn.disabled = true; clear(out);
       var i = 0;
       (function next() {
-        if (i >= files.length) { reload(); return; }
+        if (i >= files.length) { toast('Photos uploaded.'); reload(); return; }
         var fd = new FormData(); fd.append('photo', files[i]);
         add(out, h('div', { class: 'muted' }, 'Uploading ' + (i + 1) + ' of ' + files.length + '…'));
         call('POST', '/admin/hotels/' + hotel.id + '/rooms/' + room.id + '/photos', fd).then(function () { i++; next(); },
@@ -476,8 +485,8 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     (room.photos || []).forEach(function (ph) {
       add(grid, h('div', { class: 'photo' }, h('img', { src: ph.thumb, alt: room.name, loading: 'lazy' }),
         h('div', { class: 'bar' },
-          ph.cover ? h('span', { class: 'cover' }, '★ First') : h('button', { class: 'ghost', onclick: function () { call('POST', '/admin/hotels/' + hotel.id + '/photos/' + ph.id + '/cover').then(reload, function (e) { alert(e.message); }); } }, 'Make first'),
-          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/admin/hotels/' + hotel.id + '/photos/' + ph.id).then(reload, function (e) { alert(e.message); }); } }, 'Delete'))));
+          ph.cover ? h('span', { class: 'cover' }, '★ First') : h('button', { class: 'ghost', onclick: function () { call('POST', '/admin/hotels/' + hotel.id + '/photos/' + ph.id + '/cover').then(saved('Cover photo changed.', reload), function (e) { alert(e.message); }); } }, 'Make first'),
+          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/admin/hotels/' + hotel.id + '/photos/' + ph.id).then(saved('Photo deleted.', reload), function (e) { alert(e.message); }); } }, 'Delete'))));
     });
     add(wrap, (room.photos || []).length ? grid : h('p', { class: 'muted' }, 'No photos of this room yet. Up to 10.'));
     return wrap;
@@ -495,7 +504,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       btn.disabled = true; clear(out);
       var i = 0;
       (function next() {
-        if (i >= files.length) { reload(); return; }
+        if (i >= files.length) { toast('Photos uploaded.'); reload(); return; }
         var fd = new FormData(); fd.append('photo', files[i]);
         add(out, h('div', { class: 'muted' }, 'Uploading ' + (i + 1) + ' of ' + files.length + '…'));
         call('POST', '/admin/hotels/' + hotel.id + '/photos', fd).then(function () { i++; next(); },
@@ -508,8 +517,8 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     hotel.photos.forEach(function (p) {
       add(grid, h('div', { class: 'photo' }, h('img', { src: p.thumb, alt: 'Hotel photo', loading: 'lazy' }),
         h('div', { class: 'bar' },
-          p.cover ? h('span', { class: 'cover' }, '★ Cover') : h('button', { class: 'ghost', onclick: function () { call('POST', '/admin/hotels/' + hotel.id + '/photos/' + p.id + '/cover').then(reload, function (e) { alert(e.message); }); } }, 'Make cover'),
-          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/admin/hotels/' + hotel.id + '/photos/' + p.id).then(reload, function (e) { alert(e.message); }); } }, 'Delete'))));
+          p.cover ? h('span', { class: 'cover' }, '★ Cover') : h('button', { class: 'ghost', onclick: function () { call('POST', '/admin/hotels/' + hotel.id + '/photos/' + p.id + '/cover').then(saved('Cover photo changed.', reload), function (e) { alert(e.message); }); } }, 'Make cover'),
+          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/admin/hotels/' + hotel.id + '/photos/' + p.id).then(saved('Photo deleted.', reload), function (e) { alert(e.message); }); } }, 'Delete'))));
     });
     add(wrap, hotel.photos.length ? grid : h('p', { class: 'muted' }, 'No photos yet.'));
     return wrap;
@@ -530,7 +539,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         var canRemove = isAdmin || p.role !== 'owner';
         add(body, h('tr', {}, h('td', {}, p.contact), h('td', {}, p.role === 'owner' ? 'Owner' : 'Receptionist'),
           h('td', {}, p.status === 'joined' ? h('span', { class: 'chip active' }, 'Joined ' + when(p.joined_at)) : h('span', { class: 'chip draft' }, 'Invited ' + when(p.invited_at))),
-          h('td', {}, canRemove ? h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove ' + p.contact + ' from this hotel?')) call('DELETE', '/admin/hotels/' + hotel.id + '/staff/' + p.user_id).then(reload, function (e) { alert(e.message); }); } }, 'Remove') : null)));
+          h('td', {}, canRemove ? h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove ' + p.contact + ' from this hotel?')) call('DELETE', '/admin/hotels/' + hotel.id + '/staff/' + p.user_id).then(saved('Person removed.', reload), function (e) { alert(e.message); }); } }, 'Remove') : null)));
       });
       add(table, body); add(wrap, h('div', { style: 'overflow-x:auto' }, table));
       add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, '"Invited" means they have not signed in yet. If they did not receive the email, check their address and spam folder, or remove and add them again.'));
@@ -542,7 +551,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     add(wrap, h('h3', { style: 'margin-top:24px' }, 'Add a person'));
     add(wrap, h('form', { onsubmit: function (e) {
       e.preventDefault(); btn.disabled = true; clear(out);
-      call('POST', '/admin/hotels/' + hotel.id + '/staff', { contact: contact.value, role: isAdmin ? role.value : 'receptionist' }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+      call('POST', '/admin/hotels/' + hotel.id + '/staff', { contact: contact.value, role: isAdmin ? role.value : 'receptionist' }).then(saved('Person added and invited.', reload), function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
     } }, h('div', { class: 'grid' }, field('Email or phone', contact, 'An email address gets an invitation. A phone number is added without an email.'), field('Role', role)), h('div', { class: 'field' }, btn), out));
     return wrap;
   }
@@ -563,7 +572,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     var save = h('button', { type: 'submit' }, 'Save rules');
     add(wrap, h('form', { onsubmit: function (e) {
       e.preventDefault(); save.disabled = true; clear(out);
-      call('PUT', '/admin/hotels/' + hotel.id + '/alerts', { alert_mode: mode.value, escalate_after_min: parseInt(wait.value, 10) || 0 }).then(reload, function (err) { save.disabled = false; add(out, msg('err', err.message)); });
+      call('PUT', '/admin/hotels/' + hotel.id + '/alerts', { alert_mode: mode.value, escalate_after_min: parseInt(wait.value, 10) || 0 }).then(saved('Alert rules saved.', reload), function (err) { save.disabled = false; add(out, msg('err', err.message)); });
     } }, h('div', { class: 'grid' }, field('Who is alerted first', mode, 'If nobody in that group has the hotel app signed in or is on duty, the next group is alerted straight away.'),
       field('Alert the owners after (minutes)', wait, 'Only for "receptionists first". The request lasts 15 minutes in total.')), h('div', { class: 'field' }, save), out));
 
@@ -612,7 +621,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       call('PUT', '/admin/hotels/' + hotel.id + '/business', {
         legal_name: f.legal.value, license_number: f.license.value, tin: f.tin.value, contact_name: f.cname.value, contact_phone: f.cphone.value, contact_email: f.cmail.value,
         payout_method: f.method.value, payout_account_name: f.aname.value, payout_account_number: f.anumber.value
-      }).then(function () { reload(); }, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+      }).then(function () { toast('Saved.'); reload(); }, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
     } },
       h('div', { class: 'grid' }, field('Legal name of the business', f.legal), field('Trade licence number', f.license), field('Tax number (TIN), optional', f.tin),
         field('Contact person', f.cname), field('Contact phone', f.cphone), field('Contact email', f.cmail)),
@@ -672,7 +681,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         if (!(santim > 0)) { add(out, msg('err', 'Enter the amount in birr.')); return; }
         if (!confirm('Record ' + etb(santim) + ' received from ' + x.name + '? Make sure the money has really arrived.')) return;
         btn.disabled = true;
-        call('POST', '/admin/hotels/' + x.id + '/receipts', { amount_santim: santim, reference: ref.value, note: note.value }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+        call('POST', '/admin/hotels/' + x.id + '/receipts', { amount_santim: santim, reference: ref.value, note: note.value }).then(saved('Payment recorded.', reload), function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
       } }, h('div', { class: 'grid' }, field('Amount (birr)', amount), field('Transfer reference', ref), field('Note', note)), h('div', { class: 'field' }, btn), out));
   }
 
@@ -706,7 +715,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         if (!(santim > 0)) { add(out, msg('err', 'Enter the amount in birr.')); return; }
         if (!confirm('Record a payout of ' + etb(santim) + ' to ' + x.name + '? Make sure the transfer has really been sent.')) return;
         btn.disabled = true;
-        call('POST', '/admin/hotels/' + x.id + '/payouts', { amount_santim: santim, reference: ref.value, note: note.value }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+        call('POST', '/admin/hotels/' + x.id + '/payouts', { amount_santim: santim, reference: ref.value, note: note.value }).then(saved('Payout recorded.', reload), function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
       } }, h('div', { class: 'grid' }, field('Amount (birr)', amount), field('Transfer reference', ref), field('Note', note)), h('div', { class: 'field' }, btn), out),
       h('button', { class: 'ghost', onclick: function () {
         clear(history);
@@ -781,7 +790,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
             btn.disabled = true;
             call('PUT', '/admin/coupons/' + c.id, { kind: c.kind, value: c.value, max_discount_santim: c.max_discount_santim, min_subtotal_santim: c.min_subtotal_santim, description: c.description,
               starts_on: c.starts_on || '', ends_on: c.ends_on || '', max_uses: c.max_uses, per_user_limit: c.per_user_limit, first_booking_only: c.first_booking_only, property_id: c.property_id || '', active: !c.active })
-              .then(load, function (e) { btn.disabled = false; alert(e.message); });
+              .then(saved('Saved.', load), function (e) { btn.disabled = false; alert(e.message); });
           } }, c.active ? 'Switch off' : 'Switch on');
           add(holder, h('div', { class: 'card' }, h('div', { class: 'row between' },
             h('div', {}, h('h3', {}, c.code), h('div', { class: 'soft' }, couponRule(c)), h('div', { class: 'muted' }, 'Used ' + c.uses + ' time' + (c.uses === 1 ? '' : 's') + ' · BookDan paid ' + birr(c.discounted_santim) + ' ETB in discounts')),
@@ -841,7 +850,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
             var out = h('div', {});
             var btn = h('button', { onclick: function () {
               btn.disabled = true; clear(out);
-              call('POST', '/admin/payment-issues/' + i.id + '/resolve', { note: note.value }).then(load, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+              call('POST', '/admin/payment-issues/' + i.id + '/resolve', { note: note.value }).then(saved('Saved.', load), function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
             } }, 'Mark resolved');
             add(card, h('div', { class: 'field' }, h('label', {}, 'Decision'), note), btn, out);
           }
@@ -903,10 +912,10 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
           var out = h('div', {});
           var send = h('button', { onclick: function () {
             send.disabled = true; clear(out);
-            call('POST', '/admin/support/tickets/' + id + '/reply', { message: box.value }).then(load, function (err) { send.disabled = false; add(out, msg('err', err.message)); });
+            call('POST', '/admin/support/tickets/' + id + '/reply', { message: box.value }).then(saved('Answer sent.', load), function (err) { send.disabled = false; add(out, msg('err', err.message)); });
           } }, 'Send answer');
           var close = (t.kind === 'dispute' || t.kind === 'relocation') ? null : h('button', { class: 'secondary', onclick: function () {
-            call('POST', '/admin/support/tickets/' + id + '/close').then(load, function (err) { add(out, msg('err', err.message)); });
+            call('POST', '/admin/support/tickets/' + id + '/close').then(saved('Request closed.', load), function (err) { add(out, msg('err', err.message)); });
           } }, 'Close without answering');
           add(holder, h('div', { class: 'card' }, h('div', { class: 'field' }, h('label', {}, 'Your answer'), box), send, close ? ' ' : null, close, out));
           var partialOK = ['CONFIRMED', 'CHECKED_IN', 'COMPLETED', 'NO_SHOW'].indexOf(t.booking ? t.booking.status : '') >= 0;
@@ -918,7 +927,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
             var gBtn = h('button', { class: 'secondary', onclick: function () {
               if (!confirm('Refund part of the payment to the guest? This cannot be undone.')) return;
               gBtn.disabled = true; clear(gOut);
-              call('POST', '/admin/support/tickets/' + id + '/refund', { payer: gPayer.value, amount_santim: Math.round(parseFloat(gAmount.value) * 100), note: gWhy.value }).then(load, function (err) { gBtn.disabled = false; add(gOut, msg('err', err.message)); });
+              call('POST', '/admin/support/tickets/' + id + '/refund', { payer: gPayer.value, amount_santim: Math.round(parseFloat(gAmount.value) * 100), note: gWhy.value }).then(saved('Saved.', load), function (err) { gBtn.disabled = false; add(gOut, msg('err', err.message)); });
             } }, 'Refund this part');
             add(holder, h('div', { class: 'card' }, h('h3', {}, 'Refund part of the payment'),
               h('p', { class: 'soft' }, 'A goodwill credit: the booking stands. You can refund at most ' + etb(t.booking.left_santim) + ' (less than the whole payment).'),
@@ -933,7 +942,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
             var rBtn = h('button', { onclick: function () {
               if (!confirm('Settle this relocation? A refund cannot be undone.')) return;
               rBtn.disabled = true; clear(rOut);
-              call('POST', '/admin/support/tickets/' + id + '/relocation', { outcome: rOutcome.value, note: rWhy.value }).then(load, function (err) { rBtn.disabled = false; add(rOut, msg('err', err.message)); });
+              call('POST', '/admin/support/tickets/' + id + '/relocation', { outcome: rOutcome.value, note: rWhy.value }).then(saved('Saved.', load), function (err) { rBtn.disabled = false; add(rOut, msg('err', err.message)); });
             } }, 'Settle the relocation');
             add(holder, h('div', { class: 'card' }, h('h3', {}, 'Settle the relocation'),
               h('p', { class: 'soft' }, 'The hotel told BookDan it cannot host this guest. Find the guest another place and tell them in the answer box above, then settle it here. The guest can also cancel for a full refund at any time.'),
@@ -955,7 +964,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
               decide.disabled = true; clear(dout);
               var body = { outcome: outcome.value, note: why.value };
               if (outcome.value.indexOf('refunded_partial_') === 0) body.amount_santim = Math.round(parseFloat(amountBox.value) * 100);
-              call('POST', '/admin/support/tickets/' + id + '/resolve', body).then(load, function (err) { decide.disabled = false; add(dout, msg('err', err.message)); });
+              call('POST', '/admin/support/tickets/' + id + '/resolve', body).then(saved('Saved.', load), function (err) { decide.disabled = false; add(dout, msg('err', err.message)); });
             } }, 'Settle the dispute');
             add(holder, h('div', { class: 'card' }, h('h3', {}, 'Decision'),
               h('p', { class: 'soft' }, 'The booking stays frozen (no money is released to the hotel) until you decide. A part refund returns part of the payment and the booking stands.'),
@@ -1031,7 +1040,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
           var out = h('div', {});
           function save(confirmed) {
             clear(out);
-            call('PUT', '/admin/rates/' + cur, { birr_per_unit: parseFloat(input.value), confirm: confirmed === true }).then(load, function (err) {
+            call('PUT', '/admin/rates/' + cur, { birr_per_unit: parseFloat(input.value), confirm: confirmed === true }).then(saved('Saved.', load), function (err) {
               if (err.code === 'RATE_JUMP' && confirm(err.message + '\n\nSave it anyway?')) return save(true);
               add(out, msg('err', err.message));
             });
@@ -1174,18 +1183,18 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         var body = h('tbody', {});
         res.admins.forEach(function (a) {
           var role = h('select', { onchange: function () {
-            call('PUT', '/admin/admins/' + a.id, { role: role.value }).then(load, function (e) { alert(e.message); load(); });
+            call('PUT', '/admin/admins/' + a.id, { role: role.value }).then(saved('Saved.', load), function (e) { alert(e.message); load(); });
           } });
           Object.keys(ROLES).forEach(function (k) { add(role, h('option', { value: k, selected: a.role === k ? 'selected' : null }, ROLES[k])); });
           var status = a.disabled ? h('span', { class: 'chip hidden' }, 'Disabled') : a.locked ? h('span', { class: 'chip draft' }, 'Locked') : a.must_change_password ? h('span', { class: 'chip draft' }, 'Must set a password') : h('span', { class: 'chip active' }, 'Active');
           var actions = h('span', {},
-            h('button', { class: 'ghost', onclick: function () { call('PUT', '/admin/admins/' + a.id, { disabled: !a.disabled }).then(load, function (e) { alert(e.message); }); } }, a.disabled ? 'Enable' : 'Disable'), ' ',
-            a.locked ? h('button', { class: 'ghost', onclick: function () { call('PUT', '/admin/admins/' + a.id, { unlock: true }).then(load, function (e) { alert(e.message); }); } }, 'Unlock') : null, ' ',
+            h('button', { class: 'ghost', onclick: function () { call('PUT', '/admin/admins/' + a.id, { disabled: !a.disabled }).then(saved('Saved.', load), function (e) { alert(e.message); }); } }, a.disabled ? 'Enable' : 'Disable'), ' ',
+            a.locked ? h('button', { class: 'ghost', onclick: function () { call('PUT', '/admin/admins/' + a.id, { unlock: true }).then(saved('Saved.', load), function (e) { alert(e.message); }); } }, 'Unlock') : null, ' ',
             h('button', { class: 'ghost', onclick: function () {
               if (confirm('Give ' + a.email + ' a new temporary password? Their current sessions end.')) call('POST', '/admin/admins/' + a.id + '/reset-password').then(function (r) { shown('New password for ' + a.email + ':', r.temporary_password); load(); }, function (e) { alert(e.message); });
             } }, 'Reset password'), ' ',
             a.mfa ? h('button', { class: 'ghost', onclick: function () {
-              if (confirm('Remove the authenticator app of ' + a.email + '? Use this when they lost their phone.')) call('POST', '/admin/admins/' + a.id + '/reset-mfa').then(load, function (e) { alert(e.message); });
+              if (confirm('Remove the authenticator app of ' + a.email + '? Use this when they lost their phone.')) call('POST', '/admin/admins/' + a.id + '/reset-mfa').then(saved('Saved.', load), function (e) { alert(e.message); });
             } }, 'Remove authenticator') : null);
           add(body, h('tr', {}, h('td', {}, a.email), h('td', {}, role), h('td', {}, status), h('td', {}, a.mfa ? 'On' : 'Off'), h('td', {}, a.last_login_at ? new Date(a.last_login_at).toLocaleString() : 'Never'), h('td', {}, actions)));
         });
@@ -1281,11 +1290,11 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         if (!res.reviews.length) { add(holder, h('div', { class: 'card' }, h('p', {}, 'No reviews match.'))); return; }
         res.reviews.forEach(function (v) {
           var actions = v.hidden
-            ? h('button', { class: 'secondary', onclick: function () { call('POST', '/admin/reviews/' + v.id + '/restore').then(load, function (e) { alert(e.message); }); } }, 'Show again')
+            ? h('button', { class: 'secondary', onclick: function () { call('POST', '/admin/reviews/' + v.id + '/restore').then(saved('Review shown again.', load), function (e) { alert(e.message); }); } }, 'Show again')
             : h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () {
                 var reason = prompt('Why is this review being hidden? (abusive, spam, private details…)');
                 if (reason === null) return;
-                call('POST', '/admin/reviews/' + v.id + '/hide', { reason: reason }).then(load, function (e) { alert(e.message); });
+                call('POST', '/admin/reviews/' + v.id + '/hide', { reason: reason }).then(saved('Review hidden.', load), function (e) { alert(e.message); });
               } }, 'Hide');
           add(holder, h('div', { class: 'card' },
             h('div', { class: 'row' }, h('strong', {}, v.hotel), ' ', h('span', { class: 'muted' }, '★'.repeat(v.rating) + ' · ' + v.author + ' · ' + v.booking_code + ' · ' + v.date), v.hidden ? h('span', { class: 'chip', style: 'color:var(--bad)' }, 'Hidden') : null),
@@ -1412,7 +1421,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
             } }, 'Approve and create the hotel');
             var no = h('button', { class: 'secondary', onclick: function () {
               clear(out); no.disabled = true;
-              call('POST', '/admin/applications/' + a.id + '/reject', { note: note.value }).then(load, function (err) { no.disabled = false; add(out, msg('err', err.message)); });
+              call('POST', '/admin/applications/' + a.id + '/reject', { note: note.value }).then(saved('Application rejected.', load), function (err) { no.disabled = false; add(out, msg('err', err.message)); });
             } }, 'Reject');
             add(card, h('div', { class: 'field' }, h('label', {}, 'Reason (for a rejection)'), note), yes, ' ', no, out);
           }

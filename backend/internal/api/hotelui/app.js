@@ -53,6 +53,15 @@
   }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   function msg(kind, text) { return h('div', { class: 'msg ' + kind, role: kind === 'err' ? 'alert' : 'status' }, text); }
+  // A short confirmation that stays visible although the page is redrawn right after a save.
+  function toast(text) {
+    var old = document.querySelector('.toast');
+    if (old) old.remove();
+    var el = h('div', { class: 'toast', role: 'status' }, text);
+    document.body.appendChild(el);
+    setTimeout(function () { el.remove(); }, 4000);
+  }
+  function saved(text, next) { return function (res) { toast(text); return next(res); }; }
   function birr(santim) { return santim == null ? '' : String(Math.round(santim / 100)); }
   function etb(santim) { return 'ETB ' + (santim / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function go(hash) { if (location.hash === hash) render(); else location.hash = hash; }
@@ -341,7 +350,7 @@
     return h('div', { class: 'card' }, h('h2', {}, 'Block rooms'), h('form', { onsubmit: function (e) {
       e.preventDefault(); btn.disabled = true; clear(out);
       call('POST', '/partner/rooms/blocks', { property_id: chart.property.id, room_type_id: room.value, check_in: inD.value, check_out: outD.value, rooms: parseInt(n.value, 10) || 1, kind: kind.value, guest_name: name.value, guest_phone: phone.value, note: note.value })
-        .then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+        .then(saved('Rooms blocked.', reload), function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
     } }, h('div', { class: 'grid' }, field('Room', room), field('Type', kind), field('First night', inD), field('Rooms free again on', outD, 'The morning the rooms are free again.'), field('How many rooms', n), field('Guest name', name), field('Guest phone', phone), field('Note', note)), h('div', { class: 'field' }, btn), out));
   }
   function blocksTable(blocks, reload) {
@@ -350,7 +359,7 @@
     blocks.forEach(function (b) {
       add(body, h('tr', {}, h('td', {}, b.kind === 'walk_in' ? 'Walk-in' : 'Blocked'), h('td', {}, b.room_name), h('td', {}, day(b.check_in) + ' → ' + day(b.check_out)), h('td', {}, String(b.rooms)),
         h('td', {}, [b.guest_name, b.guest_phone, b.note].filter(Boolean).join(' · ')),
-        h('td', {}, h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Release these rooms?')) call('DELETE', '/partner/rooms/blocks/' + b.id).then(reload, function (e) { alert(e.message); }); } }, 'Release'))));
+        h('td', {}, h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Release these rooms?')) call('DELETE', '/partner/rooms/blocks/' + b.id).then(saved('Rooms released.', reload), function (e) { alert(e.message); }); } }, 'Release'))));
     });
     add(table, body);
     return h('div', { style: 'overflow-x:auto' }, table);
@@ -507,7 +516,7 @@
         body.confirm_hide = true;
         return call('PUT', '/partner/hotels/' + hotel.id, body);
       });
-      req.then(function (res) { btn.disabled = false; if (isNew) go('#/hotel/' + res.id); else { add(out, msg('ok', 'Saved.')); onSaved && onSaved(); } },
+      req.then(function (res) { btn.disabled = false; if (isNew) { toast('Hotel created as a draft.'); go('#/hotel/' + res.id); } else { toast('Saved.'); onSaved && onSaved(); } },
         function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
     } },
       h('div', { class: 'grid' },
@@ -571,9 +580,9 @@
           call('PUT', '/partner/hotels/' + hotel.id + '/rooms/' + r.id, info).then(function () {
             var p = parseInt(price.value.replace(/,/g, ''), 10);
             if (!isNaN(p) && p * 100 !== r.price_santim) return call('PUT', '/partner/hotels/' + hotel.id + '/rooms/' + r.id + '/price', { price_santim: p * 100 });
-          }).then(function () { reload(); }, function (err) { btn.disabled = false; add(out, msg('err', r.name + ': ' + err.message)); });
+          }).then(function () { toast('Saved.'); reload(); }, function (err) { btn.disabled = false; add(out, msg('err', r.name + ': ' + err.message)); });
         } }, 'Save');
-var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove "' + r.name + '"? Only a room that has never been booked can be removed.')) call('DELETE', '/partner/hotels/' + hotel.id + '/rooms/' + r.id).then(reload, function (err) { add(out, msg('err', r.name + ': ' + err.message)); }); } }, 'Remove');
+var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove "' + r.name + '"? Only a room that has never been booked can be removed.')) call('DELETE', '/partner/hotels/' + hotel.id + '/rooms/' + r.id).then(saved('Room removed.', reload), function (err) { add(out, msg('err', r.name + ': ' + err.message)); }); } }, 'Remove');
         add(body, h('tr', {}, h('td', {}, name), h('td', {}, cap), h('td', {}, total), h('td', {}, feat), h('td', {}, price), h('td', {}, bf), h('td', {}, nr), h('td', {}, btn, ' ', pbtn, ' ', del)));
         add(body, photosRow);
       });
@@ -594,7 +603,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       var price = parseInt(p.value.replace(/,/g, ''), 10);
       call('POST', '/partner/hotels/' + hotel.id + '/rooms', { name: n.value, capacity: parseInt(c.value, 10), total_rooms: parseInt(t.value, 10), amenities: f.value.split(','), breakfast_santim: optionalBirr(nb.value), nonrefundable_bps: optionalPercent(nn.value) }).then(function (res) {
         if (!isNaN(price)) return call('PUT', '/partner/hotels/' + hotel.id + '/rooms/' + res.id + '/price', { price_santim: price * 100 });
-      }).then(function () { reload(); }, function (err) { add_.disabled = false; add(o2, msg('err', err.message)); });
+      }).then(function () { toast('Saved.'); reload(); }, function (err) { add_.disabled = false; add(o2, msg('err', err.message)); });
     } },
       h('div', { class: 'grid' }, field('Room name', n), field('Guests per room', c), field('How many rooms', t), field('Features', f), field('Price per night (ETB)', p), field('Breakfast per night (ETB)', nb, 'A price in birr. Leave empty if there is no breakfast.'), field('Non-refundable discount (%)', nn, 'How much cheaper for guests who accept no refund (1 to 50). Leave empty to offer none.')),
       h('div', { class: 'field' }, add_), o2));
@@ -613,7 +622,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       btn.disabled = true; clear(out);
       var i = 0;
       (function next() {
-        if (i >= files.length) { reload(); return; }
+        if (i >= files.length) { toast('Photos uploaded.'); reload(); return; }
         var fd = new FormData(); fd.append('photo', files[i]);
         add(out, h('div', { class: 'muted' }, 'Uploading ' + (i + 1) + ' of ' + files.length + '…'));
         call('POST', '/partner/hotels/' + hotel.id + '/rooms/' + room.id + '/photos', fd).then(function () { i++; next(); },
@@ -626,8 +635,8 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     (room.photos || []).forEach(function (ph) {
       add(grid, h('div', { class: 'photo' }, h('img', { src: ph.thumb, alt: room.name, loading: 'lazy' }),
         h('div', { class: 'bar' },
-          ph.cover ? h('span', { class: 'cover' }, '★ First') : h('button', { class: 'ghost', onclick: function () { call('POST', '/partner/hotels/' + hotel.id + '/photos/' + ph.id + '/cover').then(reload, function (e) { alert(e.message); }); } }, 'Make first'),
-          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/partner/hotels/' + hotel.id + '/photos/' + ph.id).then(reload, function (e) { alert(e.message); }); } }, 'Delete'))));
+          ph.cover ? h('span', { class: 'cover' }, '★ First') : h('button', { class: 'ghost', onclick: function () { call('POST', '/partner/hotels/' + hotel.id + '/photos/' + ph.id + '/cover').then(saved('Cover photo changed.', reload), function (e) { alert(e.message); }); } }, 'Make first'),
+          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/partner/hotels/' + hotel.id + '/photos/' + ph.id).then(saved('Photo deleted.', reload), function (e) { alert(e.message); }); } }, 'Delete'))));
     });
     add(wrap, (room.photos || []).length ? grid : h('p', { class: 'muted' }, 'No photos of this room yet. Up to 10.'));
     return wrap;
@@ -645,7 +654,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
       btn.disabled = true; clear(out);
       var i = 0;
       (function next() {
-        if (i >= files.length) { reload(); return; }
+        if (i >= files.length) { toast('Photos uploaded.'); reload(); return; }
         var fd = new FormData(); fd.append('photo', files[i]);
         add(out, h('div', { class: 'muted' }, 'Uploading ' + (i + 1) + ' of ' + files.length + '…'));
         call('POST', '/partner/hotels/' + hotel.id + '/photos', fd).then(function () { i++; next(); },
@@ -658,8 +667,8 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     hotel.photos.forEach(function (p) {
       add(grid, h('div', { class: 'photo' }, h('img', { src: p.thumb, alt: 'Hotel photo', loading: 'lazy' }),
         h('div', { class: 'bar' },
-          p.cover ? h('span', { class: 'cover' }, '★ Cover') : h('button', { class: 'ghost', onclick: function () { call('POST', '/partner/hotels/' + hotel.id + '/photos/' + p.id + '/cover').then(reload, function (e) { alert(e.message); }); } }, 'Make cover'),
-          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/partner/hotels/' + hotel.id + '/photos/' + p.id).then(reload, function (e) { alert(e.message); }); } }, 'Delete'))));
+          p.cover ? h('span', { class: 'cover' }, '★ Cover') : h('button', { class: 'ghost', onclick: function () { call('POST', '/partner/hotels/' + hotel.id + '/photos/' + p.id + '/cover').then(saved('Cover photo changed.', reload), function (e) { alert(e.message); }); } }, 'Make cover'),
+          h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete this photo?')) call('DELETE', '/partner/hotels/' + hotel.id + '/photos/' + p.id).then(saved('Photo deleted.', reload), function (e) { alert(e.message); }); } }, 'Delete'))));
     });
     add(wrap, hotel.photos.length ? grid : h('p', { class: 'muted' }, 'No photos yet.'));
     return wrap;
@@ -680,7 +689,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         var canRemove = isAdmin || p.role !== 'owner';
         add(body, h('tr', {}, h('td', {}, p.contact), h('td', {}, p.role === 'owner' ? 'Owner' : 'Receptionist'),
           h('td', {}, p.status === 'joined' ? h('span', { class: 'chip active' }, 'Joined ' + when(p.joined_at)) : h('span', { class: 'chip draft' }, 'Invited ' + when(p.invited_at))),
-          h('td', {}, canRemove ? h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove ' + p.contact + ' from this hotel?')) call('DELETE', '/partner/hotels/' + hotel.id + '/staff/' + p.user_id).then(reload, function (e) { alert(e.message); }); } }, 'Remove') : null)));
+          h('td', {}, canRemove ? h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Remove ' + p.contact + ' from this hotel?')) call('DELETE', '/partner/hotels/' + hotel.id + '/staff/' + p.user_id).then(saved('Person removed.', reload), function (e) { alert(e.message); }); } }, 'Remove') : null)));
       });
       add(table, body); add(wrap, h('div', { style: 'overflow-x:auto' }, table));
       add(wrap, h('p', { class: 'muted', style: 'font-size:13px' }, '"Invited" means they have not signed in yet. If they did not receive the email, check their address and spam folder, or remove and add them again.'));
@@ -692,7 +701,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     add(wrap, h('h3', { style: 'margin-top:24px' }, 'Add a person'));
     add(wrap, h('form', { onsubmit: function (e) {
       e.preventDefault(); btn.disabled = true; clear(out);
-      call('POST', '/partner/hotels/' + hotel.id + '/staff', { contact: contact.value, role: isAdmin ? role.value : 'receptionist' }).then(reload, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+      call('POST', '/partner/hotels/' + hotel.id + '/staff', { contact: contact.value, role: isAdmin ? role.value : 'receptionist' }).then(saved('Person added and invited.', reload), function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
     } }, h('div', { class: 'grid' }, field('Email or phone', contact, 'An email address gets an invitation. A phone number is added without an email.'), field('Role', role)), h('div', { class: 'field' }, btn), out));
     return wrap;
   }
@@ -713,7 +722,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
     var save = h('button', { type: 'submit' }, 'Save rules');
     add(wrap, h('form', { onsubmit: function (e) {
       e.preventDefault(); save.disabled = true; clear(out);
-      call('PUT', '/partner/hotels/' + hotel.id + '/alerts', { alert_mode: mode.value, escalate_after_min: parseInt(wait.value, 10) || 0 }).then(reload, function (err) { save.disabled = false; add(out, msg('err', err.message)); });
+      call('PUT', '/partner/hotels/' + hotel.id + '/alerts', { alert_mode: mode.value, escalate_after_min: parseInt(wait.value, 10) || 0 }).then(saved('Alert rules saved.', reload), function (err) { save.disabled = false; add(out, msg('err', err.message)); });
     } }, h('div', { class: 'grid' }, field('Who is alerted first', mode, 'If nobody in that group has the hotel app signed in or is on duty, the next group is alerted straight away.'),
       field('Alert the owners after (minutes)', wait, 'Only for "receptionists first". The request lasts 15 minutes in total.')), h('div', { class: 'field' }, save), out));
 
@@ -813,10 +822,10 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
           add(box, h('p', {}, r.text));
           if (r.reply) {
             add(box, h('div', { class: 'reply' }, h('div', { class: 'soft', style: 'font-size:13px' }, 'Your reply · ' + day(r.reply.date)), h('p', {}, r.reply.text),
-              h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete your reply?')) call('DELETE', '/partner/reviews/' + r.id + '/reply').then(load, function (e) { alert(e.message); }); } }, 'Delete reply')));
+              h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: function () { if (confirm('Delete your reply?')) call('DELETE', '/partner/reviews/' + r.id + '/reply').then(saved('Reply deleted.', load), function (e) { alert(e.message); }); } }, 'Delete reply')));
           } else {
             var text = h('textarea', { placeholder: 'Reply politely and briefly. Everyone can read it.', maxlength: '1000' }), out = h('div', {}), btn = h('button', {}, 'Post reply');
-            btn.addEventListener('click', function () { btn.disabled = true; clear(out); call('PUT', '/partner/reviews/' + r.id + '/reply', { text: text.value }).then(load, function (err) { btn.disabled = false; add(out, msg('err', err.message)); }); });
+            btn.addEventListener('click', function () { btn.disabled = true; clear(out); call('PUT', '/partner/reviews/' + r.id + '/reply', { text: text.value }).then(saved('Saved.', load), function (err) { btn.disabled = false; add(out, msg('err', err.message)); }); });
             add(box, text); add(box, h('div', { class: 'field' }, btn)); add(box, out);
           }
           add(holder, box);
@@ -837,7 +846,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         var out = h('div', {}), btn = h('button', { type: 'submit' }, 'Send to BookDan');
         add(holder, h('div', { class: 'card' }, h('h2', {}, 'Ask BookDan'), h('form', { onsubmit: function (e) {
           e.preventDefault(); btn.disabled = true; clear(out);
-          call('POST', '/partner/support/tickets', { kind: kind.value, subject: subject.value, message: body.value }).then(load, function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
+          call('POST', '/partner/support/tickets', { kind: kind.value, subject: subject.value, message: body.value }).then(saved('Sent to BookDan.', load), function (err) { btn.disabled = false; add(out, msg('err', err.message)); });
         } }, h('div', { class: 'grid' }, field('Kind', kind), field('Subject', subject)), field('Message', body), h('div', { class: 'field' }, btn), out)));
         var list = h('div', { class: 'card' }, h('h2', {}, 'Your conversations'));
         if (!res.tickets.length) add(list, h('p', { class: 'muted' }, 'Nothing yet.'));
@@ -863,7 +872,7 @@ var del = h('button', { class: 'ghost', style: 'color:var(--bad)', onclick: func
         var text = h('textarea', { placeholder: 'Write a reply', maxlength: '2000' }), out = h('div', {});
         var send = h('button', {}, 'Send'), close = h('button', { class: 'secondary' }, 'Close conversation');
         send.addEventListener('click', function (e) { e.stopPropagation(); send.disabled = true; call('POST', '/partner/support/tickets/' + id + '/messages', { message: text.value }).then(function () { clear(into); openTicket(id, into, reload); }, function (err) { send.disabled = false; add(out, msg('err', err.message)); }); });
-        close.addEventListener('click', function (e) { e.stopPropagation(); call('POST', '/partner/support/tickets/' + id + '/close').then(reload, function (err) { add(out, msg('err', err.message)); }); });
+        close.addEventListener('click', function (e) { e.stopPropagation(); call('POST', '/partner/support/tickets/' + id + '/close').then(saved('Saved.', reload), function (err) { add(out, msg('err', err.message)); }); });
         text.addEventListener('click', function (e) { e.stopPropagation(); });
         add(into, text); add(into, h('div', { class: 'row', style: 'margin-top:8px' }, send, close)); add(into, out);
       }
