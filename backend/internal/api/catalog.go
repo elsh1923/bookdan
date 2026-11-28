@@ -21,6 +21,10 @@ const searchPageSize = 12
 // Placeholder colours for hotels without photos (the apps tint the card while a photo loads).
 var accents = []string{"#1E3A8A", "#0F766E", "#7C3AED", "#B45309", "#0E7490", "#9D174D", "#166534", "#374151"}
 
+// hotelAmenitiesSQL is a hotel's features as guests see them. "Pay at hotel" is not typed in by anyone: it shows exactly when the hotel
+// lets guests pay there, so the label and the payment choice cannot disagree.
+const hotelAmenitiesSQL = `(array_remove(p.amenities, 'pay_at_hotel') || CASE WHEN p.pay_at_hotel THEN ARRAY['pay_at_hotel']::text[] ELSE ARRAY[]::text[] END)`
+
 func accentFor(id string) string {
 	h := fnv.New32a()
 	h.Write([]byte(id))
@@ -294,7 +298,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) error {
 	}
 	lat, lng := s.latLng("p.location")
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating::float8, coalesce(pr.review_count, 0),
+		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, `+hotelAmenitiesSQL+`, pr.rating::float8, coalesce(pr.review_count, 0),
 		       `+lat+`, `+lng+`, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id AND pp.room_type_id IS NULL ORDER BY pp.position, pp.created_at LIMIT 1),
 		       (lower(p.name) LIKE '%' || $1 || '%' OR lower(p.area) LIKE '%' || $1 || '%' OR lower(p.city) LIKE '%' || $1 || '%')
 		FROM properties p LEFT JOIN property_ratings pr ON pr.property_id = p.id
@@ -558,7 +562,7 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) error {
 	var coverID *string
 	var checkInTime, checkOutTime, descAm, directions, directionsAm string
 	err = s.pool.QueryRow(ctx, `
-		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, p.amenities, pr.rating::float8, coalesce(pr.review_count, 0),
+		SELECT p.id, p.name, p.area, p.city, p.type, p.verified, `+hotelAmenitiesSQL+`, pr.rating::float8, coalesce(pr.review_count, 0),
 		       `+lat+`, `+lng+`, p.description, p.phone, p.address, p.house_rules, (SELECT pp.id FROM property_photos pp WHERE pp.property_id = p.id AND pp.room_type_id IS NULL ORDER BY pp.position, pp.created_at LIMIT 1),
 		       to_char(p.check_in_time, 'HH24:MI'), to_char(p.check_out_time, 'HH24:MI'), p.description_am, p.directions, p.directions_am
 		FROM properties p LEFT JOIN property_ratings pr ON pr.property_id = p.id

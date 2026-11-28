@@ -306,7 +306,8 @@
       checkIn: h('input', { type: 'time', value: hotel.check_in_time || '14:00' }),
       checkOut: h('input', { type: 'time', value: hotel.check_out_time || '12:00' })
     };
-    var amen = AMENITIES.map(function (a) { return { key: a[0], box: h('input', { type: 'checkbox', checked: (hotel.amenities || []).indexOf(a[0]) >= 0 }), label: a[1] }; });
+    // "Pay at hotel" is not a box of its own: it follows the "Guests may choose to pay at the hotel" switch.
+    var amen = AMENITIES.filter(function (a) { return a[0] !== 'pay_at_hotel'; }).map(function (a) { return { key: a[0], box: h('input', { type: 'checkbox', checked: (hotel.amenities || []).indexOf(a[0]) >= 0 }), label: a[1] }; });
     var out = h('div', {});
     var btn = h('button', { type: 'submit' }, isNew ? 'Create hotel' : 'Save changes');
     var form = h('form', { onsubmit: function (e) {
@@ -342,7 +343,7 @@
       field('How to find us, in Amharic', f.directionsAm),
       field('House rules', f.rules, 'Type each rule on its own line. Guests see these before they book.'),
       h('div', { class: 'field' }, h('label', {}, 'Features'), h('div', { class: 'checks' }, amen.map(function (a) { return h('label', { class: 'check' }, a.box, a.label); }))),
-      h('div', { class: 'field' }, h('label', { class: 'check' }, f.pay, 'Guests may choose to pay at the hotel')),
+      h('div', { class: 'field' }, h('label', { class: 'check' }, f.pay, 'Guests may choose to pay at the hotel (also shows the "Pay at hotel" label to guests)')),
       state.role === 'admin' ? h('div', { class: 'field' }, h('label', { class: 'check' }, f.verified, 'Verified by BookDan (shows a "Verified" badge)')) : null,
       isNew ? null : field('Status', f.status, 'To publish a hotel it needs at least one room with a price, and (set by a platform admin) its business and payout details.'),
       h('div', { class: 'field' }, btn), out);

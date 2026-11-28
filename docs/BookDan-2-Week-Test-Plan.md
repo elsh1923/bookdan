@@ -1,6 +1,6 @@
 # BookDan: 2-week test plan, page by page
 
-**14 days, 75 pages, 425 checks.** Each page says how to open it, what to do and what you should see.
+**14 days, 78 pages, 525 checks.** Each page says how to open it, what to do and what you should see.
 
 ## Before Day 1
 - Test on the **live server** (https://bookdan.onrender.com) with **Chapa test keys**. The phone apps read the live server, not the local one.
@@ -24,18 +24,18 @@ One plan day is one test day, 14 in a row. If you rest on some days, that is fin
 |---|---|---|---|
 | 1 | Public pages, admin sign-in and the hotel list | 3 | 17 |
 | 2 | Admin: adding a hotel and its location | 2 | 19 |
-| 3 | Admin: rooms, photos, staff, alerts, business, applications | 8 | 35 |
-| 4 | Guest app: first launch, sign-in and home | 5 | 38 |
-| 5 | Guest app: search, results, map and hotel page | 3 | 39 |
-| 6 | Guest app: checkout, your details, coupons and paying | 4 | 41 |
-| 7 | Hotel app answers requests | 4 | 23 |
+| 3 | Admin: rooms, photos, staff, alerts, business, applications | 8 | 38 |
+| 4 | Guest app: first launch, sign-in and home | 6 | 46 |
+| 5 | Guest app: search, results, map and hotel page | 3 | 50 |
+| 6 | Guest app: checkout, your details, coupons and paying | 4 | 45 |
+| 7 | Hotel app answers requests | 4 | 25 |
 | 8 | Hotel app: check-in and rooms | 2 | 17 |
-| 9 | Hotel app: money, reviews, support and settings; guest voucher | 8 | 38 |
-| 10 | Hotel web portal | 13 | 35 |
+| 9 | Hotel app: money, reviews, support and settings; guest voucher | 8 | 50 |
+| 10 | Hotel web portal | 13 | 58 |
 | 11 | Guest app: my bookings, saved, cancel and change dates | 4 | 32 |
-| 12 | Reviews, problems and support, from guest to admin | 6 | 33 |
-| 13 | Admin: money, insights and settings | 9 | 27 |
-| 14 | Profile, offline, privacy, whole system and sign-off | 4 | 31 |
+| 12 | Reviews, problems and support, from guest to admin | 7 | 46 |
+| 13 | Admin: money, insights and settings | 9 | 46 |
+| 14 | Profile, offline, privacy, whole system and sign-off | 5 | 36 |
 
 ## Dated bookings (create at the end of Day 7)
 Pay and have the hotel accept each one straight away. "Day 8" means the real date on which you will test Day 8.
@@ -54,11 +54,15 @@ Pay and have the hotel accept each one straight away. "Day 8" means the real dat
 
 If you pause between Day 7 and Day 8, create these on the day **before** you start Day 8.
 
+## Check you saw everything
+Every screen of the guest app and hotel app, every menu page of both portals, the public pages, the emails and the automatic actions are listed. If you find a button or screen that is not in this plan, write it down and send it to me.
+
 ## What two weeks still cannot cover
 - The dispute deadline of 14 days after check-out (row N9), unless you return to it later.
 - The automatic erasing of full ID numbers after the retention period.
 - Phone alerts and SMS, until Firebase and an SMS provider are set up. Mark them **S**.
 - Real money, until Chapa approves the live account.
+- iPhone, the Play Store build (test it in Google's closed test), many users at the same time, and a specialist security test.
 
 ---
 
@@ -143,7 +147,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 ---
 
 ## Day 3: Admin: rooms, photos, staff, alerts, business, applications
-*Goal: Publish the three hotels.* (8 pages, 35 checks)
+*Goal: Publish the three hotels.* (8 pages, 38 checks)
 
 ### 3.1 Admin portal: Rooms and prices tab
 **Open:** Open a hotel, Rooms & prices
@@ -186,6 +190,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | AD-P6 | Booking alerts: choose "Everyone on duty at once", then "Receptionists first" with minutes; set shift times; switch some alert kinds off. | Saved; "No phone" or "Signed in" is correct for each person. | ☐ |
+| Y1 | Choose "Receptionists first" and type 0, then 20 minutes. | Out-of-range values are refused (a request lasts 15 minutes in all). | ☐ |
+| Y2 | Give one receptionist a shift that has already ended today. | Saved and shown. | ☐ |
+| Y3 | Look at each person: "Signed in" or "No phone", and what they have muted. | Matches who has signed in on a phone with notifications. | ☐ |
 | Z8 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 3.5 Admin portal: Business tab
@@ -233,7 +240,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 ---
 
 ## Day 4: Guest app: first launch, sign-in and home
-*Goal: The first five minutes of a new guest.* (5 pages, 38 checks)
+*Goal: The first five minutes of a new guest.* (6 pages, 46 checks)
 
 ### 4.1 Guest app: Loading and welcome screen
 **Open:** Clear the app data and open it
@@ -244,6 +251,8 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | A2 | Choose Amharic, then Get started. | The app switches to Amharic. Dates show Ethiopian dates under the calendar days (see D4). | ☐ |
 | A3 | On the welcome screen tap the Currency row and choose a currency (for example USD). | The Currency screen opens; after choosing you return to the welcome screen showing the choice. Prices later show as approximate amounts, with the exact birr amount next to anything charged. | ☐ |
 | A4 | Kill the app and reopen it. | It opens straight to the home screen (no welcome again), in the language you chose. | ☐ |
+| Y4 | On the welcome screen look at the city cards (Addis Ababa, Bahir Dar, Lalibela) and the three promises. | Pictures and text show correctly in both languages. | ☐ |
+| Y5 | Look for any "Demo" text or demo buttons in the app. | None on the live version. | ☐ |
 | Z12 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 4.2 Guest app: Updates and starting offline
@@ -303,12 +312,24 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | C10 | Look at "rooms left" and "best price" badges on cards and the heart button. | Badges only where true; the heart saves and unsaves. | ☐ |
 | Z16 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
+### 4.6 Guest app: Currency
+**Open:** Profile, Currency
+
+| ID | What to do | What you should see | P/F/S |
+|---|---|---|---|
+| Y6 | Open Currency and look at Default, Popular and More currencies. | Ethiopian Birr is the default; others listed. | ☐ |
+| Y7 | Search for a currency by name, then type nonsense. | The list narrows; "No currency matches your search". | ☐ |
+| Y8 | Choose USD and look at home, results, hotel page and checkout. | Prices are a guide in USD; the amount charged is shown in birr. | ☐ |
+| Y9 | Change back to ETB. | All prices return to birr. | ☐ |
+| Y10 | Read the note about exchange rates. | The rate source is named; if rates are missing the app says so. | ☐ |
+| Z17 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+
 **End of Day 4:** passed ____ , failed ____ , skipped ____
 
 ---
 
 ## Day 5: Guest app: search, results, map and hotel page
-*Goal: Finding the right room.* (3 pages, 39 checks)
+*Goal: Finding the right room.* (3 pages, 50 checks)
 
 ### 5.1 Guest app: Search
 **Open:** Home, search card
@@ -326,7 +347,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | D9 | Open the place box with nothing typed and tap one of the "Popular places". | It searches that place with the dates and guests you already chose. | ☐ |
 | X24 | Set 2 rooms, adults and children. | Each room needs at least one adult; the choice is kept. | ☐ |
 | X25 | Make three searches, return, tap a recent search, then Clear. | Recent searches listed, reusable and cleared. | ☐ |
-| Z17 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Y11 | Tap an item under "Popular places" and one under "Popular areas". | Each searches that place. | ☐ |
+| Y12 | Tap check-in, then check-out in the calendar. | The prompts change; the chosen range is highlighted. | ☐ |
+| Z18 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 5.2 Guest app: Results, filters, sort and map
 **Open:** Press Search
@@ -343,7 +366,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | E8 | Turn on airplane mode, then search. | "No internet connection" with Try again, or the last results marked as saved. | ☐ |
 | E9 | Tap the heart on a result card. | The heart fills and the hotel appears in Saved (see M). | ☐ |
 | X26 | Search dates when Hotel C is full. | "Other dates that work" suggests dates; tapping one updates the search. | ☐ |
-| Z18 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Y13 | Use each price band, the rating choices, "Breakfast available", "Cheaper non-refundable rates", property type and amenities, then Reset. | Results match each filter; Reset clears all; the count "Showing N properties" is right. | ☐ |
+| Y14 | Switch between list and map; tap a price on the map. | The hotel card opens. | ☐ |
+| Y15 | Look for the "Lowest price in these results", "Only N left" and distance badges. | Shown only where true. | ☐ |
+| Z19 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 5.3 Guest app: Hotel page
 **Open:** Tap a hotel
@@ -365,14 +391,20 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | F13 | Open a hotel from "Other dates that work". | The hotel opens with those dates already set. | ☐ |
 | HX1 | Scroll the hotel page and use the tabs Overview, Amenities, Reviews, Rules. | The sliding tabs jump to the right part; the top bar stays. | ☐ |
 | HX2 | Open the photo gallery and swipe through every photo. | All photos load; closing returns to the page. | ☐ |
-| Z19 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Y16 | Tap Share and send it to yourself. | A message with the hotel name, area and rating. | ☐ |
+| Y17 | Tap the heart, then look at Saved. | Added, and removed when tapped again. | ☐ |
+| Y18 | Tap the Verified badge text. | Explains that the property was visited and confirmed. | ☐ |
+| Y19 | Check "Replies in about N min", check-in and check-out times, "Sleeps N" and "+ taxes at checkout". | Match the hotel settings (reply time appears after some answered bookings). | ☐ |
+| Y20 | In Location: read the address, nearby distances and location rating; tap "Open in Maps". | Correct; maps opens at the pin. | ☐ |
+| Y21 | Read reviews: "Verified stay" and "Reply from the hotel". | Shown where they exist. | ☐ |
+| Z20 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 **End of Day 5:** passed ____ , failed ____ , skipped ____
 
 ---
 
 ## Day 6: Guest app: checkout, your details, coupons and paying
-*Goal: From room to payment with Chapa test.* (4 pages, 41 checks)
+*Goal: From room to payment with Chapa test.* (4 pages, 45 checks)
 
 ### 6.1 Guest app: Checkout
 **Open:** Hotel page, choose a room
@@ -394,7 +426,11 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | G13 | Wait on the quote screen for more than 10 minutes, then tap Hold. | "The price expired. Please review again." | ☐ |
 | G14 | Hold a room and do nothing for 15 minutes. [Wait] | The booking shows "The hold expired. The room was released. You have not been charged." and the room is free for others. | ☐ |
 | X27 | Go back and forth between the three steps. | Everything typed is kept. | ☐ |
-| Z20 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Y22 | Enter letters in the other guest phone number. | "Enter a phone number with digits only". | ☐ |
+| Y23 | While on checkout, let the admin remove the chosen option (for example breakfast). | "That option is not available any more", with a way back to rooms. | ☐ |
+| Y24 | Check the stay summary: dates, from and until times, guests, children, rooms, "Only N left". | All correct. | ☐ |
+| Y25 | With a member level and no coupon, look at the price lines. | "member: you save" line appears. | ☐ |
+| Z21 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 6.2 Guest app: My details and ID
 **Open:** Profile, My details and ID
@@ -406,7 +442,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | H3 | Open the screen again and change the name. | "For your safety we never show it again. Enter it again to save changes." | ☐ |
 | H4 | Tap "Remove my ID details", then tap again to confirm. | The details are removed; holding a room asks for them again. | ☐ |
 | H5 | Hold a room and open the hotel's booking. [Hotel app] | The hotel sees your name, ID type, nationality and only the masked ID; "Show ID number" reveals it (and is recorded). | ☐ |
-| Z21 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z22 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 6.3 Admin portal and guest app: Coupons
 **Open:** Admin: Money, Coupons; app: checkout
@@ -437,14 +473,14 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | I10 | Let the hold run out while the payment page is open, then pay. [Wait] | If the room was already released the money is refunded automatically; the booking stays expired. | ☐ |
 | I11 | Check your email after paying. [Email] | "Your booking request at ..." is received. | ☐ |
 | X28 | After paying, look at the screen that returns from Chapa. | It shows the right booking and result, never a blank page. | ☐ |
-| Z22 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z23 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 **End of Day 6:** passed ____ , failed ____ , skipped ____
 
 ---
 
 ## Day 7: Hotel app answers requests
-*Goal: Complete the first bookings on both sides. Then create the dated bookings.* (4 pages, 23 checks)
+*Goal: Complete the first bookings on both sides. Then create the dated bookings.* (4 pages, 25 checks)
 
 ### 7.1 Hotel app: Sign in
 **Open:** Open BookDan for hotels
@@ -453,7 +489,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | PA-B1 | Sign in with an email that is not hotel staff. | Told this account is not staff. | ☐ |
 | PA-B2 | Sign in as the owner with the emailed code; wrong code first. | Wrong code refused; right code opens Bookings. | ☐ |
-| Z23 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z24 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 7.2 Hotel app: Bookings tab
 **Open:** Bookings
@@ -463,7 +499,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | PA-B3 | Look at the counters: To answer, Arriving today, In the hotel. | Numbers match the bookings. | ☐ |
 | PA-B4 | When a guest pays, watch the app. | The request appears with a 15-minute countdown (and a phone alert if set up). | ☐ |
 | X29 | Pull down to refresh with no bookings, then with several. | Empty message, then the correct list. | ☐ |
-| Z24 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z25 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 7.3 Hotel app: Booking request
 **Open:** Tap a waiting request
@@ -477,7 +513,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | PA-B9 | Let one time out. | "Time is up"; guest refunded automatically. | ☐ |
 | PA-B10 | Answer in the app a request already answered in the web portal. | "This booking was already answered." | ☐ |
 | PA-B11 | Turn internet off and try to accept. | Told answering needs internet. | ☐ |
-| Z25 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z26 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 7.4 Guest app: Waiting for the hotel
 **Open:** Guest booking page
@@ -491,7 +527,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | J5 | Close the guest app while waiting. | You still get the phone alert when the hotel answers. [Push] Tapping it opens that booking. | ☐ |
 | J6 | Tap "Notify me" on the waiting screen, allow notifications, then deny them in phone settings and open the card again. | It asks permission once; if denied it says "Notifications are off for this app" with Open settings. | ☐ |
 | X30 | Tap "Notify me" and answer the request. | A message arrives. Mark S without Firebase. | ☐ |
-| Z26 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Y26 | On the booking screen read reference, room, meal, cancellation, guests with children, your requests and total. | All match what you chose. | ☐ |
+| Y27 | On an expired or declined booking tap "Search again". | Search opens. | ☐ |
+| Z27 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 > **At the end of today, create the dated bookings in the table near the top.**
 
@@ -517,7 +555,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | PA-C8 | Open Check-in once online, switch off internet, scan today's voucher, save. | "Saved. It is sent when online." and a waiting counter. | ☐ |
 | PA-C9 | Turn internet on. | The check-in is sent; admin and guest show it. | ☐ |
 | PA-C10 | On a booking, mark "Guest did not arrive" (check-in day). | Asks first; then no-show; later nights go back on sale. | ☐ |
-| Z27 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z28 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 8.2 Hotel app: Rooms tab
 **Open:** Rooms
@@ -529,14 +567,14 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | PA-R3 | Block rooms for several nights. | Guest app cannot book them. | ☐ |
 | PA-R4 | Block more rooms than are free. | "Not enough free rooms". | ☐ |
 | PA-R5 | "Give the rooms back". | Asks first; rooms are on sale again. | ☐ |
-| Z28 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z29 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 **End of Day 8:** passed ____ , failed ____ , skipped ____
 
 ---
 
 ## Day 9: Hotel app: money, reviews, support and settings; guest voucher
-*Goal: Everything else in the hotel app.* (8 pages, 38 checks)
+*Goal: Everything else in the hotel app.* (8 pages, 50 checks)
 
 ### 9.1 Guest app: Confirmed booking and voucher
 **Open:** My bookings, a confirmed booking
@@ -552,7 +590,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | K7 | On a pay-at-hotel booking open the voucher. | "Pay at the hotel" with the exact balance to bring; an online-paid booking shows "Nothing to pay". | ☐ |
 | K8 | At the hotel (or with the partner app), scan the voucher or type the reference and PIN. [Hotel app] | The hotel sees the guest and checks them in. The guest booking becomes Checked in, and the cancel button disappears. | ☐ |
 | K9 | Check-in with a wrong PIN five times. [Hotel app] | The PIN locks for 30 minutes; the QR code still works. | ☐ |
-| Z29 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Y28 | Tap "Download voucher" on a phone that has not opened it. | The voucher appears and then works offline. | ☐ |
+| Y29 | Tap Show PIN and Hide PIN. | The 4 digits show and hide. | ☐ |
+| Z30 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 9.2 Hotel app: Confirmed booking: problems
 **Open:** Bookings, a confirmed booking
@@ -564,7 +604,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | PA-P3 | "We cannot host this guest": try each reason. | "Waiting for BookDan support"; the guest is told; it shows in admin Support. | ☐ |
 | PA-P4 | When a guest opens a dispute, open the booking and send the hotel's account (try under 10 characters first). | Short refused; then sent; payment shown as held. | ☐ |
 | PA-P5 | "Get help" on a booking. | A request linked to that booking. | ☐ |
-| Z30 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z31 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 9.3 Hotel app: Earnings
 **Open:** Earnings tab
@@ -574,7 +614,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | PA-E1 | Earnings: check BookDan owes you, After check-in, Paid to you. | Match the admin Payouts page. | ☐ |
 | PA-E2 | Open a booking line and recalculate: price, fee 15%, VAT on fee, you receive. | The sum is correct. | ☐ |
 | PA-E3 | Look after a pay-at-hotel stay. | Commission owed is shown; "You owe BookDan" when larger than owed to you. | ☐ |
-| Z31 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z32 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 9.4 Hotel app: Monthly statements
 **Open:** Earnings, Monthly statements
@@ -582,7 +622,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | PA-E4 | Monthly statements: open this month, share it. | Opening and closing balance add up; sharing works. | ☐ |
-| Z32 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Y30 | Choose earlier months, including one with no stays. | Correct figures; "No stays ended this month". | ☐ |
+| Y31 | Check each line: paid online or at the hotel, fee and VAT. | Online share, commission, collected at hotel, paid to you and you paid add up to the closing balance. | ☐ |
+| Y32 | Tap "Share this statement". | A readable text with the same figures. | ☐ |
+| Z33 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 9.5 Hotel app: Guest reviews
 **Open:** Settings, Guest reviews
@@ -591,7 +634,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | PA-E5 | Reviews: publish a reply (under 3 characters first), change it, remove it. | Short refused; reply shows in the guest app and disappears when removed. | ☐ |
 | X31 | Open it before any review exists. | "No reviews yet". | ☐ |
-| Z33 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z34 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 9.6 Hotel app: Owner and receptionist rights
 **Open:** Sign in as receptionist
@@ -599,7 +642,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | PA-E6 | Sign in as receptionist and open Earnings, Statements, Reviews. | Owner only. | ☐ |
-| Z34 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Y33 | As receptionist, answer a request, check a guest in and block a room. | All allowed. | ☐ |
+| Y34 | As receptionist, open a confirmed booking. | No cancel button; message says only an owner can. | ☐ |
+| Y35 | Remove the receptionist in the admin portal while they are signed in, then use the app. | Access ends. | ☐ |
+| Z35 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 9.7 Hotel app: Help and support
 **Open:** Settings, Help and support
@@ -607,7 +653,11 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | PA-T1 | Help and support: new request, reply, close. | Appears in admin Support; replies arrive. | ☐ |
-| Z35 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Y36 | Send with a subject under 3 characters, then with no message. | Each is refused with a message. | ☐ |
+| Y37 | Send one "Question" and one "Problem". | Both listed, newest activity first. | ☐ |
+| Y38 | Open one after the admin answered. | The answer is shown as from Support. | ☐ |
+| Y39 | Close a request and try to reply. | Closed; a new request is needed. | ☐ |
+| Z36 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 ### 9.8 Hotel app: Settings and alerts
 **Open:** Settings tab
@@ -622,14 +672,14 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | PA-T7 | "Apply to list your hotel" link (sign-in screen). | Opens the apply page. | ☐ |
 | PA-T8 | Publish an update and reopen twice. | Update banner; Restart loads the new version. | ☐ |
 | PA-T9 | Sign out. | Back at sign-in; no data visible. | ☐ |
-| Z36 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
+| Z37 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. | ☐ |
 
 **End of Day 9:** passed ____ , failed ____ , skipped ____
 
 ---
 
 ## Day 10: Hotel web portal
-*Goal: The /hotel website, page by page.* (13 pages, 35 checks)
+*Goal: The /hotel website, page by page.* (13 pages, 58 checks)
 
 ### 10.1 Hotel web portal: Sign-in
 **Open:** bookdan.onrender.com/hotel
@@ -639,7 +689,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | HW-S1 | Open /hotel, sign in as owner with the code. | Home opens. | ☐ |
 | HW-S5 | Sign in with an email linked to no hotel. | Clear message. | ☐ |
 | X32 | Wrong code, then Sign out and press Back. | Wrong refused; no data after sign-out. | ☐ |
-| Z37 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Z38 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.2 Hotel web portal: Home
 **Open:** Menu: Home
@@ -649,7 +699,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | HW-S2 | Check tiles: Waiting for reply, Arriving, Staying, Leaving, BookDan owes you. | Match the hotel app. | ☐ |
 | HW-S3 | Look at "Answer these now" and "Next arrivals". | Correct bookings. | ☐ |
 | HW-S4 | Sign in as receptionist. | Owner-only pages are hidden. | ☐ |
-| Z38 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Z39 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.3 Hotel web portal: Bookings
 **Open:** Menu: Bookings
@@ -658,7 +708,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | HW-B1 | Bookings: use every filter. | Each lists the right bookings; empty ones say "Nothing here". | ☐ |
 | HW-B2 | Accept, Decline (with reason), Check in, No-show, Cancel booking on suitable bookings. | Each asks where risky and updates guest app and admin. | ☐ |
-| Z39 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Z40 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.4 Hotel web portal: Availability calendar and blocks
 **Open:** Menu: Availability
@@ -668,7 +718,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | HW-B3 | Availability: Earlier, Today, Later. | Dates move; colours: green free, amber partly, red sold out. | ☐ |
 | HW-B4 | Add a walk-in and an out-of-service block; then Release. | Counts change and return. | ☐ |
 | HW-B5 | Block with the end date before the start. | Refused. | ☐ |
-| Z40 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Z41 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.5 Hotel web portal: My hotel
 **Open:** Menu: My hotel
@@ -677,7 +727,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | HW-H1 | My hotel: change description, phone, pin (paste a map link), rules; save. | Live in the guest app at once; admin Hotel changes records it. | ☐ |
 | HW-H6 | Look for business or payout details and Verified or Status. | Not editable by the owner. | ☐ |
-| Z41 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Z42 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.6 Hotel web portal: Rooms and prices
 **Open:** Menu: Rooms & prices
@@ -685,7 +735,11 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | HW-H2 | Rooms and prices: add, edit, remove a room; change a price. | Same behaviour as in the admin portal. | ☐ |
-| Z42 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Y40 | Add a room type with breakfast and a non-refundable discount. | Appears in the list and in the guest app. | ☐ |
+| Y41 | Type a word in price or breakfast, and 60 in the discount. | Refused with a message. | ☐ |
+| Y42 | Upload room photos, "Make first", delete one. | The guest app room card follows. | ☐ |
+| Y43 | Remove a never-booked room, then a booked one. | First removed; second refused. | ☐ |
+| Z43 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.7 Hotel web portal: Photos
 **Open:** Menu: Photos
@@ -693,15 +747,21 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | HW-H3 | Hotel and room photos: upload, cover, delete. | Appear in the guest app. | ☐ |
-| Z43 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Y44 | Upload several photos at once. | Progress shown; all appear. | ☐ |
+| Y45 | "Make cover" on another photo. | The guest app shows the new cover. | ☐ |
+| Y46 | Delete a photo; upload a non-image file. | Removed after confirming; the file is refused. | ☐ |
+| Z44 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
-### 10.8 Hotel web portal: Staff
-**Open:** Menu: Staff
+### 10.8 Hotel web portal: Team
+**Open:** Menu: Team
 
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | HW-H4 | Staff: invite and remove a receptionist. | Works; an owner cannot remove an owner (only an admin can). | ☐ |
-| Z44 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Y47 | Add a receptionist and read the invitation email. | Listed as "Invited"; email arrives. | ☐ |
+| Y48 | After they sign in, reload. | "Joined". | ☐ |
+| Y49 | Remove the receptionist; look for Remove beside an owner. | Removed after confirming; owners cannot be removed by an owner. | ☐ |
+| Z45 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.9 Hotel web portal: Booking alerts
 **Open:** Menu: Booking alerts
@@ -709,7 +769,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | HW-H5 | Booking alerts: change rules and shifts. | Saved; admin shows the same. | ☐ |
-| Z45 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Y50 | Switch between the two alert modes and save. | Saved. | ☐ |
+| Y51 | Set shift times and switch a person off. | Kept after reload. | ☐ |
+| Y52 | Compare with the admin portal. | Identical. | ☐ |
+| Z46 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.10 Hotel web portal: Earnings
 **Open:** Menu: Earnings
@@ -717,7 +780,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | HW-M1 | Earnings: tiles and booking lines, payments list. | Same numbers as app and admin. | ☐ |
-| Z46 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Y53 | Check the four totals: owes you now, ready, stays to come, already paid. | Match the hotel app and admin Payouts. | ☐ |
+| Y54 | Check each booking line: guest paid, fee, VAT, you receive, ready or not yet. | Sums are correct. | ☐ |
+| Y55 | Read the payments list and any "You owe BookDan" warning. | Match recorded payouts. | ☐ |
+| Z47 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.11 Hotel web portal: Statements
 **Open:** Menu: Statements
@@ -725,7 +791,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | HW-M2 | Statements: choose different months. | Correct stays and balances; empty month says so. | ☐ |
-| Z47 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Y56 | Check opening balance, online share, paid and closing balance. | They add up. | ☐ |
+| Y57 | Open last month and compare with the hotel app. | Same figures. | ☐ |
+| Z48 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.12 Hotel web portal: Reviews
 **Open:** Menu: Reviews
@@ -733,7 +801,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | HW-M3 | Reviews: post a reply, delete it. | Visible then gone in the guest app. | ☐ |
-| Z48 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Y58 | Open before any review exists. | "No reviews yet". | ☐ |
+| Y59 | Post a reply under 3 characters. | Refused. | ☐ |
+| Y60 | Edit by deleting and posting again. | The guest app shows the new reply. | ☐ |
+| Z49 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 ### 10.13 Hotel web portal: Help from BookDan and phone view
 **Open:** Menu: Help from BookDan
@@ -742,7 +813,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | HW-M4 | Help from BookDan: new question, reply, close conversation. | Seen and answered in admin Support. | ☐ |
 | HW-M5 | Use the portal on a phone browser. | Usable without sideways scrolling problems. | ☐ |
-| Z49 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
+| Y61 | Send a question with an empty subject. | Refused. | ☐ |
+| Y62 | Open every menu page on a phone. | All usable. | ☐ |
+| Z50 | General checks for this page. | Page loads without error. Works after refresh. Usable on a phone browser. Spelling is correct. | ☐ |
 
 **End of Day 10:** passed ____ , failed ____ , skipped ____
 
@@ -760,7 +833,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | O2 | Open it signed in with no bookings. | "No bookings yet" and Find a stay. | ☐ |
 | O3 | Open My bookings with several bookings and tap each tab: Upcoming, Completed, Cancelled, Failed. | The sliding tabs show a count each; every booking is in the right tab, with hotel, dates, total and status. | ☐ |
 | O4 | Pull to refresh; tap a booking. | The list reloads; the booking opens. | ☐ |
-| Z50 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z51 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 11.2 Guest app: Saved
 **Open:** Saved tab
@@ -770,7 +843,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | O5 | Saved: tap hearts on three hotels. | They appear on the Saved tab; unsaving removes them. With nothing saved: "No saved stays yet". | ☐ |
 | O6 | Sign in on a 2nd phone with the same email. [2nd phone] | The saved hotels from the first phone appear after a few seconds. | ☐ |
 | O7 | Turn off internet, remove a saved hotel, turn internet on, wait a minute, check the 2nd phone. | The removal reaches the server and the hotel is gone on the other phone too; it does not come back. | ☐ |
-| Z51 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z52 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 11.3 Guest app: Cancelling
 **Open:** A booking, cancel card
@@ -786,7 +859,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | L7 | Cancel a pay-at-hotel booking. | "You had not paid anything online, so there is nothing to refund." The room is freed. | ☐ |
 | L8 | Look at a booking that has been checked in, or a stay that is over. | No cancel button. A message tells you to contact the hotel; use "Report a problem" (section P). | ☐ |
 | L9 | Ask the hotel to cancel the confirmed booking, or to say it cannot host you. [Hotel app] | Cancelled by the hotel: full refund, an email and a support request. "Cannot host": the booking says "Needs a new hotel" and you can cancel for a full refund at once. | ☐ |
-| Z52 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z53 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 11.4 Guest app: Change dates
 **Open:** A confirmed booking, Change dates
@@ -805,14 +878,14 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | M10 | Try a second change on a booking already moved. | "This booking was already moved once." | ☐ |
 | M11 | Change dates on a pay-at-hotel booking to a different length. | It moves and the amount to pay at the hotel changes; nothing is charged online. | ☐ |
 | M12 | After a dearer change, cancel the booking. | Everything you paid, both payments, is refunded. | ☐ |
-| Z53 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z54 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 **End of Day 11:** passed ____ , failed ____ , skipped ____
 
 ---
 
 ## Day 12: Reviews, problems and support, from guest to admin
-*Goal: What happens when a guest needs help or complains.* (6 pages, 33 checks)
+*Goal: What happens when a guest needs help or complains.* (7 pages, 46 checks)
 
 ### 12.1 Guest app: Review and report a problem
 **Open:** A finished stay
@@ -828,7 +901,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | N7 | Withdraw the dispute. | The booking returns to what it was; you cannot open another for it. | ☐ |
 | N8 | Let an admin decide (reject, refund, part refund). [Admin] | You get a note in the thread, [Email] an email, and a refund when upheld; the outcome shows (Not upheld, Refunded in full...). | ☐ |
 | N9 | Try to open a dispute 15 days after check-out, or for a stay that has not started. | Refused with a message (use Help and support after 14 days; cancel instead if the stay has not started). | ☐ |
-| Z54 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z55 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 12.2 Guest app: Help and support
 **Open:** Profile, Help and support
@@ -843,7 +916,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | P6 | Open five requests without closing any, then a sixth. | "You have several requests waiting for an answer. Wait for a reply, or close one you no longer need." | ☐ |
 | P7 | On a booking tap "Get help with this booking". | A new request already linked to that booking ("About booking BD-..."). | ☐ |
 | P8 | Ask an admin for a goodwill partial refund on a confirmed booking. [Admin] | The booking shows "Already refunded to you" and the amount arrives. | ☐ |
-| Z55 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z56 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 12.3 Admin portal: Support list
 **Open:** Menu: Guests, Support
@@ -852,7 +925,8 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | AD-T1 | Support: open the list. | "Needs an answer" and "Waiting for the guest" are right, newest first. | ☐ |
 | AD-T2 | Send an answer; then close another without answering. | Guest gets it in the app and by email. | ☐ |
-| Z56 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y63 | Open a request linked to a booking. | Hotel, guest, dates, status and amounts paid and refunded are shown. | ☐ |
+| Z57 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 12.4 Admin portal: Support request: refunds, relocation, disputes
 **Open:** Open a request
@@ -862,7 +936,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | AD-T3 | Goodwill refund: BookDan pays; then hotel pays; then try the whole amount. | Booking stands; payer is charged correctly; full amount refused. | ☐ |
 | AD-T4 | Relocation: Restore on one; Refund in full on another. | First confirmed again; second refunded, hotel bears it. | ☐ |
 | AD-T5 | Dispute: try each decision (reject, full refund hotel pays, full refund BookDan pays, part refund by each). | Refunds and hotel earnings match the choice; asks before settling. | ☐ |
-| Z57 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Z58 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 12.5 Admin portal: Users
 **Open:** Menu: Guests, Users
@@ -873,7 +947,8 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | AD-U2 | Suspend a guest with a reason; try to use that account. | Blocked. | ☐ |
 | AD-U3 | Reinstate. | Can sign in and book again. | ☐ |
 | AD-U4 | "Sign out everywhere". | All their devices need to sign in again. | ☐ |
-| Z58 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y64 | Look at one guest, one owner and one receptionist. | Role, hotels, bookings count, signed-in devices and joined date are correct. | ☐ |
+| Z59 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 12.6 Admin portal: Reviews
 **Open:** Menu: Guests, Reviews
@@ -881,14 +956,31 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | AD-U5 | Reviews: filters and sorting; hide one with a reason; "Show again". | Hidden review and its rating leave the guest app, then return. | ☐ |
-| Z59 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y65 | Use the status filter, sort by newest and lowest rating, and search. | Lists match. | ☐ |
+| Y66 | Hide with no reason, then with a reason. | A reason is asked and kept; shows who hid it. | ☐ |
+| Y67 | Look at a review with a hotel reply. | The reply is shown. | ☐ |
+| Z60 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+
+### 12.7 All apps: Emails
+**Open:** The inboxes of your test guest, owner and admin
+
+| ID | What to do | What you should see | P/F/S |
+|---|---|---|---|
+| Y87 | Request a booking. | "Your booking request at (hotel)" arrives with the right details. | ☐ |
+| Y88 | Hotel accepts one, declines one, ignores one. | "Booking confirmed", "Booking not available" and "Booking not confirmed" emails. | ☐ |
+| Y89 | Cancel one with refund, one pay-at-hotel, one too late. | Three "Booking cancelled" emails, each saying the right thing about money. | ☐ |
+| Y90 | Hotel cancels one and reports it cannot host another. | "cancelled by the hotel" and "cannot host you" emails. | ☐ |
+| Y91 | Change dates. | "Dates changed" email with the new dates and total. | ☐ |
+| Y92 | Check support replies, dispute results, staff invitations and the application decision. | Each email arrives, with no password or full ID number in it. | ☐ |
+| Y93 | Check the admin inbox after a dispute or payment problem. | The BookDan team is emailed. | ☐ |
+| Y94 | Read all emails on a phone; check the spam folder. | Readable, correct sender, not marked as spam. | ☐ |
 
 **End of Day 12:** passed ____ , failed ____ , skipped ____
 
 ---
 
 ## Day 13: Admin: money, insights and settings
-*Goal: Check every figure.* (9 pages, 27 checks)
+*Goal: Check every figure.* (9 pages, 46 checks)
 
 ### 13.1 Admin portal: Payment issues
 **Open:** Menu: Guests, Payment issues
@@ -896,7 +988,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | AD-M1 | Payment issues: open each "Needs a person" and mark resolved with a note. | Moves to resolved with your name. | ☐ |
-| Z60 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y68 | Read each issue: booking code, asked amount, paid amount, date. | Clear and matching the Chapa test dashboard. | ☐ |
+| Y69 | Check "Hotel cannot host the guest" items after Day 9. | Listed or visible in Support, and can be followed up. | ☐ |
+| Y70 | Reload after resolving. | Resolved items show who and the note. | ☐ |
+| Z61 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 13.2 Admin portal: Payouts, receipts and statements
 **Open:** Menu: Money, Payouts
@@ -907,7 +1002,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | AD-M3 | Record a payout: no reference, too much, then correct. | First two refused; then owed falls by exactly that amount. | ☐ |
 | AD-M4 | Show payout history; Download CSV for the month. | History correct; file opens in Excel with right totals. | ☐ |
 | AD-M5 | When a hotel owes BookDan, "Record payment received". | Asks to confirm; balance updates. | ☐ |
-| Z61 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y71 | Look at a hotel with no business details. | Told to add them before paying. | ☐ |
+| Y72 | Check the payment method and last four digits on each card. | Match the Business tab. | ☐ |
+| Z62 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 13.3 Admin portal: Member tiers
 **Open:** Menu: Money, Member tiers
@@ -916,7 +1013,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | AD-M6 | Member tiers: change a discount, try 90%, save, restore. | 90% refused; guest app shows the new level discount. | ☐ |
 | AD-M7 | After a guest finishes stays at 2 or more hotels, check their level in the app. | Level and discount shown; not combined with a coupon; online only. | ☐ |
-| Z62 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Z63 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 13.4 Admin portal: Exchange rates
 **Open:** Menu: Money, Rates
@@ -924,7 +1021,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | AD-M8 | Rates: Fetch current rates; type a rate by hand; type a wildly wrong one. | Saved; warning on odd values; guest app shows converted prices. | ☐ |
-| Z63 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y73 | Read the status of each currency: Shown to guests, Out of date, Not set. | Correct. | ☐ |
+| Y74 | Compare "typed" rates and fetched rates after "Fetch current rates". | The page says how many were updated and left as they were. | ☐ |
+| Y75 | Change a rate and check the guest app after reopening. | New converted price. | ☐ |
+| Z64 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 13.5 Admin portal: Analytics
 **Open:** Menu: Insights, Analytics
@@ -933,7 +1033,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | AD-I1 | Analytics: 7, 30, 90 days. | Booking value, commission, refunds and counts match your test bookings. | ☐ |
 | AD-I2 | Click the "needs a person" items. | Open the right pages. | ☐ |
-| Z64 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y76 | Check the steps from price to stay: quotes, holds, paid, confirmed. | Counts and percentages are sensible. | ☐ |
+| Y77 | Check the daily charts and the hotels table (requests, accepted, no answer, reply time, cancellations). | Match what you did this week. | ☐ |
+| Y78 | Check paid online, pay at hotel, new and returning guests. | Correct. | ☐ |
+| Z65 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 13.6 Admin portal: Calls
 **Open:** Menu: Insights, Calls
@@ -941,7 +1044,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | AD-I3 | Calls: tap "Call the hotel" in the guest app, then open Calls. | The call is counted for that hotel. | ☐ |
-| Z65 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y79 | Choose 7, 30 and 90 days. | Figures change correctly. | ☐ |
+| Y80 | Read "By hotel" and "Latest calls". | Calls, bookings with calls, last call, booking code and guest name are right. | ☐ |
+| Z66 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 13.7 Admin portal: Hotel changes
 **Open:** Menu: Hotels, Hotel changes
@@ -949,7 +1054,10 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | ID | What to do | What you should see | P/F/S |
 |---|---|---|---|
 | AD-I4 | Hotel changes: look for the edits made this week. | Who, what and when are listed. | ☐ |
-| Z66 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y81 | Filter to changes made by hotels. | Only those show. | ☐ |
+| Y82 | Click a hotel name in the list. | The hotel opens. | ☐ |
+| Y83 | Find your price, photo, staff and payout-account-view actions. | All listed with person and time. | ☐ |
+| Z67 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 13.8 Admin portal: Admins and roles
 **Open:** Menu: Settings, Admins
@@ -960,7 +1068,9 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | AD-I6 | Sign in as support, then as finance. | Each sees only its pages and cannot do the other's actions. | ☐ |
 | AD-I7 | Reset a password; remove an authenticator; switch an admin off. | Each takes effect. | ☐ |
 | AD-I8 | Try to remove your own super admin rights. | Refused. | ☐ |
-| Z67 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y84 | Sign in as a new admin with the temporary password. | Must choose a new password of at least 12 characters before anything else. | ☐ |
+| Y85 | Lock a test admin with five wrong passwords, then look at the list. | Shown as locked; a super admin can unlock or reset. | ☐ |
+| Z68 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 ### 13.9 Admin portal: My account
 **Open:** Menu: Settings, My account
@@ -969,14 +1079,15 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 |---|---|---|---|
 | AD-I9 | My account: change password (try a short one first). | Short refused; new one works. | ☐ |
 | AD-I10 | Set up the authenticator app, sign in with the code, use one recovery code, make new codes, turn it off. | Each works; a used recovery code fails the second time. | ☐ |
-| Z68 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
+| Y86 | Sign in using a recovery code instead of the authenticator code. | Works once; the number of codes left goes down. | ☐ |
+| Z69 | General checks for this page. | Page loads without error. Buttons cannot be double-submitted. Works after refresh (Ctrl+F5). Usable on a narrow window. Spelling is correct. | ☐ |
 
 **End of Day 13:** passed ____ , failed ____ , skipped ____
 
 ---
 
 ## Day 14: Profile, offline, privacy, whole system and sign-off
-*Goal: Finish and decide.* (4 pages, 31 checks)
+*Goal: Finish and decide.* (5 pages, 36 checks)
 
 ### 14.1 Guest app: Profile, language, currency and account
 **Open:** Profile tab
@@ -990,7 +1101,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | Q5 | Delete the account with no open bookings. | The account closes; your name, ID number, review text, support words and saved hotels are erased; you are signed out; booking records remain. Signing in again with the same email starts an empty account. | ☐ |
 | Q6 | Look at the privacy notes on the details screen and the profile. | "Your ID is stored encrypted ... only the last four characters show." | ☐ |
 | X33 | Tap "Privacy policy" and "Terms of use". | Each opens the matching page in the browser. | ☐ |
-| Z69 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z70 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 14.2 Guest app: Offline, errors and unusual cases
 **Open:** Airplane mode and edge cases
@@ -1005,7 +1116,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | R6 | Book exactly 30 nights, then 31. | 30 works; 31 is refused with the 30-night message. | ☐ |
 | R7 | Use the Android back button on every screen. | It goes to the previous screen; from checkout it does not lose the held room. | ☐ |
 | R8 | Kill the server connection (airplane mode) while the confirmed booking is open. | The booking and voucher are still readable offline. | ☐ |
-| Z70 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z71 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 14.3 Guest app: Privacy and safety
 **Open:** Across the app
@@ -1017,7 +1128,7 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | S3 | Sign in as a second guest and open the first guest's booking link (if you have it). | Not found: you cannot see another guest's booking, voucher or support thread. | ☐ |
 | S4 | Sign out and press Back. | No private data is shown. | ☐ |
 | S5 | Ask for sign-in codes many times from one network (more than 30 in 10 minutes, for different emails). | "Too many codes requested from this connection. Try again in a few minutes." | ☐ |
-| Z71 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
+| Z72 | General checks for this page. | Phone Back button works. Amharic text complete. Largest text size: nothing cut off. Airplane mode: clear message. Loading shows, no endless spinner. | ☐ |
 
 ### 14.4 Whole system: End to end
 **Open:** All apps together
@@ -1032,6 +1143,17 @@ If you pause between Day 7 and Day 8, create these on the day **before** you sta
 | E2E6 | Check Amharic on every screen of both apps. | No missing or broken text. | ☐ |
 | E2E7 | Open both apps on a small cheap phone and a weak network. | Usable; clear loading and error messages. | ☐ |
 | E2E8 | Re-run every row that failed earlier. | All pass, or are listed as open problems. | ☐ |
+
+### 14.5 Whole system: Things that happen by themselves
+**Open:** Guest app, hotel app and admin portal
+
+| ID | What to do | What you should see | P/F/S |
+|---|---|---|---|
+| Y95 | Look at a held booking after 15 minutes. [Wait] | Released; the room is on sale again. | ☐ |
+| Y96 | Look at an unanswered request after 15 minutes. [Wait] | Declined and refunded. | ☐ |
+| Y97 | Look at an unpaid date change after 15 minutes. [Wait] | Old dates kept. | ☐ |
+| Y98 | Look at stays whose check-out day has passed. | Shown as completed; review is offered; the hotel can be paid. | ☐ |
+| Y99 | Look at a pay-at-hotel stay after check-in or completion. | The commission the hotel owes is recorded. | ☐ |
 
 **End of Day 14:** passed ____ , failed ____ , skipped ____
 
